@@ -1,0 +1,7 @@
+[plugin]
+name = "echo-plugin"
+version = "2"
+type = "processor"
+runtime = "wasm"
+entry = "module.wasm"
+description = "Rust PDK processor; echoes a JSON payload without host I/O authority."

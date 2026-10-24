@@ -2,6 +2,7 @@
 name = "alia-server"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [features]
 default = [
@@ -31,7 +32,7 @@ tts-sovits = ["dep:reqwest"]
 embed-openai = ["dep:reqwest"]
 
 # Built-in tools
-tools-http = ["dep:reqwest"]
+tools-http = ["dep:reqwest", "dep:html-to-markdown-rs"]
 
 # Insights system
 insights = []
@@ -44,6 +45,16 @@ plugin-home-assistant = ["dep:reqwest"]
 alia-core.workspace = true
 alia-proto = { workspace = true, optional = true }
 alia-transport.workspace = true
+alia-plugin-api.workspace = true
+alia-plugin-runtime.workspace = true
+rig-core.workspace = true
+rig-agent.workspace = true
+rig-reqwest.workspace = true
+schemars.workspace = true
+jsonschema.workspace = true
+rmcp.workspace = true
+sse-stream.workspace = true
+html-to-markdown-rs = { workspace = true, optional = true }
 
 # Async runtime
 tokio.workspace = true
@@ -119,6 +130,10 @@ network-interface.workspace = true
 mdns-sd.workspace = true
 
 [dev-dependencies]
-alia-embedded = { path = "../alia-embedded", default-features = false }
+rig-core = { workspace = true, features = ["test-utils"] }
+alia-embedded = { path = "../alia-embedded", default-features = false, features = ["test-support"] }
 tokio = { workspace = true, features = ["test-util"] }
 reqwest.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true

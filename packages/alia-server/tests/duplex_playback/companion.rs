@@ -179,18 +179,60 @@ async fn resume_race(
     response: &ResponseRecord,
     capture: &mpsc::Sender<CaptureCommand>,
     calls: &mut mpsc::Receiver<ModelCall>,
+    runtime_tasks: &alia_server::modules::platform::lifecycle::RuntimeTasks,
 ) {
     let original = s.submission().unwrap();
+    let original_control = s.device.control.lock().unwrap().clone().unwrap();
     let generation = original.generation;
     s.device
         .submit_frames(&original.identity.playback_id.to_string(), 40);
     assert_eq!(original.snapshot(1).submitted_source_frames, Some(40));
+    let capture_started = std::time::Instant::now();
     speech(capture, true).await;
     s.command_count(response, 1).await;
     let first = next_detection(calls).await;
     s.wire.hold_resume_ack.store(true, Ordering::SeqCst);
+    let answer_at = std::time::Instant::now();
     first.answer(TurnState::Backchannel, "嗯");
-    signal(&s.wire.resume_applied).await;
+    match tokio::time::timeout(Duration::from_secs(3), s.wire.resume_applied.acquire()).await {
+        Ok(permit) => permit.unwrap().forget(),
+        Err(_) => {
+            let snapshot = original_control.snapshot();
+            let controls: Vec<_> = s
+                .wire
+                .controls
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|command| {
+                    json!({
+                        "sequence": command.command.sequence,
+                        "action": match command.command.action {
+                            ControlAction::Pause { .. } => "pause",
+                            ControlAction::Resume { .. } => "resume",
+                            ControlAction::ConfirmExplicitWait { .. } => "confirm_wait",
+                        },
+                    })
+                })
+                .collect();
+            panic!(
+                "original Resume acknowledgement timeout; {}",
+                json!({
+                    "capture_to_answer_ms": answer_at.duration_since(capture_started).as_millis(),
+                    "answer_wait_ms": answer_at.elapsed().as_millis(),
+                    "clock": "test_process_monotonic",
+                    "native_phase": snapshot.phase,
+                    "native_retired": snapshot.retired,
+                    "native_remaining_ms": snapshot.remaining_ms,
+                    "local_remaining_ms": snapshot.local_capture_hold.map(|hold| hold.remaining_ms),
+                    "native_sequence": snapshot.sequence,
+                    "original_scope_active": s.session.active_scope().ok().flatten() == Some(s.scope),
+                    "server_runtime_tasks_active": runtime_tasks.active(),
+                    "wire_controls": controls,
+                })
+            );
+        }
+    }
     let newer = speech(capture, false).await;
     let local = s.session.observe_control(&s.scope).unwrap();
     assert_eq!(local.phase, ControlPhase::Held);
@@ -295,6 +337,16 @@ async fn failure_state(
                     SELECT state, retirement_reason, count(*) AS count
                     FROM companion_admissions GROUP BY state, retirement_reason
                     ORDER BY state, retirement_reason) v),
+                'output_controls', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+                    SELECT status, last_command_sequence,
+                    floor(extract(epoch FROM (deadline_at-clock_timestamp()))*1000) AS remaining_ms,
+                    latest_receipt #>> '{receipt,snapshot,phase}' AS receipt_phase
+                    FROM output_control_scopes ORDER BY created_at) v),
+                'control_commands', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+                    SELECT sequence, status,
+                    floor(extract(epoch FROM (deadline_at-clock_timestamp()))*1000) AS remaining_ms,
+                    latest_receipt #>> '{receipt,snapshot,phase}' AS receipt_phase
+                    FROM output_control_commands ORDER BY created_at, sequence) v),
                 'task_db_waits', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
                     SELECT state, wait_event_type, count(*) AS count
                     FROM pg_stat_activity WHERE datname=current_database()
@@ -670,7 +722,7 @@ async fn complete_invitation(scenario: Scenario) {
                 if scenario == Scenario::ResumeRace {
                     owner.stage="complete H1 to H2 handoff";
                     let response=s.service.get_response(s.f.user,response_id).await.unwrap();
-                    resume_race(&s,&response,&capture_tx,&mut model_calls).await;
+                    resume_race(&s,&response,&capture_tx,&mut model_calls,&state.runtime_tasks).await;
                     assert_eq!(s.drain(),vec![17;120],"resume must keep exactly the original unsubmitted suffix");
                 } else {
                     assert!(model_calls.try_recv().is_err(),"silent invitation cannot invoke turn inference");
@@ -751,6 +803,8 @@ async fn failure_diagnostic_reports_live_claims_without_private_values() {
             serde_json::from_str(summary.split_once("; rows=").unwrap().1).unwrap();
         assert_eq!(rows["source_claims"], json!([{"origin_mode":"enabled","count":1}]));
         assert_eq!(rows["rejected_sources"], 1);
+        assert_eq!(rows["output_controls"], json!([]));
+        assert_eq!(rows["control_commands"], json!([]));
         for private in [f.user.to_string(), source.to_string(), appraisal.to_string(), generator.into()] {
             assert!(!summary.contains(&private), "diagnostic leaked a private value");
         }

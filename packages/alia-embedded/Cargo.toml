@@ -2,16 +2,20 @@
 name = "alia-embedded"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [features]
 default = ["sherpa-onnx"]
 vision-opencv = ["dep:opencv"]
-sherpa-onnx = ["dep:sherpa-onnx"]
+sherpa-onnx = ["dep:sherpa-onnx", "dep:ort", "dep:ort-sys"]
+test-support = []
 
 [dependencies]
 alia-core.workspace = true
 alia-proto.workspace = true
 alia-transport.workspace = true
+alia-plugin-api.workspace = true
+alia-plugin-runtime.workspace = true
 anyhow.workspace = true
 async-stream.workspace = true
 axum.workspace = true
@@ -27,7 +31,11 @@ rubato = { version = "=5.0.0", default-features = false }
 opencv = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 sherpa-onnx = { workspace = true, optional = true }
+ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std", "api-24"], optional = true }
+# Reuse ONNX Runtime linked by sherpa-onnx; do not download a second runtime.
+ort-sys = { version = "=2.0.0-rc.12", default-features = false, features = ["disable-linking", "api-24"], optional = true }
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

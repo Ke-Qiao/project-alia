@@ -56,8 +56,9 @@ native actuator output. This general example is not a no-device preflight profil
 | `[modules]` | Module implementation choices. |
 | `[audio]` | Capture/playback backend, devices, rates, buffers, and volume defaults. |
 | `[wakeword]` | sherpa-onnx keyword spotting model and keyword config. |
-| `[speech]` | Exact Server channel instance ID, VoiceSession pre-roll, and bounded upload queue. |
-| `[vad]` | sherpa-onnx/Silero activity evidence settings. |
+| `[r1]` | Explicit R1 control UART path for natural wake or explicit cold-boot initialization (Linux). |
+| `[speech]` | Wakeword/system trigger, exact Server channel instance ID, VoiceSession pre-roll, and bounded upload queue. |
+| `[vad]` | Rust Silero streaming activity evidence settings. |
 | `[direct_response_defaults]`, `[[direct_response]]` | Local-only cue asset directory and cue metadata. |
 | `[hmmd_mmwave]` | Optional Waveshare HMMD UART presence sensor. |
 | `[motion]` | Native neck mapping, local-only `approved_animations` content pins (empty by default), expression actions, and serial/PCA9685 servo output. |
@@ -79,11 +80,34 @@ IDs must contain visible ASCII characters without whitespace; invalid values are
 rejected rather than trimmed or converted to another route. Changing this
 setting requires restart. Binding does not choose or rewrite the instance ID.
 
+The bound `server_endpoint` is the Server HTTP base address. Embedded derives
+the VoiceSession port as that HTTP port plus one. A custom `server.grpc_port`
+or forwarded port mapping must preserve this relationship for Embedded voice;
+binding and settings checks alone do not verify that audio endpoint.
+
 The other settings are `pre_roll_ms` (default 200) and `upload_queue_frames`
 (default 32). The sole path requires mono 16 kHz capture and an available VAD;
 there is no `speech.enabled` toggle, `mode`, edge STT, local interrupt, thinking,
 or continuous-dialogue section. `[modules]` has no `mixer` or `edge_stt` slot. Native playback always
 mixes scoped voice/cue sources at fixed gains 1.0/0.2.
+
+Select `modules.vad = "silero"`. The Rust VAD retains a fixed input window and
+recurrent model state; continuous speech no longer triggers a 15-second local
+reset or session cancellation. It uses the existing k2-fsa Silero v4 model at
+16 kHz with 512-sample windows and CPU inference. Unsupported model schemas or
+configuration values fail startup rather than silently choosing another model
+or execution provider. The default `sherpa-onnx` Cargo feature supplies both the
+Sherpa wake engine and the shared ONNX Runtime used by `silero`.
+
+Migrate old configurations by replacing the VAD module name `sherpa_onnx` with
+`silero` and removing `[vad].max_speech_duration_ms` and `buffer_size_sec` from
+the instance configuration and persisted settings. These fields and the old VAD
+module name are rejected. The wakeword module name `sherpa_onnx` is unchanged.
+
+The Server still bounds a single pending model window to 30 seconds, including
+pre-roll and endpoint silence. Exceeding that separate limit closes the session;
+this VAD change does not truncate speech, create a synthetic turn boundary, or
+extend the model contract.
 
 Set `modules.audio_capture = "noop"` for a service-only host with no microphone.
 The speech worker then stays inactive with degraded health; do not select a
@@ -98,6 +122,144 @@ device-free configuration inspection.
 Production voice also requires the configured server Easy-Turn provider. A
 failed provider or interrupted stream requires a fresh wake, not a fallback to
 local utterance/STT. Current runtime policies and shadow defaults remain unchanged.
+
+## R1 with Existing Firmware
+
+For system-controlled capture use the separate
+[`embedded.r1-system.example.toml`](../../../config/embedded.r1-system.example.toml).
+`speech.trigger = "system"` disables wake-based session admission; PCM stays
+local until authenticated CaptureControl.Start. The default remains `wakeword`.
+The explicit `--initialize-r1 <config> <cold-boot-id>` startup is the only path
+that sends one fixed beam-0 manual wake, after opening native capture. There
+is no `manual_wakeup`/beam auto-start configuration. See the
+[startup, durable claim and recovery contract](audio-and-voice.md#r1-system-controlled-capture).
+
+The following section describes the unchanged natural-wake preset.
+
+[`embedded.r1.example.toml`](../../../config/embedded.r1.example.toml) selects
+`modules.wakeword = "r1"` and an explicit `[r1].serial_path`. This Linux backend
+uses the existing UART_REAL firmware at 115200, raw 8N1 with flow control off.
+It answers device handshakes and queries the firmware version; it does not send
+manual wake, beam, wake-word, AEC, firmware or raw-audio configuration commands.
+The serial path has no automatic default. Confirm the physical adapter before
+using the example's CH340 by-id path, especially with multiple identical adapters.
+
+R1 UART supplies wake notifications; existing ALSA capture supplies processed
+16 kHz mono PCM from `hw:CARD=L6Microphone,DEV=0`. The firmware's current wake
+word and audio gating still apply (the observed keyword is often
+`xiao3-fei1-xiao3-fei1`). No host KWS model is needed in this mode, but continuous
+voice still requires the configured VAD model and bound Server voice services.
+For the existing Silero provider, `bash scripts/download-sherpa-models.sh --vad-only`
+downloads only VAD into `config/models/silero-vad/` without a KWS model or Python
+CLI. Set `MODELS_DIR` to the private instance's `models` directory when copying
+the configuration elsewhere; the model path is relative to that configuration.
+The downloader preserves an existing VAD model. Record the deployed model's hash;
+the download URL alone is not an immutable model identity.
+
+The example enables C-Media playback at `hw:CARD=Device,DEV=0`, 48 kHz stereo,
+with `alsa_playback_lock_to_capture_rate=false`. Existing playback resamples
+incoming voice to the actual output format. Capture and playback retain separate
+USB clocks; a connected analog reference does not establish synchronization or
+prove AEC performance. Initial gains are 1.0; existing instances restore their
+persisted volume settings. Direct-response cues, motion, vision and discovery
+remain disabled.
+Normal startup opens the control UART, microphone and playback device before pairing; the offline
+`--check-config` command opens none of these and does not prove the device or model is available.
+
+One Rust worker owns the UART. A matching version response establishes control
+health; connection loss clears pending events. A new handshake after verification
+also revokes health until reconnection verifies the version again. A version
+query has a two-second deadline and reconnection waits one second; first readiness
+can take more than one attempt. A capture reset during initial verification
+replaces the discarded query with a new ID without extending that deadline.
+A single pending wake expires
+after one second of host monotonic time and is consumed only by the existing
+speech worker with PCM. Startup, capture loss and session termination reset the
+queue and fence in-flight serial input. The event keeps the original message ID,
+optional angle and beam; missing values remain absent, and the board's score is
+not reported as confidence. The observation timestamp is host UNIX time, not the
+PCM sample clock. Direction metadata does not issue motion commands.
+
+Closing the module cancels and joins the UART worker before reporting completion.
+Serial open clears DTR/RTS after obtaining the descriptor; driver-specific line
+transitions during open are not an electrical guarantee. Input and output audio
+devices remain independently clocked; this backend does not establish AEC quality
+or remove the firmware's audio gating.
+
+### Opt-in R1 Hardware Fixtures
+
+These Linux-only tests are ignored by ordinary test runs. Arrange the microphone
+or speaker window first and use a dedicated private configuration with the
+confirmed devices. They perform real device I/O; `--check-config` alone does not.
+The commands below run from the repository root with the default `sherpa-onnx`
+feature and an optimized test build, matching the production timing profile.
+Keep the configuration paths absolute.
+
+For capture, copy the R1 example and set `modules.audio_playback = "noop"`.
+Keep direct responses, motion, vision, mmWave and discovery disabled, and
+`dev.skip_binding = false`. The confirmed CH340 path is
+`/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0`; capture uses
+`hw:CARD=L6Microphone,DEV=0` at 16 kHz mono. Provide the local Silero VAD file.
+The fixture replaces identity, SQLite and listeners with private temporary
+state and loopback endpoints. It opens UART and capture, but never playback:
+
+```bash
+ALIA_R1_HARDWARE_CONFIG=/absolute/path/private/capture.toml \
+ALIA_R1_HARDWARE_TIMEOUT_SEC=120 \
+cargo test --release --locked -p alia-embedded --lib \
+  module::speech::duplex::tests::r1_hardware::real_r1_uart_alsa_silero_authenticated_voice_and_rewake \
+  -- --exact --ignored --nocapture --test-threads=1
+```
+
+`ALIA_R1_HARDWARE_CONFIG` is required. The timeout defaults to 120 seconds and
+accepts only 1–120; this bounds the test body, not compilation or cleanup.
+Wait for each `await_natural_wake_then_short_phrase_and_silence` log, then say
+the firmware's natural wake word and a short phrase, followed by silence.
+The two rounds verify UART wake, real PCM and local VAD, a normally signed
+VoiceSession Open and upload to a local protocol fixture, and a fresh session
+after an intentional fixture disconnect. No authentication bypass, external
+chat/STT/Easy-Turn/TTS model or model response is used. Direction comes from the
+natural wake event; the test sends no manual wake or beam command. It prints
+counts, peak and VAD statistics, and does not save PCM or WAV files.
+
+For output, use the R1 example's playback selection: `cpal` module, explicit
+ALSA `hw:CARD=Device,DEV=0`, 48 kHz stereo, independent clocks and a positive
+initial playback volume. This fixture constructs only playback; it does not
+open the configured microphone, UART or VAD:
+
+```bash
+ALIA_R1_PLAYBACK_TEST_CONFIG=/absolute/path/private/playback.toml \
+cargo test --release --locked -p alia-embedded --lib \
+  module::cpal_audio::hardware_tests::r1_cmedia_playback_host_boundaries \
+  -- --exact --ignored --nocapture --test-threads=1
+```
+
+`ALIA_R1_PLAYBACK_TEST_CONFIG` is required. A 0.2-second, low-amplitude 440 Hz
+synthetic tone passes through the existing resampler, stereo output and software
+gain, capped at 0.05. The test checks actual format negotiation, held-silence and
+post-mix reference, resume, cancellation and final submission boundaries; it
+saves no PCM. Its control evidence is synthetic and its body has a ten-second
+deadline. `AlsaWriteAccepted` proves host submission, not DAC presentation,
+physical tail length or acoustic AEC.
+
+Both fixtures retain cleanup ownership on ordinary errors, panic and their
+internal timeout, cancelling and joining their workers. Native I/O can block
+beyond an async timeout, so deployed runs also need process supervision. The
+retained `run/r1-complete-20261021/supervise.py` provides the concrete harness:
+copy it into a new private run directory with `bin/alia-embedded`, the matching
+Linux lib-test executable named `bin/alia-r1-tests`, `private/uart.toml`,
+`private/capture.toml`, `private/playback.toml`, and an empty `logs/` directory.
+Invoke `python3 /absolute/path/new-run/supervise.py capture` or `playback`;
+`uart` runs the standalone runtime with audio modules disabled. The harness
+sets the environment variables above, refuses an already visible device owner,
+records artifact identity and device snapshots, and refuses to overwrite logs.
+Its outer limits are 60 seconds for UART, 140 for capture and 25 for playback;
+it then sends SIGTERM, waits up to 12 seconds, and uses a final kill with a
+five-second wait if necessary. A fixture watchdog expiry is a failure even if
+the OS releases the devices. Preserve that failure and verify the owned process
+and visible UART/PCM owners are gone; forced exit is not evidence of completed
+module cleanup. Actual acceptance results belong in the
+[release record](../../../docs/operations/software-release.md).
 
 ## Runtime State
 
@@ -124,12 +286,14 @@ relative alias of the same directory. Unchanged complete snapshots and unrelated
 settings patches remain accepted. To move this directory, stop the process,
 edit its local configuration, then restart.
 
-The animation catalog and cue directory restrictions apply to the Body and
-Settings data APIs. Plugin installation and startup are software deployment
-authority: plugins currently run as the host process user. These restrictions
-do not isolate local files from an operator or plugin with that same user’s code
-execution permissions. Plugin installation paths and process isolation require
-their own review; this change does not alter that existing boundary.
+The animation catalog and cue directory restrictions apply to the Motion and
+Settings data APIs. WASM processors run without filesystem, network or device
+host functions. Explicitly authorized `trusted_native` device drivers run with
+the host account's permissions; these data API restrictions do not isolate
+files from that account's code. Both runtimes require the reviewed asset digest
+at startup; native drivers require separate authorization. See
+[WASM deployment](../../../docs/operations/wasm-plugins.md) and
+[coordinated upgrade and recovery](../../../docs/operations/upgrade-recovery.md).
 
 ## Restart Boundaries
 

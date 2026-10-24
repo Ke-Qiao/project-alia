@@ -115,6 +115,9 @@ pub(super) async fn push(
     let cancel_client = client.clone();
     let cancel_auth = auth.clone();
     let (tx, rx) = mpsc::channel(8);
+    // Preserve transport ownership through the exact fence after producer errors.
+    let mut upload_sender = Some(tx.clone());
+    let mut receipt_stream = None;
     let (ack_tx, ack_rx) = oneshot::channel();
     let (start_tx, start_rx) = oneshot::channel();
     let offered = Arc::new(AtomicU64::new(0));
@@ -141,16 +144,21 @@ pub(super) async fn push(
         start_rx
             .await
             .context("playback ended before Start was prepared")?;
-        let mut receipts = tokio::time::timeout(idle, client.push(request))
-            .await
-            .context("playback response handshake timeout")??
-            .into_inner();
+        receipt_stream = Some(
+            tokio::time::timeout(idle, client.push(request))
+                .await
+                .context("playback response handshake timeout")??
+                .into_inner(),
+        );
         let mut handshake = Some(ack_tx);
         loop {
-            let receipt = tokio::time::timeout(idle, receipts.message())
-                .await
-                .context("playback receipt idle timeout")??
-                .context("playback receipt stream ended without terminal evidence")?;
+            let receipt = tokio::time::timeout(
+                idle,
+                receipt_stream.as_mut().expect("established Push").message(),
+            )
+            .await
+            .context("playback receipt idle timeout")??
+            .context("playback receipt stream ended without terminal evidence")?;
             let progress = decode_receipt(identity, receipt)?;
             ensure!(
                 !progress.end_accepted || end_offered.load(Ordering::Acquire),
@@ -168,9 +176,10 @@ pub(super) async fn push(
                     "invalid playback v3 handshake acknowledgement"
                 );
             }
-            observer.progress(progress.clone()).await?;
             let terminal = progress.observation_end.clone();
-            last = Some(progress);
+            // Retain verified evidence if another branch interrupts its durable acknowledgement.
+            last = Some(progress.clone());
+            observer.progress(progress).await?;
             if let Some(ack) = handshake.take() {
                 let _ = ack.send(());
             }
@@ -184,7 +193,11 @@ pub(super) async fn push(
         let mut produced = false;
         loop {
             tokio::select! {
-                result = &mut producer, if !produced => { result?; produced = true; },
+                result = &mut producer, if !produced => {
+                    result?;
+                    upload_sender.take(); // Successful End still needs actual input EOF.
+                    produced = true;
+                },
                 result = &mut receiving => return result,
             }
         }
@@ -195,8 +208,7 @@ pub(super) async fn push(
         _ = tokio::time::sleep_until(deadline) => Err(anyhow::anyhow!("absolute delivery observation deadline")),
         result = transfer => result,
     };
-    // Both upload and receipt futures are local to this owned Delivery future.
-    // Cancelling drops them directly; there are no detached producer tasks.
+    // Release paused observer writes, but keep upload/receipts open until fenced.
     child.cancel();
     drop(producer);
     match result {
@@ -207,6 +219,15 @@ pub(super) async fn push(
         Err(error) => {
             let reason = error.to_string();
             let confirmed = cancel_exact(cancel_client, identity, cancel_auth, &reason).await;
+            drop(upload_sender);
+            drop(receipt_stream);
+            if let Some(observation_end) = last.as_ref().and_then(|p| p.observation_end.clone()) {
+                // A lost observer acknowledgement cannot replace an immutable device terminal.
+                return Ok(AudioDeliveryReport {
+                    progress: last,
+                    observation_end,
+                });
+            }
             let end;
             match confirmed {
                 Ok(progress) => {

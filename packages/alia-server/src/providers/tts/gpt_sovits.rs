@@ -68,10 +68,22 @@ struct SovitsRequest {
 pub struct GptSovitsTts {
     client: Client,
     config: Arc<RwLock<SovitsConfig>>,
+    weight_gate: Arc<RwLock<()>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WeightState {
+    PreloadedUnverified,
+    Unconfirmed {
+        gpt_acknowledged: bool,
+        sovits_acknowledged: bool,
+    },
+    Acknowledged,
 }
 
 #[derive(Debug, Clone)]
 struct SovitsConfig {
+    weight_state: WeightState,
     endpoint: String,
     default_voice: String,
     default_profile: SovitsVoiceProfile,
@@ -144,6 +156,22 @@ impl GptSovitsTts {
         voice_profiles: &BTreeMap<String, VoiceProfileSection>,
         expression_styles: &BTreeMap<String, ExpressionStyleSection>,
     ) -> Self {
+        Self::with_client(
+            Client::new(),
+            provider,
+            default_voice,
+            voice_profiles,
+            expression_styles,
+        )
+    }
+
+    fn with_client(
+        client: Client,
+        provider: &GptSovitsProviderSection,
+        default_voice: &str,
+        voice_profiles: &BTreeMap<String, VoiceProfileSection>,
+        expression_styles: &BTreeMap<String, ExpressionStyleSection>,
+    ) -> Self {
         let voice_config = voice_profiles
             .get(default_voice)
             .cloned()
@@ -163,8 +191,19 @@ impl GptSovitsTts {
             .entry(default_voice.to_owned())
             .or_insert_with(|| default_profile.clone());
         Self {
-            client: Client::new(),
+            client,
+            weight_gate: Arc::new(RwLock::new(())),
             config: Arc::new(RwLock::new(SovitsConfig {
+                weight_state: if default_profile.gpt_weights_path.is_some()
+                    || default_profile.sovits_weights_path.is_some()
+                {
+                    WeightState::Unconfirmed {
+                        gpt_acknowledged: false,
+                        sovits_acknowledged: false,
+                    }
+                } else {
+                    WeightState::PreloadedUnverified
+                },
                 endpoint: provider.endpoint.clone(),
                 default_voice: default_voice.to_owned(),
                 default_profile,
@@ -423,6 +462,14 @@ fn apply_sovits_provider_specific_setting(
 }
 
 impl SovitsConfig {
+    fn ensure_weights_ready(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !matches!(self.weight_state, WeightState::Unconfirmed { .. }),
+            "GPT-SoVITS weight state unconfirmed; reapply configured weights before synthesis"
+        );
+        Ok(())
+    }
+
     fn request(
         &self,
         request: &TtsRequest,
@@ -725,7 +772,18 @@ impl StreamingWavPitchRewriter {
     }
 }
 
-async fn configure_remote_weights(client: &Client, config: &SovitsConfig) -> anyhow::Result<()> {
+async fn configure_remote_weights(
+    client: &Client,
+    config: &SovitsConfig,
+    current: &RwLock<SovitsConfig>,
+) -> anyhow::Result<()> {
+    let mut gpt_acknowledged = false;
+    let mut sovits_acknowledged = false;
+    // Cancellation leaves an unconfirmed state; HTTP cancellation cannot undo a remote switch.
+    current.write().await.weight_state = WeightState::Unconfirmed {
+        gpt_acknowledged,
+        sovits_acknowledged,
+    };
     let timeout = Duration::from_secs(config.request_timeout_sec.max(1));
     if let Some(path) = &config.default_profile.gpt_weights_path {
         set_remote_weights(
@@ -737,6 +795,11 @@ async fn configure_remote_weights(client: &Client, config: &SovitsConfig) -> any
             timeout,
         )
         .await?;
+        gpt_acknowledged = true;
+        current.write().await.weight_state = WeightState::Unconfirmed {
+            gpt_acknowledged,
+            sovits_acknowledged,
+        };
     }
     if let Some(path) = &config.default_profile.sovits_weights_path {
         set_remote_weights(
@@ -748,7 +811,13 @@ async fn configure_remote_weights(client: &Client, config: &SovitsConfig) -> any
             timeout,
         )
         .await?;
+        sovits_acknowledged = true;
     }
+    current.write().await.weight_state = if gpt_acknowledged || sovits_acknowledged {
+        WeightState::Acknowledged
+    } else {
+        WeightState::PreloadedUnverified
+    };
     Ok(())
 }
 
@@ -795,27 +864,32 @@ impl ModuleLifecycle for GptSovitsTts {
     }
 
     async fn init(&mut self) -> anyhow::Result<()> {
+        let _switch = self.weight_gate.write().await;
         let configured = self.config.read().await.clone();
-
-        if let Err(error) = configure_remote_weights(&self.client, &configured).await {
-            tracing::warn!(
-                error = %error,
-            endpoint = %configured.endpoint,
-            model = configured.default_profile.model_name.as_deref().unwrap_or("unspecified"),
-            "GPT-SoVITS remote weight setup failed; continuing with the model already loaded by the TTS server"
-            );
-        }
+        configure_remote_weights(&self.client, &configured, &self.config).await?;
 
         tracing::info!(
             endpoint = %configured.endpoint,
             model = configured.default_profile.model_name.as_deref().unwrap_or("unspecified"),
-            "GPT-SoVITS TTS initialized"
+            "GPT-SoVITS request configuration initialized; remote model bytes are not attested"
         );
         Ok(())
     }
 
     async fn health_check(&self) -> ModuleHealth {
+        let Ok(_weights) = self.weight_gate.try_read() else {
+            return ModuleHealth::Degraded("GPT-SoVITS weight update in progress".into());
+        };
         let config = self.config.read().await.clone();
+        if let WeightState::Unconfirmed {
+            gpt_acknowledged,
+            sovits_acknowledged,
+        } = config.weight_state
+        {
+            return ModuleHealth::Unhealthy(format!(
+                "GPT-SoVITS weight state unconfirmed (GPT acknowledged: {gpt_acknowledged}, SoVITS acknowledged: {sovits_acknowledged}); reapply weights before synthesis"
+            ));
+        }
 
         // Try to connect to GPT-SoVITS server
         match self
@@ -827,7 +901,12 @@ impl ModuleLifecycle for GptSovitsTts {
         {
             Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 400 => {
                 // 400 is expected without proper parameters
-                ModuleHealth::Healthy
+                match config.weight_state {
+                    WeightState::PreloadedUnverified => ModuleHealth::Degraded(
+                        "GPT-SoVITS reachable; preloaded model identity is unverified".into(),
+                    ),
+                    _ => ModuleHealth::Healthy,
+                }
             }
             Ok(resp) => {
                 ModuleHealth::Unhealthy(format!("GPT-SoVITS returned status {}", resp.status()))
@@ -840,8 +919,9 @@ impl ModuleLifecycle for GptSovitsTts {
         &self,
         updates: &BTreeMap<String, Value>,
     ) -> anyhow::Result<Vec<String>> {
+        let _switch = self.weight_gate.write().await;
         let mut applied = Vec::new();
-        let configured = {
+        let (configured, weights_changed) = {
             let mut config = self.config.write().await;
 
             if let Some(value) = string_setting(updates, "core.providers.gpt_sovits.endpoint") {
@@ -967,23 +1047,25 @@ impl ModuleLifecycle for GptSovitsTts {
                 config.voice_profiles.insert(default_voice, default_profile);
             }
 
-            config.clone()
+            let weights_changed = applied.iter().any(|key| {
+                matches!(
+                    key.as_str(),
+                    "core.providers.gpt_sovits.endpoint"
+                        | "core.profiles.voice.default.provider_specific.gpt_weights_path"
+                        | "core.profiles.voice.default.provider_specific.sovits_weights_path"
+                )
+            });
+            if weights_changed {
+                config.weight_state = WeightState::Unconfirmed {
+                    gpt_acknowledged: false,
+                    sovits_acknowledged: false,
+                };
+            }
+            (config.clone(), weights_changed)
         };
 
-        if applied.iter().any(|key| {
-            matches!(
-                key.as_str(),
-                "core.providers.gpt_sovits.endpoint"
-                    | "core.profiles.voice.default.provider_specific.gpt_weights_path"
-                    | "core.profiles.voice.default.provider_specific.sovits_weights_path"
-            )
-        }) && let Err(error) = configure_remote_weights(&self.client, &configured).await
-        {
-            tracing::warn!(
-                error = %error,
-                endpoint = %configured.endpoint,
-                "GPT-SoVITS runtime weight setup failed; keeping updated request config"
-            );
+        if weights_changed {
+            configure_remote_weights(&self.client, &configured, &self.config).await?;
         }
 
         if !applied.is_empty() {
@@ -1000,7 +1082,9 @@ impl TtsAdapter for GptSovitsTts {
         tts: &TtsRequest,
         budget: ResponseAudioBudget,
     ) -> anyhow::Result<EncodedAudio> {
+        let _weights = self.weight_gate.read().await;
         let config = self.config.read().await.clone();
+        config.ensure_weights_ready()?;
         let (request, prosody) = config.request(tts, 0);
         let reservation = budget.reserve(MAX_ENCODED_PAYLOAD_BYTES).await?;
         let response = self
@@ -1025,7 +1109,9 @@ impl TtsAdapter for GptSovitsTts {
         tts: &TtsRequest,
         budget: ResponseAudioBudget,
     ) -> anyhow::Result<TtsAudioStream> {
+        let weights = self.weight_gate.clone().read_owned().await;
         let config = self.config.read().await.clone();
+        config.ensure_weights_ready()?;
         let (request, prosody) = config.request(tts, 1);
         let mut header_reservation = if pitch_is_neutral(prosody.pitch_factor) {
             None
@@ -1048,6 +1134,7 @@ impl TtsAdapter for GptSovitsTts {
         check_length(&response, MAX_TTS_STREAM_BYTES)?;
         let idle_timeout = Duration::from_secs(config.stream_idle_timeout_sec.max(1));
         Ok(Box::pin(async_stream::try_stream! {
+            let _weights = weights;
             let mut chunks = response.bytes_stream();
             let mut first = Some(first);
             let mut pitch = StreamingWavPitchRewriter::new(prosody);
@@ -1275,6 +1362,7 @@ mod tests {
 
     fn test_config() -> SovitsConfig {
         SovitsConfig {
+            weight_state: WeightState::PreloadedUnverified,
             endpoint: "http://localhost:9880/tts".to_string(),
             default_voice: "default".to_string(),
             default_profile: SovitsVoiceProfile::default(),

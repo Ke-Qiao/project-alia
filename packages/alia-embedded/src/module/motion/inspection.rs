@@ -2,7 +2,7 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use alia_core::body::{BodyAnimationAsset, validate_animation_catalog};
+use alia_core::embodiment::motion::{MotionAnimationAsset, validate_animation_catalog};
 use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 
@@ -45,7 +45,7 @@ struct PcaInspection {
 
 #[derive(Debug, Serialize)]
 struct AnimationInspection {
-    asset: BodyAnimationAsset,
+    asset: MotionAnimationAsset,
     source_frames: usize,
 }
 
@@ -257,10 +257,10 @@ mod tests {
         let bytes = b"frames\n1 2 3\n-1 0 2\n";
         let path = config.animation_dir.join("reviewed.anim");
         std::fs::write(&path, bytes).unwrap();
-        let asset = BodyAnimationAsset {
+        let asset = MotionAnimationAsset {
             file: "reviewed.anim".into(),
             version: 7,
-            sha256: alia_core::body::body_animation_sha256(bytes),
+            sha256: alia_core::embodiment::motion::motion_animation_sha256(bytes),
             bytes: bytes.len() as u32,
         };
         config.approved_animations = vec![asset.clone()];
@@ -271,7 +271,8 @@ mod tests {
         assert!(inspect_configuration(&config).is_err());
         let invalid = b"frames\n1 2 3 4\n";
         std::fs::write(&path, invalid).unwrap();
-        config.approved_animations[0].sha256 = alia_core::body::body_animation_sha256(invalid);
+        config.approved_animations[0].sha256 =
+            alia_core::embodiment::motion::motion_animation_sha256(invalid);
         config.approved_animations[0].bytes = invalid.len() as u32;
         assert!(inspect_configuration(&config).is_err());
     }
@@ -297,10 +298,10 @@ mod tests {
         std::fs::remove_file(&config.neck_config_file).unwrap();
 
         std::fs::create_dir(&config.animation_dir).unwrap();
-        let asset = BodyAnimationAsset {
+        let asset = MotionAnimationAsset {
             file: "reviewed.anim".into(),
             version: 1,
-            sha256: alia_core::body::body_animation_sha256(b"frames\n0 0 0\n"),
+            sha256: alia_core::embodiment::motion::motion_animation_sha256(b"frames\n0 0 0\n"),
             bytes: 13,
         };
         config.approved_animations = vec![asset.clone()];

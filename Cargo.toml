@@ -6,24 +6,29 @@ members = [
     "crates/proto",
     "crates/transport",
     "crates/alia-core",
+    "crates/alia-plugin-api",
+    "crates/alia-plugin-runtime",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.96"
 
 [workspace.dependencies]
 # Shared crates
 alia-core = { path = "crates/alia-core" }
 alia-proto = { path = "crates/proto" }
 alia-transport = { path = "crates/transport" }
+alia-plugin-api = { path = "crates/alia-plugin-api" }
+alia-plugin-runtime = { path = "crates/alia-plugin-runtime" }
 network-interface = "1.1"
 mdns-sd = "0.19"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tokio-util = { version = "0.7", features = ["rt"] }
+tokio-util = { version = "0.7", features = ["rt", "codec", "io"] }
 futures = "0.3"
 
 # gRPC / Protobuf
@@ -68,7 +73,18 @@ jsonwebtoken = "9"
 argon2 = "0.5"
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "multipart", "query"] }
+
+# Agent, typed tools and external tool protocols
+rig-core = { version = "=0.44.0", default-features = false, features = ["reqwest", "rustls"] }
+rig-agent = { version = "=0.44.0", default-features = false }
+rig-reqwest = { version = "=0.44.0", default-features = false, features = ["rustls"] }
+schemars = { version = "=1.2.3", default-features = false, features = ["std", "derive"] }
+jsonschema = { version = "=0.59.0", default-features = false }
+rmcp = { version = "=3.5.1", default-features = false, features = ["client", "transport-async-rw", "transport-streamable-http-client"] }
+sse-stream = "=0.2.6"
+extism = { version = "=1.41.0", default-features = false }
+html-to-markdown-rs = { version = "=3.17.2", default-features = false }
 
 # Template engine
 handlebars = "6"
@@ -97,6 +113,13 @@ async-trait = "0.1"
 
 # Unix
 libc = "0.2"
+
+[patch.crates-io]
+extism = { path = "vendor/extism" }
+rig-core = { git = "https://github.com/Ke-Qiao/rig.git", rev = "c2ff3e30e6b8d84fc6759eab030656a42cae14ca" }
+rig-agent = { git = "https://github.com/Ke-Qiao/rig.git", rev = "c2ff3e30e6b8d84fc6759eab030656a42cae14ca" }
+rig-http = { git = "https://github.com/Ke-Qiao/rig.git", rev = "c2ff3e30e6b8d84fc6759eab030656a42cae14ca" }
+rig-reqwest = { git = "https://github.com/Ke-Qiao/rig.git", rev = "c2ff3e30e6b8d84fc6759eab030656a42cae14ca" }
 
 # Runtime tests hash the full executable inside bounded child-process startup.
 [profile.dev.package.sha2]

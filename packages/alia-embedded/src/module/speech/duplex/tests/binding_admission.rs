@@ -18,7 +18,7 @@ async fn bound_playback() -> (tempfile::TempDir, Arc<BindingManager>, Arc<Playba
     (directory, binding, playback)
 }
 
-async fn signed_bind(binding: &BindingManager, server: &str, endpoint: &str) {
+pub(super) async fn signed_bind(binding: &BindingManager, server: &str, endpoint: &str) {
     let key = ed25519_dalek::SigningKey::from_bytes(&[61; 32]);
     let public = key.verifying_key().to_bytes();
     let issued = alia_transport::current_unix_timestamp().unwrap();

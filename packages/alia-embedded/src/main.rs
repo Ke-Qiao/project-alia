@@ -15,11 +15,11 @@ use alia_embedded::module::traits::WakeWordEngine;
 
 fn main() -> Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    match args.as_slice() {
-        [] => {}
+    let initialization = match args.as_slice() {
+        [] => None,
         [help] if help == "--help" || help == "-h" => {
             println!(
-                "Usage: alia-embedded [--check-config <path>]\n\nNo arguments: start the device runtime.\n--check-config: inspect an existing configuration and motion files without starting devices, models or services."
+                "Usage: alia-embedded [--check-config <path> | --initialize-r1 <path> <cold-boot-id>]\n\nNo arguments: start the device runtime without sending R1 manual_wakeup.\n--check-config: inspect an existing configuration and motion files without starting devices, models or services.\n--initialize-r1: after an operator-confirmed R1 power cycle, start native capture, send one beam-0 manual_wakeup, then keep the runtime and the same capture stream running. Requires system trigger mode and a new non-nil UUID for that real cold boot. A durable claim forbids retrying the same ID, even after a timeout. Beam 0 is directional."
             );
             return Ok(());
         }
@@ -28,13 +28,26 @@ fn main() -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&report)?);
             return Ok(());
         }
-        _ => anyhow::bail!("expected no arguments, --help, or --check-config <path>"),
-    }
+        [initialize, path, cold_boot_id] if initialize == "--initialize-r1" => {
+            let id = cold_boot_id
+                .to_str()
+                .context("cold boot ID must be UTF-8")?
+                .parse::<uuid::Uuid>()
+                .context("cold boot ID must be a UUID")?;
+            anyhow::ensure!(!id.is_nil(), "cold boot ID must be non-nil");
+            let path = config::normalize_config_path(PathBuf::from(path));
+            alia_embedded::preflight::check_config(&path)?;
+            Some((path, id))
+        }
+        _ => anyhow::bail!(
+            "expected no arguments, --help, --check-config <path>, or --initialize-r1 <path> <cold-boot-id>"
+        ),
+    };
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .context("creating embedded runtime")?;
-    let result = runtime.block_on(async_main());
+    let result = runtime.block_on(async_main(initialization));
     // Normal node shutdown already joined workers. If native cleanup exceeded its
     // deadline, preserve that error and bound this final runtime reclamation step.
     // This timeout does not prove the remaining hardware workers stopped safely.
@@ -42,7 +55,7 @@ fn main() -> Result<()> {
     result
 }
 
-async fn async_main() -> Result<()> {
+async fn async_main(initialization: Option<(PathBuf, uuid::Uuid)>) -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(default_env_filter())
@@ -51,15 +64,22 @@ async fn async_main() -> Result<()> {
     info!("alia-embedded starting");
 
     // Load configuration
-    let config_path = std::env::var("ALIA_EMBEDDED_CONFIG_PATH")
-        .map(PathBuf::from)
-        .map(config::normalize_config_path)
-        .unwrap_or_else(|_| config::default_config_path());
+    let config_path = initialization
+        .as_ref()
+        .map(|(path, _)| path.clone())
+        .unwrap_or_else(|| {
+            std::env::var("ALIA_EMBEDDED_CONFIG_PATH")
+                .map(PathBuf::from)
+                .map(config::normalize_config_path)
+                .unwrap_or_else(|_| config::default_config_path())
+        });
     let mut config = config::load_config(&config_path)
         .with_context(|| format!("loading config from {}", config_path.display()))?;
 
     #[cfg(feature = "sherpa-onnx")]
-    if let Some(path) = std::env::var_os("ALIA_EMBEDDED_CHECK_KWS_WAV") {
+    if initialization.is_none()
+        && let Some(path) = std::env::var_os("ALIA_EMBEDDED_CHECK_KWS_WAV")
+    {
         return check_sherpa_kws(config.wakeword.clone(), PathBuf::from(path));
     }
 
@@ -101,11 +121,13 @@ async fn async_main() -> Result<()> {
     let shutdown = CancellationToken::new();
     let node_shutdown = shutdown.clone();
     let run = async move {
-        let node = EmbeddedBuilder::from_config(config)
+        let mut builder = EmbeddedBuilder::from_config(config)
             .await?
-            .with_cancel_token(node_shutdown)
-            .build()
-            .await?;
+            .with_cancel_token(node_shutdown);
+        if let Some((_, cold_boot_id)) = initialization {
+            builder = builder.with_r1_initialization(cold_boot_id)?;
+        }
+        let node = builder.build().await?;
         node.run().await
     };
     tokio::pin!(run);

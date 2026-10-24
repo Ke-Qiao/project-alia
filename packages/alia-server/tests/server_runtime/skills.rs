@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 
 pub(super) fn client() -> reqwest::Client {
     reqwest::Client::builder()
+        .no_proxy()
         .timeout(Duration::from_secs(5))
         .build()
         .unwrap()
@@ -88,10 +89,13 @@ async fn http_crud_publishes_skill_context_without_granting_tool_authority() {
             // A skill preference neither installs an executor nor approves a side effect.
             assert_eq!(client.get(format!("{base}/tools/disabled_skill_fixture")).bearer_auth(&token).send().await.unwrap().status(), 404);
             assert_eq!(response(client.get(format!("{base}/tools/schedule_task")).bearer_auth(&token), 200).await, tool_before);
-            let effect = response(client.post(format!("{base}/tools/execute")).bearer_auth(&token).json(&json!({
+            let mut execution = json!({
                 "request_id":Uuid::new_v4(), "tool_name":"schedule_task",
                 "arguments":{"name":"must remain a proposal","schedule_type":"once","run_at":"2099-01-01T00:00:00Z","action":{"type":"notification","message":"not dispatched"},"confirmed":true}
-            })), 200).await;
+            });
+            response(client.post(format!("{base}/tools/execute")).bearer_auth(&token).json(&execution), 400).await;
+            execution["arguments"].as_object_mut().unwrap().remove("confirmed");
+            let effect = response(client.post(format!("{base}/tools/execute")).bearer_auth(&token).json(&execution), 200).await;
             assert_eq!(effect["status"], "proposed");
             assert_eq!(effect["requires_confirmation"], true);
             let effect_id = effect["effect_id"].as_str().unwrap();

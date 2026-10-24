@@ -4,35 +4,6 @@ use crate::modules::delivery::types::{
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
-struct Model {
-    broken: bool,
-    large: bool,
-}
-impl ModuleLifecycle for Model {
-    fn name(&self) -> &'static str {
-        "text-model-test"
-    }
-}
-#[async_trait]
-impl LlmAdapter for Model {
-    async fn chat(&self, _: &[ChatMessage]) -> anyhow::Result<String> {
-        Ok("完整回答。".into())
-    }
-    async fn chat_stream(
-        &self,
-        _: &[ChatMessage],
-    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
-        let mut chunks = if self.large {
-            vec![Ok("你".repeat(4000))]
-        } else {
-            vec![Ok("流式".into()), Ok("回答。".into())]
-        };
-        if self.broken {
-            chunks.push(Err(anyhow::anyhow!("injected model stream disconnected")));
-        }
-        Ok(Box::pin(futures::stream::iter(chunks)))
-    }
-}
 async fn respond(f: &Fixture) {
     process_event(
         ChannelEvent::TextMessage {
@@ -59,7 +30,23 @@ async fn respond(f: &Fixture) {
     .unwrap();
 }
 async fn configure(f: &mut Fixture, stream: bool, broken: bool, large: bool) {
-    let model = Arc::new(Model { broken, large });
+    let model = Arc::new(if stream {
+        LlmService::test_stream("text-model-test", move |_| async move {
+            let mut chunks = if large {
+                vec![Ok("你".repeat(4000))]
+            } else {
+                vec![Ok("流式".into()), Ok("回答。".into())]
+            };
+            if broken {
+                chunks.push(Err(anyhow::anyhow!("injected model stream disconnected")));
+            }
+            Ok(Box::pin(futures::stream::iter(chunks)) as TextStream)
+        })
+    } else {
+        LlmService::test_text("text-model-test", |_| async {
+            Ok("完整回答。".into())
+        })
+    });
     let modules = Arc::get_mut(&mut f.modules).unwrap();
     modules.llm = model.clone();
     modules.major_llm = model.clone();

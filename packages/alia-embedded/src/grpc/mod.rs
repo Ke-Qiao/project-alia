@@ -1,7 +1,9 @@
 mod auth;
+mod capture_service;
+pub use capture_service::CaptureService;
 mod binding_service;
-mod body_service;
-pub use body_service::EmbeddedBodyService;
+mod motion_service;
+pub use motion_service::EmbeddedMotionService;
 mod playback_service;
 mod plugin_service;
 mod sensor_service;

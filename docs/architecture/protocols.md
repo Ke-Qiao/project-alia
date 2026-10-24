@@ -49,7 +49,8 @@ Important services:
 | --- | --- | --- |
 | `alia.voice.v2.VoiceSession` | Server | Authenticated continuous capture, original input identity, VAD evidence, turn decisions and session events. |
 | `alia.playback.v3.Playback` | Embedded | Response-bound output registration, streaming PCM/End, precise fencing, pause/resume and native retirement receipts. |
-| `alia.body.v1.BodyControl` | Embedded | Signed, bounded Body commands and device facts; motion safety remains local. |
+| `alia.capture.v1.CaptureControl` | Embedded | Bound system-triggered session Inspect/Start/Stop, fenced by device boot and local capture generation; separate from R1 initialization. |
+| `alia.motion.v1.MotionControl` | Embedded | Signed, bounded Motion commands and device facts; motion safety remains local. |
 | `alia.settings.EmbeddedSettings` | Embedded | Settings snapshot, volume, and direct response management. |
 | `alia.sensor.EmbeddedSensor` | Embedded | Sensor discovery, reads, and optional sensor commands. |
 | Binding/plugin services | Embedded | Device binding and embedded plugin support. |
@@ -86,6 +87,6 @@ Package-specific gRPC details live in:
 ## Local Development
 
 Server and Embedded may run on the same host and use loopback transport. Voice and
-Body still require their current identities and bindings. A no-device software
+Motion still require their current identities and bindings. A no-device software
 smoke can start both processes with noop I/O and motion disabled; it does not
 prove bound voice, AEC or physical actuator behavior.

@@ -1,8 +1,8 @@
 mod audio;
 mod auth;
-pub(crate) mod body;
 mod channel;
 mod direct_response;
+pub(crate) mod motion;
 mod playback;
 mod sensor;
 mod settings;

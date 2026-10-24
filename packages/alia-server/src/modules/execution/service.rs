@@ -57,7 +57,11 @@ impl ExecutionPolicy {
     }
 
     fn requires_confirmation(&self, tool: &ToolDefinition) -> bool {
-        tool.require_confirmation || self.confirmation_tools.contains(&tool.name)
+        tool.require_confirmation
+            || self
+                .confirmation_tools
+                .iter()
+                .any(|name| name == tool.name.as_str())
     }
 
     pub(crate) fn allows(&self, tool: &ToolDefinition) -> bool {
@@ -268,6 +272,14 @@ impl ExecutionService {
             .await
             .map_err(|error| ExecutionError::InvalidInput(error.to_string()))?
             .ok_or_else(|| ExecutionError::InvalidInput("tool unavailable".into()))?;
+        prepared
+            .executor
+            .authorize(ctx)
+            .map_err(|e| ExecutionError::Unauthorized(e.to_string()))?;
+        prepared
+            .executor
+            .validate(&call.arguments)
+            .map_err(|e| ExecutionError::InvalidInput(e.to_string()))?;
         let definition = prepared.executor.definition();
         let policy = self.policy.read().await.clone();
         if !policy.allows(&definition) {
@@ -433,8 +445,11 @@ impl ExecutionService {
         owner: Uuid,
         before: Option<Uuid>,
         limit: u32,
+        request: Option<Uuid>,
     ) -> ExecutionResult<Vec<EffectRecord>> {
-        self.repository.list(owner, before, limit.min(100)).await
+        self.repository
+            .list(owner, before, limit.min(100), request)
+            .await
     }
 
     /// Called only by authenticated confirmation ingress, never by model tools.
@@ -522,15 +537,10 @@ pub(crate) fn implementation_digest(
             "tool registration revision is required".into(),
         ));
     }
-    let revision = prepared
-        .executor
-        .implementation_revision()
-        .filter(|revision| !revision.trim().is_empty())
-        .ok_or_else(|| {
-            ExecutionError::InvalidInput("tool implementation revision is required".into())
-        })?;
+    let revision = prepared.executor.implementation_revision();
     Ok(digest(&json!({
-        "name": tool.name, "source": tool.source, "parameters": tool.parameters,
+        "function": tool.function, "source": tool.source,
+        "identity": prepared.executor.identity, "principal": prepared.executor.principal(),
         "require_confirmation": tool.require_confirmation, "required_role": tool.required_role,
         "build_digest": build_digest, "implementation_revision": revision,
         "registration_revision": prepared.registration_revision,
@@ -580,6 +590,7 @@ pub(crate) fn effect_result(effect: &EffectRecord) -> ToolResult {
         ),
     };
     ToolResult {
+        presentation: None,
         call_id: effect.model_call_id.clone(),
         success: effect.status == EffectStatus::Succeeded,
         output: json!({
@@ -604,6 +615,7 @@ pub(crate) fn error_result(call_id: String, error: &ExecutionError) -> ToolResul
         _ => "execution_unavailable",
     };
     ToolResult {
+        presentation: None,
         call_id,
         success: false,
         output: json!({"error": code, "message": error.to_string()}),

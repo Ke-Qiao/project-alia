@@ -1,5 +1,4 @@
 use super::*;
-use async_trait::async_trait;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 struct FixedMemoryLlm {
@@ -7,32 +6,23 @@ struct FixedMemoryLlm {
     calls: AtomicU32,
 }
 
-#[async_trait]
-impl ModuleLifecycle for FixedMemoryLlm {
-    fn name(&self) -> &'static str {
-        "fixed_insights_memory_llm"
-    }
-}
-
-#[async_trait]
-impl LlmAdapter for FixedMemoryLlm {
-    async fn chat(&self, _messages: &[ChatMessage]) -> anyhow::Result<String> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(self.response.clone())
-    }
-
-    async fn chat_stream(
-        &self,
-        _messages: &[ChatMessage],
-    ) -> anyhow::Result<std::pin::Pin<Box<dyn futures::Stream<Item = anyhow::Result<String>> + Send>>>
-    {
-        anyhow::bail!("insights memory tests require the non-streaming call path")
+impl FixedMemoryLlm {
+    fn service(self: &Arc<Self>) -> Arc<LlmService> {
+        let fixture = self.clone();
+        Arc::new(LlmService::test_text(
+            "fixed_insights_memory_llm",
+            move |_| {
+                fixture.calls.fetch_add(1, Ordering::SeqCst);
+                let response = fixture.response.clone();
+                async move { Ok(response) }
+            },
+        ))
     }
 }
 
 async fn consolidate_plan_fixture(
     memory: Option<Arc<MemoryService>>,
-    llm: Option<Arc<dyn LlmAdapter>>,
+    llm: Option<Arc<LlmService>>,
     user: &MemoryMaintenanceUser,
     limit: u32,
     _config: &InsightsSection,
@@ -51,7 +41,7 @@ async fn consolidate_plan_fixture(
         )
         .await?;
     context.source_memories = source_versions(&memories);
-    let response = llm.chat(&[]).await?;
+    let response = llm.text(&[]).await?;
     apply_consolidation_response(
         memory.as_ref(),
         &context,
@@ -112,7 +102,7 @@ async fn consolidation_commits_multiple_updates_and_creates_in_one_snapshot() {
 
     let stats = consolidate_plan_fixture(
         Some(memory.clone()),
-        Some(llm.clone()),
+        Some(llm.service()),
         &user,
         50,
         &InsightsSection::default(),
@@ -215,7 +205,7 @@ async fn invalid_later_consolidation_target_leaves_the_entire_plan_unwritten() {
     assert!(
         consolidate_plan_fixture(
             Some(memory.clone()),
-            Some(llm),
+            Some(llm.service()),
             &user,
             50,
             &InsightsSection::default(),
@@ -264,7 +254,7 @@ async fn consolidation_retirement_preserves_evidence_and_does_not_advance_privac
     });
     let stats = consolidate_plan_fixture(
         Some(memory.clone()),
-        Some(llm),
+        Some(llm.service()),
         &user,
         50,
         &InsightsSection::default(),

@@ -7,7 +7,6 @@ use alia_server::modules::interaction::cache::{
 use alia_server::modules::interaction::streaming::{
     pcm16_silence_payload, tts_bytes_to_pcm_payload,
 };
-use alia_server::modules::interaction::tools::parse_text_tool_calls;
 use alia_server::modules::interaction::{
     cache::{CacheContext, CacheWrite, cache_write_for_response, cached_response_is_safe_direct},
     llm::escalation_reason,
@@ -54,35 +53,6 @@ fn test_cache_policy() -> CachePolicyResourceSection {
         memory_query_keywords: vec!["remember".to_string(), "my ".to_string()],
         action_query_keywords: vec!["set ".to_string(), "volume".to_string()],
     }
-}
-
-#[test]
-fn parses_text_tool_call_envelope() {
-    let calls = parse_text_tool_calls(
-        r#"{"schema":"alia.tool_calls.v1","tool_calls":[{"name":"get_current_time","arguments":{"format":"human"}}]}"#,
-    )
-    .unwrap();
-
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].tool_name, "get_current_time");
-    assert_eq!(calls[0].arguments["format"], "human");
-}
-
-#[test]
-fn parses_fenced_text_tool_call_envelope() {
-    let calls = parse_text_tool_calls(
-        "```json\n{\"schema\":\"alia.tool_calls.v1\",\"tool_calls\":[{\"tool_name\":\"sensor_list\",\"arguments\":\"{}\"}]}\n```",
-    )
-    .unwrap();
-
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].tool_name, "sensor_list");
-}
-
-#[test]
-fn ignores_plain_assistant_text() {
-    let calls = parse_text_tool_calls("Sure, I can help with that.").unwrap();
-    assert!(calls.is_empty());
 }
 
 #[test]
@@ -263,87 +233,6 @@ fn cache_policy_rejects_tool_memory_dynamic_and_legacy_entries() {
         },
         "catalog-a"
     ));
-}
-
-#[test]
-fn ignores_tool_call_without_schema() {
-    let calls =
-        parse_text_tool_calls(r#"{"tool_calls":[{"name":"get_current_time","arguments":{}}]}"#)
-            .unwrap();
-
-    assert!(calls.is_empty());
-}
-
-#[test]
-fn ignores_embedded_tool_call_examples() {
-    let calls = parse_text_tool_calls(
-        r#"Tool use rules:
-- If native tool calling is unavailable and a tool is needed, reply with exactly one JSON object and no prose:
-  {"tool_calls":[{"name":"tool_name","arguments":{}}]}
-
-Available tools:
-[
-  {"name":"get_current_time","parameters":{"type":"object"}}
-]"#,
-    )
-    .unwrap();
-
-    assert!(calls.is_empty());
-}
-
-#[test]
-fn ignores_json_with_trailing_text() {
-    let calls = parse_text_tool_calls(
-        r#"{"tool_calls":[{"name":"get_current_time","arguments":{}}]}
-This is an example, not a call."#,
-    )
-    .unwrap();
-
-    assert!(calls.is_empty());
-}
-
-#[test]
-fn ignores_envelope_with_user_facing_content() {
-    let calls = parse_text_tool_calls(
-        r#"{"schema":"alia.tool_calls.v1","tool_calls":[{"name":"get_current_time","arguments":{}}],"content":"I will call a tool."}"#,
-    )
-    .unwrap();
-
-    assert!(calls.is_empty());
-}
-
-#[test]
-fn ignores_text_tool_call_with_non_object_arguments() {
-    let calls = parse_text_tool_calls(
-        r#"{"schema":"alia.tool_calls.v1","tool_calls":[{"name":"get_current_time","arguments":"not json"}]}"#,
-    )
-    .unwrap();
-
-    assert!(calls.is_empty());
-}
-
-#[test]
-fn parses_pseudo_function_text_tool_call() {
-    let calls = parse_text_tool_calls(
-        r#"memory_store(content="KeQiao likes tsukuyomi", importance:1.0, layer: "core") I remembered it."#,
-    )
-    .unwrap();
-
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].tool_name, "memory_store");
-    assert_eq!(calls[0].arguments["content"], "KeQiao likes tsukuyomi");
-    assert_eq!(calls[0].arguments["layer"], "core");
-    assert_eq!(calls[0].arguments["importance"], 1.0);
-}
-
-#[test]
-fn parses_pseudo_function_search_call() {
-    let calls =
-        parse_text_tool_calls(r#"memory_search(query="KeQiao favorite musician")"#).unwrap();
-
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].tool_name, "memory_search");
-    assert_eq!(calls[0].arguments["query"], "KeQiao favorite musician");
 }
 
 #[test]

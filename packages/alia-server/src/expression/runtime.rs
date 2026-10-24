@@ -11,7 +11,7 @@ use crate::providers::adapter::TtsCapabilities;
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::DatabaseConnection;
 
-use super::abi::{ExternalExpressionPlugin, load_external_expression_plugins};
+use super::abi::ExternalExpressionPlugin;
 use super::affect::{
     AffectAssistantResponse, AffectDeltas, AppraisalEvent, AppraisalScope, AppraisalSource,
     AppraisalTarget,
@@ -70,22 +70,6 @@ impl ExpressionRuntime {
                 "failed to register built-in classifier appraisal engine"
             );
         }
-        match load_external_expression_plugins(config) {
-            Ok(plugins) => {
-                for plugin in plugins {
-                    if let Err(error) = runtime.register_external_plugin(plugin) {
-                        tracing::warn!(
-                            error = ?error,
-                            "failed to register external expression plugin from manifest"
-                        );
-                    }
-                }
-            }
-            Err(error) => tracing::warn!(
-                error = ?error,
-                "failed to load external expression plugin manifests"
-            ),
-        }
         runtime
     }
 
@@ -98,7 +82,9 @@ impl ExpressionRuntime {
     }
 
     pub async fn shutdown(&self) -> anyhow::Result<()> {
-        self.writer.shutdown().await
+        let extensions = self.extensions.shutdown().await;
+        let writer = self.writer.shutdown().await;
+        extensions.and(writer)
     }
 
     pub fn dialogue_policy(&self) -> &DialoguePolicyResourceSection {
@@ -293,8 +279,8 @@ impl ExpressionRuntime {
         self.extensions.register_external_plugin(plugin)
     }
 
-    pub fn unregister_external_plugin(&self, name: &str) -> bool {
-        self.extensions.unregister_external_plugin(name)
+    pub async fn unregister_external_plugin(&self, name: &str) -> anyhow::Result<bool> {
+        self.extensions.unregister_external_plugin(name).await
     }
 
     pub fn register_appraisal_engine(
@@ -1108,7 +1094,7 @@ fn apply_builtin_safety_policy(
         return;
     }
 
-    if !safety.motion_allowed
+    if (!policy.auto_motion_enabled || !safety.motion_allowed)
         && plan
             .timeline
             .iter()
@@ -1119,7 +1105,11 @@ fn apply_builtin_safety_policy(
         modifications.push(safety_modification(
             "builtin_expression_safety",
             "timeline",
-            "motion_not_allowed",
+            if !policy.auto_motion_enabled {
+                "auto_motion_disabled"
+            } else {
+                "motion_not_allowed"
+            },
             Some(before),
             Some(serde_json::json!(plan.timeline.len())),
         ));
@@ -1916,6 +1906,10 @@ mod tests {
 
         #[async_trait]
         impl ExternalExpressionPlugin for AbiPlugin {
+            fn private_input_isolated(&self) -> bool {
+                true
+            }
+
             fn manifest(&self) -> &ExpressionPluginManifest {
                 &self.manifest
             }
@@ -1927,6 +1921,7 @@ mod tests {
             async fn call(
                 &self,
                 request: ExpressionPluginRequest,
+                _cancel: tokio_util::sync::CancellationToken,
             ) -> anyhow::Result<ExpressionPluginResponse> {
                 match request {
                     ExpressionPluginRequest::AppraiseUserInput { .. } => {
@@ -1982,15 +1977,8 @@ mod tests {
             .register_external_plugin(Arc::new(AbiPlugin {
                 manifest: ExpressionPluginManifest {
                     name: "test_external_expression".to_string(),
-                    enabled: true,
-                    abi_version: 1,
+                    abi_version: super::super::abi::EXPRESSION_PLUGIN_ABI_VERSION,
                     request_timeout_ms: None,
-                    trace_stderr: false,
-                    max_stderr_bytes: 4096,
-                    cancel_on_timeout: true,
-                    sandbox: Default::default(),
-                    command: Vec::new(),
-                    working_dir: None,
                     capabilities: ExpressionPluginCapabilities {
                         appraisal_engine: true,
                         intent_planner: true,
@@ -2049,6 +2037,10 @@ mod tests {
 
         #[async_trait]
         impl ExternalExpressionPlugin for SlowPlugin {
+            fn private_input_isolated(&self) -> bool {
+                true
+            }
+
             fn manifest(&self) -> &ExpressionPluginManifest {
                 &self.manifest
             }
@@ -2060,8 +2052,12 @@ mod tests {
             async fn call(
                 &self,
                 _request: ExpressionPluginRequest,
+                cancel: tokio_util::sync::CancellationToken,
             ) -> anyhow::Result<ExpressionPluginResponse> {
-                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                tokio::select! {
+                    _ = cancel.cancelled() => anyhow::bail!("test plugin cancelled"),
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(25)) => {}
+                }
                 Ok(ExpressionPluginResponse::AppraisalEvents {
                     events: vec![ExternalAppraisalEventDraft {
                         kind: "too_late".to_string(),
@@ -2099,15 +2095,8 @@ mod tests {
             .register_external_plugin(Arc::new(SlowPlugin {
                 manifest: ExpressionPluginManifest {
                     name: "slow_external_expression".to_string(),
-                    enabled: true,
-                    abi_version: 1,
+                    abi_version: super::super::abi::EXPRESSION_PLUGIN_ABI_VERSION,
                     request_timeout_ms: None,
-                    trace_stderr: false,
-                    max_stderr_bytes: 4096,
-                    cancel_on_timeout: true,
-                    sandbox: Default::default(),
-                    command: Vec::new(),
-                    working_dir: None,
                     capabilities: ExpressionPluginCapabilities {
                         appraisal_engine: true,
                         ..ExpressionPluginCapabilities::default()
@@ -2343,6 +2332,98 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn external_planners_cannot_restore_disabled_automatic_motion() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct MotionInjector {
+            manifest: ExpressionPluginManifest,
+            calls: Arc<AtomicUsize>,
+        }
+        #[async_trait]
+        impl ExternalExpressionPlugin for MotionInjector {
+            fn manifest(&self) -> &ExpressionPluginManifest {
+                &self.manifest
+            }
+            async fn call(
+                &self,
+                request: ExpressionPluginRequest,
+                _cancel: tokio_util::sync::CancellationToken,
+            ) -> anyhow::Result<ExpressionPluginResponse> {
+                let (mut plan, safety_stage) = match request {
+                    ExpressionPluginRequest::TransformPlan { plan, .. } => (plan, false),
+                    ExpressionPluginRequest::ApplySafetyPolicy { plan, .. } => (plan, true),
+                    _ => anyhow::bail!("unexpected plugin stage"),
+                };
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                plan.timeline = vec![ExpressionTimelineAction {
+                    at: "speech_start".into(),
+                    channel: "motion".into(),
+                    action: "small_nod".into(),
+                    intensity: 0.2,
+                    duration_ms: 100,
+                    params: serde_json::json!({}),
+                }];
+                Ok(if safety_stage {
+                    ExpressionPluginResponse::SafetyPlan {
+                        plan,
+                        modifications: Vec::new(),
+                    }
+                } else {
+                    ExpressionPluginResponse::Plan { plan }
+                })
+            }
+        }
+
+        for safety_stage in [false, true] {
+            for enabled in [false, true] {
+                let runtime = ExpressionRuntime {
+                    writer: crate::expression::provenance::AppraisalWriter::default(),
+                    policy: ExpressionPolicySection {
+                        auto_motion_enabled: enabled,
+                        ..Default::default()
+                    },
+                    regulation: Default::default(),
+                    preview_affect: Default::default(),
+                    styles: BTreeMap::new(),
+                    dialogue_policy: Default::default(),
+                    extensions: Default::default(),
+                    safety_state: Default::default(),
+                    orchestrator: Default::default(),
+                };
+                let calls = Arc::new(AtomicUsize::new(0));
+                runtime
+                    .register_external_plugin(Arc::new(MotionInjector {
+                        manifest: ExpressionPluginManifest {
+                            name: "motion_injector".into(),
+                            abi_version: super::super::abi::EXPRESSION_PLUGIN_ABI_VERSION,
+                            request_timeout_ms: None,
+                            capabilities: ExpressionPluginCapabilities {
+                                plan_transformer: !safety_stage,
+                                safety_policy: safety_stage,
+                                ..Default::default()
+                            },
+                        },
+                        calls: calls.clone(),
+                    }))
+                    .unwrap();
+                let mut input = test_expression_input("Ready.");
+                input.hardware_control = true;
+                input.expression_capabilities = Some(capabilities_with_action("small_nod", 0.3));
+                let plan = runtime.plan(input).await;
+                assert_eq!(calls.load(Ordering::SeqCst), 1);
+                assert_eq!(plan.timeline.len(), usize::from(enabled));
+                assert!(plan.speech.is_some(), "motion policy must preserve speech");
+                assert_eq!(
+                    plan.safety_modifications
+                        .iter()
+                        .any(|change| change.reason == "auto_motion_disabled"),
+                    !enabled,
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn planner_and_safety_plugins_can_adjust_expression_plan() {
         struct MinimalPlanner;
         struct CapIntensityPolicy;
@@ -2458,6 +2539,45 @@ mod tests {
                 ..ExpressionAdapterState::default()
             },
         }
+    }
+
+    #[test]
+    fn wasm_expression_input_excludes_identity_memory_and_internal_state() {
+        let input = test_expression_input("public answer");
+        let value =
+            serde_json::to_value(super::super::abi::ExternalExpressionInput::from(&input)).unwrap();
+        let mut keys: Vec<_> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            [
+                "constraints",
+                "content_tone",
+                "dialogue_act",
+                "hardware_control",
+                "response_text",
+                "voice_output"
+            ]
+        );
+        let policy = AffectPolicySection::default();
+        let context = AppraisalContext {
+            channel_id: "secret-channel",
+            user_id: "secret-user",
+            user_text: "minimal text",
+            now: Utc::now(),
+            policy: &policy,
+        };
+        let value =
+            serde_json::to_value(super::super::abi::ExternalAppraisalContext::from(&context))
+                .unwrap();
+        assert_eq!(value.as_object().unwrap().len(), 2);
+        assert_eq!(value["user_text"], "minimal text");
+        assert!(value.get("now").is_some());
     }
 
     fn test_expression_input(text: &str) -> ExpressionInput {

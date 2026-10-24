@@ -21,6 +21,120 @@ fn submit(sender: &PlaybackSender, owner: &Arc<AudioSubmission>, pcm: &[i16]) {
     assert!(sender.submit(owner, pcm.len() as u64, &[], true).unwrap());
 }
 
+struct NativeWorkerSink<'a> {
+    sender: &'a PlaybackSender,
+    submissions: [Arc<AudioSubmission>; 2],
+    buffer: PlaybackBuffer,
+    renderer: Renderer,
+    clock: crate::module::context::AudioStreamClock,
+    output: Vec<i16>,
+    enqueued: Vec<MixerSource>,
+    pumps: usize,
+    stop_after_first_enqueue: bool,
+}
+
+impl PlaybackSink for NativeWorkerSink<'_> {
+    fn buffered_ms(&self) -> u64 {
+        self.buffer.len() as u64 / 32
+    }
+    fn source_buffered_ms(&self, source: MixerSource) -> u64 {
+        self.buffer.source_len(source) as u64 / 32
+    }
+    fn enqueue(&mut self, block: AudioBlock) -> Result<()> {
+        self.enqueued.push(block.source);
+        self.buffer
+            .append_rendered(self.renderer.render(block, 16000, 2)?)?;
+        if self.stop_after_first_enqueue && self.enqueued.len() == 1 {
+            self.sender.stop();
+        }
+        Ok(())
+    }
+    fn stop(&mut self) -> Result<()> {
+        self.buffer.clear();
+        self.renderer.clear();
+        if self.stop_after_first_enqueue && !self.enqueued.is_empty() {
+            self.sender.shutdown();
+        }
+        Ok(())
+    }
+    fn pump(&mut self) -> Result<()> {
+        self.pumps += 1;
+        ensure!(self.pumps <= 10, "worker did not finish bounded fixture");
+        let (chunk, lease) = self.buffer.alsa_chunk(320);
+        if !chunk.is_empty() {
+            let reading = self.clock.probe.unknown_clock();
+            confirm_alsa_write(
+                &mut self.buffer,
+                &chunk,
+                chunk.len() / 2,
+                lease,
+                &mut self.clock,
+                reading,
+            )?;
+            self.output.extend(chunk);
+        }
+        if self
+            .submissions
+            .iter()
+            .all(|source| source.snapshot(1).observation_end.is_some())
+        {
+            self.sender.shutdown();
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn worker_mixes_ready_lanes_before_native_write_and_prioritizes_stop_between_them() {
+    for stop_after_first_enqueue in [false, true] {
+        let (sender, receiver) = channel(8);
+        let generation = sender.begin().unwrap();
+        let voice = identified(&sender, &receiver, 1, generation);
+        let cue = cue(&sender, &voice, 16000);
+        submit(&sender, &voice, &[10000; 640]);
+        submit(&sender, &cue, &[5000; 640]);
+        let (bus, clock) = reference_clock(16000, 2);
+        let mut sink = NativeWorkerSink {
+            sender: &sender,
+            submissions: [voice.clone(), cue.clone()],
+            buffer: PlaybackBuffer::new(receiver.generation()),
+            renderer: Renderer::default(),
+            clock,
+            output: Vec::new(),
+            enqueued: Vec::new(),
+            pumps: 0,
+            stop_after_first_enqueue,
+        };
+        run(receiver, &mut sink, 300).unwrap();
+        let reference: Vec<_> = reference_data(&bus)
+            .into_iter()
+            .flat_map(|block| block.samples[..block.sample_count].to_vec())
+            .collect();
+        if stop_after_first_enqueue {
+            assert_eq!(sink.enqueued, [MixerSource::Voice]);
+            assert_eq!(sink.pumps, 0);
+            assert!(sink.output.is_empty());
+            assert!(reference.is_empty());
+            for source in [&voice, &cue] {
+                assert_eq!(source.snapshot(1).submitted_source_frames, Some(0));
+            }
+        } else {
+            assert_eq!(sink.enqueued, MixerSource::ALL.repeat(2));
+            assert_eq!(sink.pumps, 2);
+            assert_eq!(sink.output, vec![11000; 1280]);
+            assert_eq!(reference, vec![11000.0 / 32768.0; 1280]);
+            for source in [&voice, &cue] {
+                let progress = source.snapshot(1);
+                assert_eq!(progress.submitted_source_frames, Some(640));
+                assert_eq!(
+                    progress.observation_end,
+                    Some(ObservationEnd::SubmissionFinished)
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn cpal_mixes_voice_and_quiet_cue_limits_peaks_and_references_final_samples() {
     let (sender, receiver) = channel(8);

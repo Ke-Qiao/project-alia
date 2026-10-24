@@ -7,7 +7,9 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
+mod control;
 mod duplex;
+pub use control::CaptureControl;
 pub mod transport;
 
 use super::context::{AudioBus, EventBus};
@@ -33,6 +35,7 @@ pub struct SpeechPipeline {
     keypair_path: PathBuf,
     cancel_token: CancellationToken,
     task: Mutex<Option<SpeechTask>>,
+    capture_control: Arc<CaptureControl>,
 }
 
 struct SpeechTask {
@@ -68,7 +71,12 @@ impl SpeechPipeline {
             keypair_path: identity_config.keypair_path.clone(),
             cancel_token,
             task: Mutex::new(None),
+            capture_control: Arc::new(CaptureControl::new(device_boot_id.to_string())),
         }
+    }
+
+    pub fn capture_control(&self) -> Arc<CaptureControl> {
+        self.capture_control.clone()
     }
 }
 
@@ -95,7 +103,9 @@ impl ModuleLifecycle for SpeechPipeline {
         self.vad.reset()?;
         let cancel = self.cancel_token.child_token();
         let runtime = duplex::Runtime {
+            control: self.capture_control.attach()?,
             audio: self.audio_bus.subscribe(),
+            capture_stopped: self.audio_bus.capture_stopped(),
             events: self.event_bus.subscribe(),
             event_bus: self.event_bus.clone(),
             wakeword: self.wakeword.clone(),

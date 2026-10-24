@@ -113,7 +113,7 @@ Use fragments for implementation details:
   parameters
 - `resources/*.toml`: directories, runtime roots, model/service resource paths,
   and resource policy lists such as cache exclusion keywords
-- `plugins/*.toml`: future plugin-owned configuration
+- `plugins/*.toml`: plugin configuration, including MCP services and the WASM package directory
 
 Relative paths are resolved from the base config file directory.
 

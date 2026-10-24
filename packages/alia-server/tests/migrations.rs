@@ -94,6 +94,126 @@ impl TestDatabase {
 }
 
 #[tokio::test]
+async fn motion_rename_preserves_historical_json_and_unknown_without_replay() {
+    use alia_core::embodiment::motion::{MotionCommand, MotionProgress};
+    use serde_json::{Value, json};
+
+    let database = TestDatabase::new().await;
+    let old = *MIGRATIONS
+        .iter()
+        .find(|m| m.version == "m20260913_000006_body_delivery.sql")
+        .unwrap();
+    let rename = *MIGRATIONS
+        .iter()
+        .find(|m| m.version == "m20261019_000001_rename_body_delivery.sql")
+        .unwrap();
+    let prerequisites = Migration {
+        version: "000_motion_fixture",
+        sql: "CREATE TABLE delivery_responses(response_id UUID PRIMARY KEY); CREATE TABLE delivery_events(response_id UUID NOT NULL, kind TEXT NOT NULL, payload JSONB NOT NULL);",
+    };
+    migrations::apply(&database.db, &[prerequisites, old])
+        .await
+        .unwrap();
+    let response_id = Uuid::new_v4();
+    let delivery_id = Uuid::new_v4();
+    let dispatch_id = Uuid::new_v4();
+    let boot = Uuid::new_v4();
+    // These are the existing persisted JSON shapes: Rust type/module names do
+    // not appear in either command or receipt evidence.
+    let command_json = json!({
+        "identity": {"lease": {"device_boot_id": boot, "server_instance_id": Uuid::new_v4(), "generation": 1}, "sequence": 1},
+        "plan_id": Uuid::new_v4(), "source_command_id": "historical-command", "owner_id": Uuid::new_v4(),
+        "scope": {"kind": "nonvoice", "scope_id": Uuid::new_v4()}, "priority": "normal", "interruptible": true,
+        "actions": [{"duration_ms": 400, "intensity": 0.5, "motion": {"kind": "small_nod"}}]
+    });
+    let checkpoint_json = json!({
+        "identity": command_json["identity"], "receipt_sequence": 1,
+        "accepted_actions": 1, "started_actions": 1, "submitted_actions": 1,
+        "submitted_frames": 3, "partial_frame": null, "last_partial_channels": [], "last_uncertain_channels": [],
+        "backend": {"instance_id": boot, "boundary": "simulated", "channels": 3},
+        "writer_quiescent": true, "position_confirmed_actions": null, "end": {"kind": "submitted"}
+    });
+    let command: MotionCommand = serde_json::from_value(command_json.clone()).unwrap();
+    command.validate().unwrap();
+    let checkpoint: MotionProgress = serde_json::from_value(checkpoint_json.clone()).unwrap();
+    checkpoint.validate(None, &command).unwrap();
+    database
+        .db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO delivery_responses VALUES($1)",
+            [response_id.into()],
+        ))
+        .await
+        .unwrap();
+    database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        "INSERT INTO body_deliveries(delivery_id,response_id,output_key,channel_id,source_command_id,dispatch_id,identity,command,status,unknown_reason,lease_expires_at,observation_deadline_at) VALUES($1,$2,'speech_start','device','historical-command',$3,$4,$5,'unknown','original ACK lost',clock_timestamp(),clock_timestamp())",
+        vec![delivery_id.into(), response_id.into(), dispatch_id.into(), command_json["identity"].clone().into(), command_json.clone().into()])).await.unwrap();
+    database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        "INSERT INTO body_delivery_late_checkpoints(delivery_id,receipt_sequence,progress) VALUES($1,1,$2)",
+        vec![delivery_id.into(), checkpoint_json.clone().into()])).await.unwrap();
+    database
+        .db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO delivery_events VALUES($1,'body_dispatch',$2)",
+            vec![
+                response_id.into(),
+                json!({"body_delivery_id": delivery_id, "command": command_json}).into(),
+            ],
+        ))
+        .await
+        .unwrap();
+
+    let report = migrations::apply(&database.db, &[prerequisites, old, rename])
+        .await
+        .unwrap();
+    assert_eq!((report.applied, report.unchanged), (1, 2));
+    assert!(!database.table_exists("body_deliveries").await);
+    assert!(
+        !database
+            .table_exists("body_delivery_late_checkpoints")
+            .await
+    );
+    let row = database.db.query_one(Statement::from_string(DatabaseBackend::Postgres,
+        "SELECT d.status,d.dispatch_id,d.command,c.progress FROM motion_deliveries d JOIN motion_delivery_late_checkpoints c USING(delivery_id)")).await.unwrap().unwrap();
+    assert_eq!(row.try_get::<String>("", "status").unwrap(), "unknown");
+    assert_eq!(row.try_get::<Uuid>("", "dispatch_id").unwrap(), dispatch_id);
+    assert_eq!(row.try_get::<Value>("", "command").unwrap(), command_json);
+    assert_eq!(
+        row.try_get::<Value>("", "progress").unwrap(),
+        checkpoint_json
+    );
+    let event = database
+        .db
+        .query_one(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT kind,payload FROM delivery_events",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        event.try_get::<String>("", "kind").unwrap(),
+        "motion_dispatch"
+    );
+    assert_eq!(
+        event.try_get::<Value>("", "payload").unwrap(),
+        json!({"motion_delivery_id": delivery_id, "command": command_json})
+    );
+    let residual = database.db.query_one(Statement::from_string(DatabaseBackend::Postgres,
+        "SELECT count(*) AS count FROM pg_constraint WHERE conrelid IN ('motion_deliveries'::regclass, 'motion_delivery_late_checkpoints'::regclass) AND conname LIKE 'body_%'")).await.unwrap().unwrap();
+    assert_eq!(residual.try_get::<i64>("", "count").unwrap(), 0);
+    assert!(!database.table_exists("body_deliveries_expiry").await);
+    assert!(database.table_exists("motion_deliveries_expiry").await);
+    let repeated = migrations::apply(&database.db, &[prerequisites, old, rename])
+        .await
+        .unwrap();
+    assert_eq!((repeated.applied, repeated.unchanged), (0, 3));
+    database.cleanup().await;
+}
+
+#[tokio::test]
 async fn failed_migration_rolls_back_sql_and_journal_then_recovers() {
     let database = TestDatabase::new().await;
     let initial = Migration {

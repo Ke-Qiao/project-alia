@@ -1,0 +1,4 @@
+# Uncomment to enable the administrator-only WASM package management API.
+# Installed packages remain inactive until their exact implementation pin is granted.
+[plugins]
+# wasm_dir = "wasm_packages"

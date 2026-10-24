@@ -17,20 +17,18 @@ use crate::event::EventBus;
 use crate::modules::delivery::transport::AudioPayload;
 use crate::modules::delivery::transport::DeliveryTarget;
 use crate::modules::delivery::transport::DeliveryTransport as _;
+use crate::modules::embodiment::sensors::SensorRegistry;
 use crate::modules::interaction::conversation::ConversationStore;
 use crate::modules::memory::context::ContextBinding;
 use crate::modules::platform::lifecycle::ModuleLifecycle;
-use crate::modules::platform::sensors::SensorRegistry;
+use crate::providers::llm::{LlmService, TextStream};
 use crate::{
-    modules::interaction::conversation::ConversationEventEntry,
-    providers::adapter::{ChatMessage, LlmAdapter},
+    modules::interaction::conversation::ConversationEventEntry, providers::adapter::ChatMessage,
 };
 use alia_core::delivery::ObservationEnd;
 use alia_core::text_delivery::{TextFrame, TextIdentity, TextProgress};
 use async_trait::async_trait;
-use futures::Stream;
 use sha2::{Digest, Sha256};
-use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -163,27 +161,26 @@ impl ModuleLifecycle for ObservedLlm {
         "test_llm"
     }
 }
-#[async_trait]
-impl LlmAdapter for ObservedLlm {
-    async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
-        let text = messages
-            .iter()
-            .rev()
-            .find(|m| m.role == "user")
-            .unwrap()
-            .content
-            .clone();
-        self.started.send(text).unwrap();
-        if self.block {
-            std::future::pending::<()>().await;
-        }
-        Ok("recognized reply".into())
-    }
-    async fn chat_stream(
-        &self,
-        _: &[ChatMessage],
-    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
-        panic!("test channel is buffered");
+impl ObservedLlm {
+    fn service(self: &Arc<Self>) -> Arc<LlmService> {
+        let fixture = self.clone();
+        Arc::new(LlmService::test_text("ObservedLlm", move |messages| {
+            let fixture = fixture.clone();
+            async move {
+                let text = messages
+                    .iter()
+                    .rev()
+                    .find(|m| m.role == "user")
+                    .unwrap()
+                    .content
+                    .clone();
+                fixture.started.send(text).unwrap();
+                if fixture.block {
+                    std::future::pending::<()>().await;
+                }
+                Ok("recognized reply".into())
+            }
+        }))
     }
 }
 #[derive(Default)]
@@ -533,7 +530,8 @@ impl Fixture {
         let llm = Arc::new(ObservedLlm {
             started: started_tx,
             block,
-        });
+        })
+        .service();
         let conversation = Arc::new(Conversation::default());
         let channels = Arc::new(ChannelRegistry::new());
         let sensors = Arc::new(SensorRegistry::new(Default::default()));
@@ -995,7 +993,8 @@ async fn saturated_voice_queue_rejects_overflow_and_skips_cancelled_input() {
         let llm = Arc::new(ObservedLlm {
             started: started_tx,
             block: true,
-        });
+        })
+        .service();
         let modules = Arc::get_mut(&mut fixture.modules).unwrap();
         modules.llm = llm.clone();
         modules.minor_llm = llm.clone();
@@ -1214,27 +1213,6 @@ async fn sentence_hold_retains_in_flight_result_and_defers_next_tts() {
 }
 
 async fn run_sentence_budget_case(fail_tts: bool, pause_first_request: bool) {
-    struct Streaming;
-    impl ModuleLifecycle for Streaming {
-        fn name(&self) -> &'static str {
-            "streaming-test"
-        }
-    }
-    #[async_trait]
-    impl LlmAdapter for Streaming {
-        async fn chat(&self, _: &[ChatMessage]) -> anyhow::Result<String> {
-            panic!("this case must use streaming")
-        }
-        async fn chat_stream(
-            &self,
-            _: &[ChatMessage],
-        ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
-            Ok(Box::pin(futures::stream::iter([
-                Ok("First sentence. ".into()),
-                Ok("Second sentence.".into()),
-            ])))
-        }
-    }
     struct Speech {
         calls: std::sync::atomic::AtomicUsize,
         db: sea_orm::DatabaseConnection,
@@ -1313,7 +1291,9 @@ async fn run_sentence_budget_case(fail_tts: bool, pause_first_request: bool) {
             first_completed: tokio::sync::Semaphore::new(0),
             second_started: tokio::sync::Semaphore::new(0),
         });
-        let llm = Arc::new(Streaming);
+        let llm = Arc::new(LlmService::test_stream("streaming-test", |_| async {
+            Ok(Box::pin(futures::stream::iter([Ok("First sentence. ".into()), Ok("Second sentence.".into())])) as TextStream)
+        }));
         let modules = Arc::get_mut(&mut fixture.modules).unwrap();
         modules.llm = llm.clone();
         modules.minor_llm = llm.clone();

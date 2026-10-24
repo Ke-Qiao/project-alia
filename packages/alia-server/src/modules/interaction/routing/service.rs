@@ -2,9 +2,10 @@
 //!
 //! The router asks the minor model to classify the current turn, then routes to
 //! a skill context, the minor LLM, or the major LLM. It is intentionally
-//! provider-neutral: the minor model is supplied through `LlmAdapter`, so the
+//! provider-neutral: the minor model is supplied through `LlmService`, so the
 //! server does not depend on a specific local model runtime.
 
+use crate::providers::llm::LlmService;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,7 +20,7 @@ use super::super::persona::sanitize_assistant_name;
 use super::super::skills::SkillCandidate;
 use super::{RouteDecision, RouterInput, ToolSelectionInput};
 use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{ChatMessage, LlmAdapter};
+use crate::providers::adapter::ChatMessage;
 use crate::settings::values::{bool_setting, u64_setting};
 
 #[derive(Debug, Deserialize)]
@@ -69,7 +70,7 @@ impl RouterConfig {
 #[derive(Clone)]
 struct RouterState {
     config: RouterConfig,
-    minor_llm: Option<Arc<dyn LlmAdapter>>,
+    minor_llm: Option<Arc<LlmService>>,
 }
 
 const ASSISTANT_NAME_PLACEHOLDER: &str = "{assistant_name}";
@@ -281,10 +282,7 @@ pub struct RouterService {
 }
 
 impl RouterService {
-    pub fn new(
-        config: RouterConfig,
-        minor_llm: Option<Arc<dyn LlmAdapter>>,
-    ) -> anyhow::Result<Self> {
+    pub fn new(config: RouterConfig, minor_llm: Option<Arc<LlmService>>) -> anyhow::Result<Self> {
         if !config.minor_llm_enabled && !config.major_llm_enabled {
             anyhow::bail!(
                 "invalid routing policy: at least one of minor_llm_enabled or major_llm_enabled must be true"
@@ -303,7 +301,7 @@ impl RouterService {
     }
 
     async fn classify(
-        minor_llm: Arc<dyn LlmAdapter>,
+        minor_llm: Arc<LlmService>,
         config: &RouterConfig,
         input: &RouterInput,
     ) -> anyhow::Result<Classification> {
@@ -325,7 +323,7 @@ impl RouterService {
 
         let raw = timeout(
             Duration::from_secs(config.timeout_sec),
-            minor_llm.chat(&messages),
+            minor_llm.text(&messages),
         )
         .await
         .map_err(|_| anyhow::anyhow!("router classification timed out"))??;
@@ -351,7 +349,7 @@ impl RouterService {
     }
 
     async fn select_tools_with_minor_model(
-        minor_llm: Arc<dyn LlmAdapter>,
+        minor_llm: Arc<LlmService>,
         config: &RouterConfig,
         input: &ToolSelectionInput,
     ) -> anyhow::Result<Option<Vec<String>>> {
@@ -380,7 +378,7 @@ impl RouterService {
 
         let raw = timeout(
             Duration::from_secs(config.timeout_sec),
-            minor_llm.chat(&messages),
+            minor_llm.text(&messages),
         )
         .await
         .map_err(|_| anyhow::anyhow!("minor tool selection timed out"))??;
@@ -587,9 +585,9 @@ pub fn parse_tool_selection_response(
 mod tests {
     use super::*;
 
-    #[derive(Default)]
+    #[derive(Default, Clone)]
     struct CandidateClassifier {
-        requests: std::sync::Mutex<Vec<Vec<ChatMessage>>>,
+        requests: Arc<std::sync::Mutex<Vec<Vec<ChatMessage>>>>,
     }
 
     #[async_trait]
@@ -611,7 +609,7 @@ mod tests {
                 minor_llm_enabled: true,
                 major_llm_enabled: true,
             },
-            Some(Arc::new(CandidateClassifier::default())),
+            Some(Arc::new(CandidateClassifier::default()).service()),
         )
         .unwrap();
         for (minor_enabled, major_enabled) in [(true, true), (true, false), (false, true)] {
@@ -632,20 +630,21 @@ mod tests {
         }
     }
 
-    #[async_trait]
-    impl LlmAdapter for CandidateClassifier {
-        async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
-            self.requests.lock().unwrap().push(messages.to_vec());
-            Ok(r#"{"route":"skill","skill_name":"custom_skill","confidence":0}"#.into())
-        }
-
-        async fn chat_stream(
-            &self,
-            _: &[ChatMessage],
-        ) -> anyhow::Result<
-            std::pin::Pin<Box<dyn futures::Stream<Item = anyhow::Result<String>> + Send>>,
-        > {
-            unreachable!("routing uses buffered classification");
+    impl CandidateClassifier {
+        fn service(self: &Arc<Self>) -> Arc<LlmService> {
+            let fixture = self.clone();
+            Arc::new(
+                LlmService::test_text("candidate_classifier", move |messages| {
+                    fixture.requests.lock().unwrap().push(messages);
+                    async {
+                        Ok(
+                            r#"{"route":"skill","skill_name":"custom_skill","confidence":0}"#
+                                .into(),
+                        )
+                    }
+                })
+                .with_lifecycle(Box::new(self.as_ref().clone())),
+            )
         }
     }
 
@@ -658,7 +657,7 @@ mod tests {
                 minor_llm_enabled: true,
                 major_llm_enabled: true,
             },
-            Some(model.clone()),
+            Some(model.service()),
         )
         .unwrap();
         let mut input = RouterInput {

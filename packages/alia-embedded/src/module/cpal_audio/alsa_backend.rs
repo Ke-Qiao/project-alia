@@ -80,8 +80,9 @@ pub(super) fn run_alsa_capture_thread(
     let mut raw_buffer_i32 = vec![0_i32; sample_count];
 
     loop {
-        if control_rx.try_recv().is_ok() {
-            break;
+        match control_rx.try_recv() {
+            Ok(()) | Err(mpsc::TryRecvError::Disconnected) => break,
+            Err(mpsc::TryRecvError::Empty) => {}
         }
 
         let ready = handle_capture_wait(pcm, &mut converter, &clock.probe, pcm.wait(Some(100)))?;
@@ -665,14 +666,6 @@ fn recover_capture_error(
     } else {
         Err(error).context("ALSA capture backend failed")
     }
-}
-
-pub(super) fn alsa_capture_device_available(device_name: &str) -> bool {
-    AlsaPcm::new(device_name, AlsaDirection::Capture, true).is_ok()
-}
-
-pub(super) fn alsa_playback_device_available(device_name: &str) -> bool {
-    AlsaPcm::new(device_name, AlsaDirection::Playback, true).is_ok()
 }
 
 fn preferred_alsa_capture_format(hwp: &AlsaHwParams<'_>) -> AlsaCaptureSampleFormat {

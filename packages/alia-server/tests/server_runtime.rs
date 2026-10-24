@@ -1,4 +1,8 @@
 //! Real PostgreSQL and owned runtime resources. Missing infrastructure fails.
+#[path = "support/llm.rs"]
+mod llm_fixture;
+use alia_server::providers::llm::LlmService;
+use llm_fixture::test_text;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
@@ -40,6 +44,9 @@ fn runtime_phase(phase: &str) {
 #[path = "server_runtime/websocket.rs"]
 mod websocket;
 
+#[path = "server_runtime/auth.rs"]
+mod auth;
+
 #[path = "server_runtime/insights.rs"]
 mod insights;
 
@@ -52,8 +59,8 @@ mod delivery;
 #[path = "server_runtime/expression.rs"]
 mod expression;
 
-#[path = "server_runtime/body.rs"]
-mod body;
+#[path = "server_runtime/motion.rs"]
+mod motion;
 
 #[path = "server_runtime/context_policy.rs"]
 mod context_policy;
@@ -91,11 +98,21 @@ mod companion;
 #[path = "server_runtime/devices.rs"]
 mod devices;
 
+#[cfg(feature = "channel-embedded")]
+#[path = "server_runtime/paired_noop.rs"]
+mod paired_noop;
+
 #[path = "server_runtime/skills.rs"]
 mod skills;
 
 #[path = "server_runtime/classifier.rs"]
 mod classifier;
+
+#[path = "server_runtime/effects.rs"]
+mod effects;
+
+#[path = "server_runtime/embodiment.rs"]
+mod embodiment;
 
 #[cfg(feature = "llm-openai")]
 #[path = "server_runtime/health.rs"]
@@ -870,21 +887,34 @@ struct EffectProbe {
     channels: Arc<alia_server::channels::ChannelRegistry>,
     plugin: Arc<ProbeState>,
 }
-#[async_trait]
-impl alia_server::providers::adapter::ToolExecutor for EffectProbe {
-    fn definition(&self) -> alia_server::providers::adapter::ToolDefinition {
-        alia_server::providers::adapter::ToolDefinition {
-            name: "runtime_effect_probe".into(),
-            description: "Runtime dependency test".into(),
-            parameters: serde_json::json!({"type":"object"}),
-            routing_hints: vec![],
-            source: "builtin".into(),
-            require_confirmation: false,
-            required_role: None,
-        }
-    }
-    fn implementation_revision(&self) -> Option<String> {
-        Some("runtime-effect-probe-v1".into())
+impl EffectProbe {
+    fn entry(self: Arc<Self>) -> anyhow::Result<Arc<alia_server::providers::adapter::ToolEntry>> {
+        let dynamic = rig_core::tool::DynamicTool::new_with_context(
+            rig_core::message::ToolName::new("runtime_effect_probe")?,
+            "Runtime dependency test",
+            serde_json::json!({"type":"object"}),
+            move |context, args| {
+                let owner = self.clone();
+                Box::pin(async move {
+                    let invocation = context
+                        .require::<alia_server::providers::adapter::ToolContext>()
+                        .map_err(alia_server::tools::entry::tool_error)?;
+                    owner
+                        .execute(args, &invocation)
+                        .await
+                        .map_err(alia_server::tools::entry::tool_error)?
+                        .publish(context)
+                })
+            },
+        );
+        alia_server::providers::adapter::ToolEntry::dynamic(
+            dynamic,
+            "builtin",
+            "runtime-effect-probe-v1",
+            false,
+            None,
+            serde_json::Value::Null,
+        )
     }
     async fn execute(
         &self,
@@ -909,6 +939,7 @@ impl alia_server::providers::adapter::ToolExecutor for EffectProbe {
             })
             .await?;
         Ok(alia_server::providers::adapter::ToolResult {
+            presentation: None,
             call_id: String::new(),
             success: true,
             output: serde_json::json!({"dependency_check":"alive"}),
@@ -933,7 +964,7 @@ async fn dispatched_execution_retains_outbound_plugin_and_database_until_receipt
         *plugin.db.lock().unwrap() = Some(state.db.clone());
         *outbound.db.lock().unwrap() = Some(state.db.clone());
         let release = Arc::new(Semaphore::new(0)); let entered = Arc::new(Semaphore::new(0));
-        state.modules.tools.register_tool_executor("builtin", Arc::new(EffectProbe { release: release.clone(), entered: entered.clone(), channels: state.channels.clone(), plugin: plugin.clone() })).await.unwrap();
+        state.modules.tools.register_tool_executor("builtin", Arc::new(EffectProbe { release: release.clone(), entered: entered.clone(), channels: state.channels.clone(), plugin: plugin.clone() }).entry().unwrap()).await.unwrap();
         let user = Uuid::new_v4();
         state.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Runtime test','unused','user','active')",
@@ -973,3 +1004,6 @@ async fn dispatched_execution_retains_outbound_plugin_and_database_until_receipt
         assert!(state.db.execute_unprepared("SELECT 1").await.is_err());
     }).await;
 }
+
+#[path = "server_runtime/wasm.rs"]
+mod wasm;

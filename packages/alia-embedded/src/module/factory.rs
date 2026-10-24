@@ -15,7 +15,9 @@ use super::discovery::{BleDiscovery, MdnsDiscovery};
 use super::motion::MotionRuntime;
 use super::noop::*;
 #[cfg(feature = "sherpa-onnx")]
-use super::sherpa::{SherpaOnnxKws, SherpaOnnxVad};
+use super::sherpa::SherpaOnnxKws;
+#[cfg(feature = "sherpa-onnx")]
+use super::silero::SileroVad;
 use super::traits::*;
 use super::vision::YuNetFaceTracker;
 use super::vision_debug::VisionDebugHub;
@@ -25,6 +27,7 @@ use super::volume::AudioVolumeState;
 pub fn create_wakeword(config: &EmbeddedConfig) -> Result<Box<dyn WakeWordEngine>> {
     match config.modules.wakeword.as_str() {
         "sherpa_onnx" => create_sherpa_wakeword(config),
+        "r1" => Ok(Box::new(super::r1::R1WakeWord::new(&config.r1)?)),
         "porcupine" => bail!("porcupine wakeword is not implemented"),
         "noop" => Ok(Box::new(NoopWakeWord)),
         other => bail!("unknown wakeword engine: {other}"),
@@ -34,7 +37,7 @@ pub fn create_wakeword(config: &EmbeddedConfig) -> Result<Box<dyn WakeWordEngine
 /// Create the voice activity detector based on config.
 pub fn create_vad(config: &EmbeddedConfig) -> Result<Box<dyn VoiceActivityEngine>> {
     match config.modules.vad.as_str() {
-        "sherpa_onnx" => create_sherpa_vad(config),
+        "silero" => create_silero_vad(config),
         "noop" => Ok(Box::new(NoopVad)),
         other => bail!("unknown vad engine: {other}"),
     }
@@ -60,13 +63,13 @@ fn create_sherpa_wakeword(_config: &EmbeddedConfig) -> Result<Box<dyn WakeWordEn
 }
 
 #[cfg(feature = "sherpa-onnx")]
-fn create_sherpa_vad(config: &EmbeddedConfig) -> Result<Box<dyn VoiceActivityEngine>> {
-    Ok(Box::new(SherpaOnnxVad::new(&config.vad)?))
+fn create_silero_vad(config: &EmbeddedConfig) -> Result<Box<dyn VoiceActivityEngine>> {
+    Ok(Box::new(SileroVad::new(&config.vad)?))
 }
 
 #[cfg(not(feature = "sherpa-onnx"))]
-fn create_sherpa_vad(_config: &EmbeddedConfig) -> Result<Box<dyn VoiceActivityEngine>> {
-    bail!("module vad='sherpa_onnx' requires the alia-embedded 'sherpa-onnx' feature")
+fn create_silero_vad(_config: &EmbeddedConfig) -> Result<Box<dyn VoiceActivityEngine>> {
+    bail!("module vad='silero' requires the alia-embedded 'sherpa-onnx' feature")
 }
 
 /// Create the audio capture backend based on config.

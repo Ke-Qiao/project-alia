@@ -1,0 +1,11 @@
+{
+  "name": "rust_demo",
+  "version": "1",
+  "abi_version": 1,
+  "tools": [{
+    "name": "wasm_echo", "description": "Echo the supplied public JSON object.",
+    "export": "alia_tool", "parameters": {"type":"object"},
+    "require_confirmation": false, "required_role": null
+  }],
+  "expression": {"abi_version":3,"capabilities":{"appraisal_engine":true}}
+}

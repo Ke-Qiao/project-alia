@@ -199,7 +199,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     kind: 'config',
     status: 'server.toml',
     source: 'resources/* and plugins/*',
-    namespaces: ['resources', 'skills_dir', 'external_expression_plugins_dir', 'plugin.*'],
+    namespaces: ['resources', 'skills_dir', 'wasm_dir', 'plugin.*'],
     links: [
       {
         href: '/skills' as Href,

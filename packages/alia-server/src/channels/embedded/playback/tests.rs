@@ -352,6 +352,7 @@ struct EvidenceObserver {
     changed: tokio::sync::Notify,
     start_gate: Option<Arc<tokio::sync::Semaphore>>,
     offer_gate: Option<Arc<tokio::sync::Semaphore>>,
+    terminal_gate: Option<Arc<tokio::sync::Semaphore>>,
 }
 #[async_trait::async_trait]
 impl PlaybackObserver for EvidenceObserver {
@@ -372,8 +373,12 @@ impl PlaybackObserver for EvidenceObserver {
         Ok(())
     }
     async fn progress(&self, progress: PlaybackProgress) -> Result<()> {
+        let terminal = progress.observation_end.is_some();
         self.progress.lock().unwrap().push(progress);
         self.changed.notify_one();
+        if terminal && let Some(gate) = &self.terminal_gate {
+            gate.acquire().await?.forget();
+        }
         Ok(())
     }
 }
@@ -398,6 +403,32 @@ enum FenceProof {
     Latest,
     Missing,
     Submitted(u64),
+    OpenStream,
+    TerminalThenMissing(proto::ObservationEnd),
+}
+struct StreamFence {
+    push_open: AtomicBool,
+    input_closed: AtomicBool,
+    entered: tokio::sync::Semaphore,
+    release: tokio::sync::Semaphore,
+    probe: tokio::sync::Semaphore,
+}
+impl Default for StreamFence {
+    fn default() -> Self {
+        Self {
+            push_open: AtomicBool::new(false),
+            input_closed: AtomicBool::new(false),
+            entered: tokio::sync::Semaphore::new(0),
+            release: tokio::sync::Semaphore::new(0),
+            probe: tokio::sync::Semaphore::new(0),
+        }
+    }
+}
+struct PushOpen(Arc<StreamFence>);
+impl Drop for PushOpen {
+    fn drop(&mut self) {
+        self.0.push_open.store(false, Ordering::Release);
+    }
 }
 struct EvidenceDevice {
     proof: FenceProof,
@@ -405,6 +436,7 @@ struct EvidenceDevice {
     wire: Arc<std::sync::Mutex<Vec<proto::PlaybackFrame>>>,
     commands: std::sync::Mutex<Option<mpsc::UnboundedReceiver<Option<u64>>>>,
     fences: Arc<std::sync::Mutex<Vec<proto::FenceRequest>>>,
+    stream_fence: Arc<StreamFence>,
 }
 #[tonic::async_trait]
 impl proto::playback_server::Playback for EvidenceDevice {
@@ -452,7 +484,15 @@ impl proto::playback_server::Playback for EvidenceDevice {
         let mut incoming = request.into_inner();
         let wire = self.wire.clone();
         let observer = self.observer.clone();
+        let stream_fence = self.stream_fence.clone();
+        let proof = self.proof;
+        let streaming = matches!(
+            proof,
+            FenceProof::OpenStream | FenceProof::TerminalThenMissing(_)
+        );
         let stream = async_stream::stream! {
+            stream_fence.push_open.store(true, Ordering::Release);
+            let _open = PushOpen(stream_fence.clone());
             let first = incoming.message().await.unwrap().unwrap();
             assert_eq!(*observer.format.lock().unwrap(), Some((16000, 1)));
             let Some(playback_frame::Payload::Start(start)) = &first.payload else { panic!("expected Start"); };
@@ -471,7 +511,29 @@ impl proto::playback_server::Playback for EvidenceDevice {
             };
             yield Ok(receipt.clone());
             let mut ended = false;
-            while let Some(frame) = incoming.message().await.unwrap() {
+            loop {
+                let frame = tokio::select! { biased;
+                    frame = incoming.message() => match frame {
+                        Ok(Some(frame)) => frame,
+                        _ => { stream_fence.input_closed.store(true, Ordering::Release); break; },
+                    },
+                    Some(_) = commands.recv(), if streaming => {
+                        if let FenceProof::TerminalThenMissing(end) = proof {
+                            receipt.receipt_sequence += 1;
+                            receipt.observation_end = end as i32;
+                            receipt.state = if end == proto::ObservationEnd::Failed {
+                                proto::PlaybackState::Failed as i32
+                            } else {
+                                proto::PlaybackState::Unknown as i32
+                            };
+                            receipt.reason = "native backend stopped".into();
+                            yield Ok(receipt.clone());
+                            std::future::pending::<()>().await;
+                        }
+                        stream_fence.probe.add_permits(1);
+                        continue;
+                    },
+                };
                 wire.lock().unwrap().push(frame.clone());
                 match frame.payload.unwrap() {
                     playback_frame::Payload::Audio(audio) => {
@@ -487,6 +549,7 @@ impl proto::playback_server::Playback for EvidenceDevice {
                     yield Ok(receipt.clone());
                 }
             }
+            if streaming && !ended { return; }
             assert!(ended);
             receipt.end_accepted = true;
             receipt.receipt_sequence += 1;
@@ -510,6 +573,10 @@ impl proto::playback_server::Playback for EvidenceDevice {
     ) -> Result<tonic::Response<proto::FenceReceipt>, tonic::Status> {
         let request = request.into_inner();
         self.fences.lock().unwrap().push(request.clone());
+        if matches!(self.proof, FenceProof::OpenStream) {
+            self.stream_fence.entered.add_permits(1);
+            self.stream_fence.release.acquire().await.unwrap().forget();
+        }
         let mut final_progress =
             self.observer
                 .progress
@@ -538,9 +605,20 @@ impl proto::playback_server::Playback for EvidenceDevice {
                 });
         match self.proof {
             FenceProof::Latest => {}
-            FenceProof::Missing => final_progress = None,
+            FenceProof::Missing | FenceProof::TerminalThenMissing(_) => final_progress = None,
             FenceProof::Submitted(frames) => {
                 final_progress.as_mut().unwrap().submitted_samples = Some(frames)
+            }
+            FenceProof::OpenStream => {
+                if !self.stream_fence.push_open.load(Ordering::Acquire)
+                    || self.stream_fence.input_closed.load(Ordering::Acquire)
+                {
+                    let progress = final_progress.as_mut().unwrap();
+                    progress.observation_end = proto::ObservationEnd::Unknown as i32;
+                    progress.state = proto::PlaybackState::Unknown as i32;
+                    progress.reason =
+                        "Push disconnected before its exact cancellation fence".into();
+                }
             }
         }
         Ok(tonic::Response::new(proto::FenceReceipt {
@@ -558,6 +636,7 @@ struct EvidenceFixture {
     commands: mpsc::UnboundedSender<Option<u64>>,
     wire: Arc<std::sync::Mutex<Vec<proto::PlaybackFrame>>>,
     fences: Arc<std::sync::Mutex<Vec<proto::FenceRequest>>>,
+    stream_fence: Arc<StreamFence>,
     shutdown: CancellationToken,
     server: tokio::task::JoinHandle<()>,
 }
@@ -569,12 +648,14 @@ impl EvidenceFixture {
         let (commands, receiver) = mpsc::unbounded_channel();
         let wire = Arc::new(std::sync::Mutex::new(Vec::new()));
         let fences = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let stream_fence = Arc::new(StreamFence::default());
         let device = EvidenceDevice {
             proof,
             observer,
             wire: wire.clone(),
             commands: std::sync::Mutex::new(Some(receiver)),
             fences: fences.clone(),
+            stream_fence: stream_fence.clone(),
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
@@ -594,6 +675,7 @@ impl EvidenceFixture {
             commands,
             wire,
             fences,
+            stream_fence,
             shutdown,
             server,
         }
@@ -894,5 +976,199 @@ async fn precise_cancel_merges_final_prefix_and_bare_control_ack_is_unknown() {
             _ => unreachable!(),
         }
         f.finish().await;
+    }
+}
+
+enum StreamingCancellation {
+    Token,
+    ProducerError,
+    ReceiptTimeout,
+}
+
+async fn streaming_cancellation_keeps_push_until_fenced(cause: StreamingCancellation) {
+    let observer = Arc::new(EvidenceObserver::default());
+    let f = EvidenceFixture::with_proof(observer.clone(), FenceProof::OpenStream).await;
+    let id = delivery_identity();
+    let cancel = CancellationToken::new();
+    let (source, receiver) = mpsc::channel(2);
+    let audio = stereo_audio().chain(tokio_stream::wrappers::ReceiverStream::new(receiver));
+    let delivery = tokio::spawn(push(
+        f.client.clone(),
+        id,
+        binding(id.scope),
+        Box::pin(audio),
+        Default::default(),
+        observer.clone(),
+        cancel.clone(),
+        if matches!(cause, StreamingCancellation::ReceiptTimeout) {
+            Duration::from_millis(500)
+        } else {
+            Duration::from_secs(5)
+        },
+    ));
+    observer
+        .wait(|| {
+            observer
+                .progress
+                .lock()
+                .unwrap()
+                .last()
+                .is_some_and(|progress| progress.accepted_source_frames == 4)
+        })
+        .await;
+    match cause {
+        StreamingCancellation::ProducerError => {
+            source
+                .send(Err(anyhow::anyhow!("original output retired")))
+                .await
+                .unwrap();
+        }
+        StreamingCancellation::Token => cancel.cancel(),
+        StreamingCancellation::ReceiptTimeout => {}
+    }
+    tokio::time::timeout(Duration::from_secs(3), f.stream_fence.entered.acquire())
+        .await
+        .unwrap()
+        .unwrap()
+        .forget();
+    // A device-side probe must still be handled while its exact fence is held.
+    // Input EOF is selected before the probe, so retaining only receipts fails.
+    let offered = observer.offered.load(Ordering::Acquire);
+    let frames = f.wire.lock().unwrap().len();
+    let _ = source
+        .send(Ok(AudioPayload {
+            data: AudioBuffer::input(vec![9, 0, 11, 0]),
+            sample_rate: 16000,
+            channels: 2,
+            format: AudioFormat::Pcm16,
+        }))
+        .await;
+    let sent = f.commands.send(None).is_ok();
+    let probe_received = {
+        let probe =
+            tokio::time::timeout(Duration::from_millis(500), f.stream_fence.probe.acquire()).await;
+        match probe {
+            Ok(Ok(permit)) => {
+                permit.forget();
+                true
+            }
+            _ => false,
+        }
+    };
+    let push_open = f.stream_fence.push_open.load(Ordering::Acquire);
+    let input_closed = f.stream_fence.input_closed.load(Ordering::Acquire);
+    let no_new_audio = observer.offered.load(Ordering::Acquire) == offered
+        && f.wire.lock().unwrap().len() == frames;
+    f.stream_fence.release.add_permits(1);
+    let report = tokio::time::timeout(Duration::from_secs(3), delivery).await;
+    drop(source);
+    f.finish().await;
+    assert!(
+        sent && probe_received && push_open && !input_closed,
+        "exact fence lost its open Push: probe_sent={sent}, probe_received={probe_received}, push_open={push_open}, input_closed={input_closed}"
+    );
+    assert!(
+        no_new_audio,
+        "cancellation admitted more PCM while the fence was pending"
+    );
+    let report = report.unwrap().unwrap().unwrap();
+    assert!(matches!(
+        report.observation_end,
+        ObservationEnd::Cancelled { .. }
+    ));
+    let progress = report.progress.unwrap();
+    assert_eq!(progress.identity, id);
+    assert_eq!(progress.accepted_source_frames, 4);
+    assert!(
+        !progress.end_accepted,
+        "streaming cancellation must not fabricate End"
+    );
+    assert_eq!(progress.submitted_source_frames, Some(0));
+    assert_eq!(progress.presented_source_frames, None);
+}
+
+#[tokio::test]
+async fn streaming_token_cancel_keeps_upload_and_receipts_until_exact_fence() {
+    streaming_cancellation_keeps_push_until_fenced(StreamingCancellation::Token).await;
+}
+
+#[tokio::test]
+async fn streaming_producer_error_keeps_upload_and_receipts_until_exact_fence() {
+    streaming_cancellation_keeps_push_until_fenced(StreamingCancellation::ProducerError).await;
+}
+
+#[tokio::test]
+async fn streaming_receipt_timeout_keeps_upload_and_receipts_until_exact_fence() {
+    streaming_cancellation_keeps_push_until_fenced(StreamingCancellation::ReceiptTimeout).await;
+}
+
+#[tokio::test]
+async fn terminal_receipt_survives_cancelled_observer_ack_and_failed_fence() {
+    for end in [
+        proto::ObservationEnd::Failed,
+        proto::ObservationEnd::Unknown,
+    ] {
+        let observer = Arc::new(EvidenceObserver {
+            terminal_gate: Some(Arc::new(tokio::sync::Semaphore::new(0))),
+            ..Default::default()
+        });
+        let f = EvidenceFixture::with_proof(observer.clone(), FenceProof::TerminalThenMissing(end))
+            .await;
+        let id = delivery_identity();
+        let (source, receiver) = mpsc::channel(1);
+        let audio = stereo_audio().chain(tokio_stream::wrappers::ReceiverStream::new(receiver));
+        let delivery = tokio::spawn(push(
+            f.client.clone(),
+            id,
+            binding(id.scope),
+            Box::pin(audio),
+            Default::default(),
+            observer.clone(),
+            CancellationToken::new(),
+            Duration::from_secs(5),
+        ));
+        observer
+            .wait(|| {
+                observer
+                    .progress
+                    .lock()
+                    .unwrap()
+                    .last()
+                    .is_some_and(|progress| progress.accepted_source_frames == 4)
+            })
+            .await;
+        f.commands.send(None).unwrap();
+        observer
+            .wait(|| {
+                observer
+                    .progress
+                    .lock()
+                    .unwrap()
+                    .last()
+                    .is_some_and(|progress| progress.observation_end.is_some())
+            })
+            .await;
+        let committed = observer.progress.lock().unwrap().last().unwrap().clone();
+        // The terminal receipt committed, but its observer acknowledgement has not returned.
+        source
+            .send(Err(anyhow::anyhow!("dispatch permit is no longer active")))
+            .await
+            .unwrap();
+        let report = tokio::time::timeout(Duration::from_secs(3), delivery).await;
+        drop(source);
+        let fences = f.fences.lock().unwrap().len();
+        f.finish().await;
+        let report = report.unwrap().unwrap().unwrap();
+        assert_eq!(fences, 1);
+        assert_eq!(
+            report.progress,
+            Some(committed.clone()),
+            "lost a verified terminal receipt during observer acknowledgement"
+        );
+        assert_eq!(
+            Some(report.observation_end),
+            committed.observation_end,
+            "a failed Fence must not replace known terminal evidence with a transport error"
+        );
     }
 }

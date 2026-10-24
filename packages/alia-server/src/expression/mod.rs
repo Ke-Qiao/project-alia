@@ -20,7 +20,7 @@ pub mod types;
 pub use abi::{
     EXPRESSION_PLUGIN_ABI_VERSION, ExpressionPluginCapabilities, ExpressionPluginManifest,
     ExpressionPluginRequest, ExpressionPluginResponse, ExternalAppraisalContext,
-    ExternalAppraisalEventDraft, ExternalExpressionPlugin,
+    ExternalAppraisalEventDraft, ExternalExpressionInput, ExternalExpressionPlugin,
 };
 pub use affect::{
     AffectAssistantResponse, AffectDeltas, AppraisalDecay, AppraisalDecayKind, AppraisalEvent,

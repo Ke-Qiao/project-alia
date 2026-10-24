@@ -15,7 +15,8 @@ use crate::channels::adapter::ChannelAdapter;
 use crate::config::ToolsSection;
 use crate::event::EventBus;
 use crate::modules::delivery::transport::DeliveryTarget;
-use crate::providers::adapter::{ChatMessage, LlmAdapter, ToolDefinition};
+use crate::providers::adapter::{ChatMessage, ToolDefinition};
+use crate::providers::llm::LlmService;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -37,7 +38,7 @@ pub(super) fn allow_streaming_for_tools(
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn execute_llm_response(
     modules: &InteractionServices,
-    llm: &dyn LlmAdapter,
+    llm: &LlmService,
     messages: Vec<ChatMessage>,
     tool_selection: ToolSelection,
     user_uuid: Uuid,
@@ -60,12 +61,12 @@ pub(super) async fn execute_llm_response(
     let available_tool_names = tool_selection
         .available_tools
         .iter()
-        .map(|tool| tool.name.clone())
+        .map(|tool| tool.name.to_string())
         .collect::<Vec<_>>();
     let selected_tool_names = tool_selection
         .selected_tools
         .iter()
-        .map(|tool| tool.name.clone())
+        .map(|tool| tool.name.to_string())
         .collect::<Vec<_>>();
 
     if !tool_selection.available_tools.is_empty()
@@ -95,7 +96,9 @@ pub(super) async fn execute_llm_response(
             .await;
     }
 
-    if !tool_selection.selected_tools.is_empty() {
+    if !tool_selection.selected_tools.is_empty()
+        && llm.llm_capabilities().await.supports_tool_calling
+    {
         trace
             .record(
                 modules,
@@ -277,7 +280,7 @@ pub(super) async fn execute_llm_response(
             }),
         )
         .await;
-    let full = match cancellable_stage(turn, "llm", llm.chat(&messages)).await? {
+    let full = match cancellable_stage(turn, "llm", llm.text(&messages)).await? {
         Some(full) => full,
         None => String::new(),
     };

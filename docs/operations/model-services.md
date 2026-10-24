@@ -9,16 +9,36 @@ and noop lifecycle evidence from model deployment information that still needs
 confirmation. Example URLs and model names below are configuration examples,
 not evidence that a service is installed or permission to start or probe it.
 
+## 下一轮输入清单（2026-10-25）
+
+真实模型方案未定不阻塞本轮软件候选固定。下面集中区分已确认的部署方向、历史候选和真正待定输入；不读取或归档密钥原值，也不从旧私有配置推导当前选择。
+
+| 项目 | 已确认 | 历史候选／已盘点资产 | 下一轮待提供或核对 |
+| --- | --- | --- | --- |
+| 聊天与角色 | 复用当前 Rig／Execution 和角色装配；模型待定 | 曾拟测试 `https://botcf.com/v1`；旧主文件为 DeepSeek `deepseek-v4-flash`，持久设置另有不同 minor；示例的 Qwen／Gemini 也不是选择 | 每个实际启用角色的 profile：`major`、`minor`、`default`，以及 `memory_capture` 专用或 minor fallback、`sentence_expression` 专用或确定性规则。逐项给 provider ID、精确 model/version、base URL、API family、凭据来源名称；确认 streaming／tools／JSON 支持 |
+| Embedding | 独立于聊天；模型与维度待定 | 旧文件有 OpenAI `text-embedding-3-small`／1536，持久设置有 local Nomic／768，二者冲突 | 选定 endpoint、model/version、实际 dimensions、凭据来源，核对 SQL active embedding profile；不得直接沿用旧值或静默关闭 Memory/cache |
+| Easy-Turn | 在 Mac Server，Pi 5 不承载；已有 Python 3.10 CPU 固定栈 | `Developer/Easy-Turn` 与 `run/models/easy-turn-source` 历史 HEAD 为 `fe175eaa…`，固定 checkpoint／Qwen 目录已盘点；不是本轮 loaded 证据 | 确认复用的隔离环境、source/checkpoint/Qwen 绝对路径、实际文件身份及 loopback endpoint；启动后核对加载版本、能力、冷启动／后续延迟和服务 owner。MPS 不是当前锁文件已通过路径 |
+| GPT-SoVITS／Juno | 用户指定本机 Developer 内服务及 Juno 权重方向 | 历史 checkout `08d627c…`、CPU／v2ProPlus，`Juno-e30.ckpt` 和 `v2Pro/Juno_e16_s80.pth` 文件存在；旧 Alia 配置的权重／参考路径为空 | 确认完整 GPT＋SoVITS 权重组合与摘要、voice ID、服务版本和 `/tts` URL；选参考音频及逐字匹配的文本、参考／目标语言、TTS 主机上的绝对路径；明确独占实例还是共享服务、谁可切权重 |
+| 独立 Whisper | **是否进入首版单独待定**；现有 VoiceSession 使用 Easy-Turn transcript，不重复 STT | 历史发现 `/Users/ke-qiao/.local/share/alia/whisper.cpp`、HEAD `968eebe…` 与 `ggml-large-v3-turbo.bin`；旧配置 `large-v3` 只是说明标签 | 先回答首版是否需要显式 HTTP 音频转写；需要才固定服务／实际权重／base URL、样本语言和验收用例。它不作为已有设备语音链的重复环节 |
+| 调用与素材范围 | 先有限组件检查，再生产整链；默认 Companion shadow 保持 | 既有离线 PCM 和 R1 硬件基线可复用 | 非敏感文本／离线 PCM、参考素材使用范围、允许的远端供应商和有限调用预算、私有输出位置；凭据只提供受控文件位置或变量名 |
+
+这些资产盘点来自[此前模型预检交接](../refactor/handoffs/2026-10-17-model-preflight/acceptance-HANDOFF.md)，不是本轮重新扫描或运行结果。聊天基址可用不代表同站点有 embedding；磁盘存在或权重切换 HTTP ACK 也不代表实际加载字节已核实。当前角色只使用配置中已实现的五个聊天角色，不从历史方案恢复其他角色入口。
+
+收到输入后，先生成任务独立配置，核对 base／`.d`／环境补空／`settings.toml`／SQL policy 的有效组合，并完成不涉及现场硬件的真实组件预检。然后通知现场窗口，在 Mac Server＋Pi Embedded 上集中验收：**生产启动 → 讲话 → 模型处理 → 回复播放 → 打断／恢复 → 取消与下一轮对话**。该轮包含正常换气长句、系统 Start／Stop、生产单次初始化后的真人语音；复用已通过的插拔、方向拾音、试听和静默恢复基线，不把 fixture 音频算成真人语音通过。
+
+实际部署后另做升级／恢复及至少 24 小时混合负载，覆盖断网、模型超时、进程退出、设备重连、内存／线程／句柄／队列与日志磁盘上界。验收前固定记录上界与观察方式，不以放宽原期限或并发求绿。AEC 等商家确认后独立验证；具体首版 MCP 服务和第三方插件按实际目标验证，通用框架回归不代替它们。V01／V02 历史根因继续开放，扩大无人值守主动运行前再处理对应条件；ROS、执行器现场、固件重写和其他平台不因模型接入自动恢复。
+
 ## Embedded Models
 
-Embedded uses sherpa-onnx for local audio intelligence:
+Embedded keeps local audio intelligence in the existing Rust host:
 
-- wake word keyword spotting
-- Silero VAD activity evidence for the continuous capture stream
+- sherpa-onnx for local wake word keyword spotting, or R1 firmware wake events
+- Silero ONNX through Rust `ort` for VAD activity evidence on the continuous capture stream
 
 Model paths are configured in `config/embedded.toml`. The helper script
 `scripts/download-sherpa-models.sh` populates the KWS and Silero VAD model
-directories. Embedded does not run local STT or choose turn boundaries.
+directories. Embedded does not run local STT or make semantic turn decisions.
+Its bounded VAD endpoint evidence is interpreted by the Server's existing voice pipeline.
 
 Embedded audio/model behavior is described in
 [alia-embedded audio and voice](../../packages/alia-embedded/docs/audio-and-voice.md).
@@ -84,6 +104,10 @@ the service startup configuration.
 
 ## Server LLM
 
+Chat providers use the pinned Rig fork through `LlmService`; native tool calls
+enter the shared Execution ledger. The former text-based tool protocol and
+standalone provider parsers have been removed.
+
 Chat roles select a model profile in `profiles.llm.<id>`, which selects a named
 adapter in `providers.llm.<id>`. Major and minor are the main chat roles:
 
@@ -98,8 +122,9 @@ family and the required streaming, tool and JSON behavior. Anthropic and Gemini
 use their own adapters. An OpenAI-compatible label alone does not establish
 these capabilities.
 
-`default` currently reuses minor when its profile equals minor, otherwise
-major; it does not create an independent third chat model. An omitted
+`default` reuses minor or major when their profile IDs match; a distinct profile
+creates an independent chat model. All five roles participate in startup,
+health and settings updates, with shared instances processed only once. An omitted
 `memory_capture` role uses the minor fallback. An omitted `sentence_expression`
 role uses deterministic expression rules. Dedicated optional roles must be
 included in the deployment inventory: a local major model does not make other
@@ -158,11 +183,19 @@ SoVITS weights. `reference_voice` maps to the remote `ref_audio_path`, and
 not just a display model name.
 
 When the default voice has nonempty weight paths, Server initialization calls
-the service's `set_gpt_weights` / `set_sovits_weights` endpoints. A failed switch
-is logged and initialization continues with the service's loaded model. Before
-starting that configuration, establish whether the service is a dedicated
-validation instance and whether weight switching is within the agreed scope.
-Initialization and health success do not prove the requested weights loaded.
+the service's `set_gpt_weights` / `set_sovits_weights` endpoints. Every configured
+switch must succeed. Failure is returned, and synthesis remains blocked while
+the remote state is unconfirmed, including a GPT success followed by a SoVITS
+failure or cancellation. Reapplying the weight settings retries the complete
+configured pair. Desired settings are retained on failure; they do not certify
+the remote state. Weight changes wait for the original audio streams to finish
+or be dropped, and new synthesis waits for the switch owner.
+
+With no weight paths, Alia uses a preloaded instance and reports Degraded with
+an unverified model identity. A successful switch acknowledges the requested
+paths; neither this acknowledgement nor HTTP health attests the remote model
+bytes or proves Juno acceptance. Use a dedicated instance when Alia owns weight
+switching, since another client can otherwise change its state independently.
 Initial software validation can save synthesized audio privately without
 playing it.
 

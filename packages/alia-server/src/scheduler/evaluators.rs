@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use chrono::Timelike;
 
 use super::condition::{ConditionContext, ConditionEvaluator};
-use crate::modules::platform::sensors::{
+use crate::modules::embodiment::sensors::{
     SensorFreshnessPolicy, SensorReadMode, SensorRegistry, SensorStalePolicy,
 };
 

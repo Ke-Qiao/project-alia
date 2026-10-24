@@ -5,6 +5,7 @@ struct ObservedLlm {
     initialized: Arc<AtomicUsize>,
     stopped: Arc<AtomicUsize>,
     fail_init: bool,
+    response: &'static str,
 }
 
 #[async_trait::async_trait]
@@ -23,17 +24,13 @@ impl ModuleLifecycle for ObservedLlm {
     }
 }
 
-#[async_trait::async_trait]
-impl LlmAdapter for ObservedLlm {
-    async fn chat(&self, _: &[crate::providers::adapter::ChatMessage]) -> anyhow::Result<String> {
-        unreachable!("profile ownership test does not call a model")
-    }
-    async fn chat_stream(
-        &self,
-        _: &[crate::providers::adapter::ChatMessage],
-    ) -> anyhow::Result<std::pin::Pin<Box<dyn futures::Stream<Item = anyhow::Result<String>> + Send>>>
-    {
-        unreachable!("profile ownership test does not call a model")
+impl ObservedLlm {
+    fn into_service(self) -> LlmService {
+        let response = self.response;
+        LlmService::test_text("shared-profile-test", move |_| async move {
+            Ok(response.to_owned())
+        })
+        .with_lifecycle(Box::new(self))
     }
 }
 
@@ -45,11 +42,15 @@ async fn configured_roles_share_one_init_and_cleanup_owner_but_overrides_do_not(
         let initialized = Arc::new(AtomicUsize::new(0));
         let stopped = Arc::new(AtomicUsize::new(0));
         let module = |fail_init| {
-            Box::new(ObservedLlm {
-                initialized: initialized.clone(),
-                stopped: stopped.clone(),
-                fail_init,
-            }) as Box<dyn LlmAdapter>
+            Box::new(
+                ObservedLlm {
+                    initialized: initialized.clone(),
+                    stopped: stopped.clone(),
+                    fail_init,
+                    response: "shared",
+                }
+                .into_service(),
+            )
         };
         let mut pending = HashMap::from([("shared".to_string(), module(false))]);
         let mut ready = HashMap::new();
@@ -111,4 +112,92 @@ async fn configured_roles_share_one_init_and_cleanup_owner_but_overrides_do_not(
             "one shared owner plus the independent override, including failed init"
         );
     }
+}
+
+#[tokio::test]
+async fn default_profile_selects_third_noop_and_alias_with_one_owner() {
+    let cancel = CancellationToken::new();
+    let cleanup = RuntimeCleanup::new(cancel.clone(), Duration::from_secs(1));
+    let initialized = Arc::new(AtomicUsize::new(0));
+    let stopped = Arc::new(AtomicUsize::new(0));
+    let module = |response| {
+        Box::new(
+            ObservedLlm {
+                initialized: initialized.clone(),
+                stopped: stopped.clone(),
+                fail_init: false,
+                response,
+            }
+            .into_service(),
+        )
+    };
+    let mut pending = HashMap::from([
+        ("minor".into(), module("minor")),
+        ("major".into(), module("major")),
+        ("third".into(), module("third")),
+        ("noop".into(), Box::new(LlmService::noop())),
+    ]);
+    let mut ready = HashMap::new();
+    let minor = initialize_llm_role(
+        None,
+        Some("minor"),
+        &mut pending,
+        &mut ready,
+        &cleanup,
+        &cancel,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let major = initialize_llm_role(
+        None,
+        Some("major"),
+        &mut pending,
+        &mut ready,
+        &cleanup,
+        &cancel,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    for (profile, expected) in [
+        ("third", "third"),
+        ("noop", "LLM module not configured"),
+        ("minor", "minor"),
+        ("major", "major"),
+        ("third", "third"),
+    ] {
+        let default = initialize_default_llm(
+            profile,
+            [("minor", &minor), ("major", &major)],
+            &mut pending,
+            &mut ready,
+            &cleanup,
+            &cancel,
+        )
+        .await
+        .unwrap();
+        assert_eq!(default.text(&[]).await.unwrap(), expected);
+        assert!(Arc::ptr_eq(&default, &ready[profile]));
+    }
+    // Routing can be disabled independently; default=major still selects its declared profile.
+    let noop = ready["noop"].clone();
+    let default = initialize_default_llm(
+        "major",
+        [("noop", &noop), ("noop", &noop)],
+        &mut pending,
+        &mut ready,
+        &cleanup,
+        &cancel,
+    )
+    .await
+    .unwrap();
+    assert!(Arc::ptr_eq(&default, &major));
+    assert_eq!(initialized.load(Ordering::SeqCst), 3);
+    cleanup
+        .start()
+        .wait_until(cleanup.deadline())
+        .await
+        .unwrap();
+    assert_eq!(stopped.load(Ordering::SeqCst), 3);
 }

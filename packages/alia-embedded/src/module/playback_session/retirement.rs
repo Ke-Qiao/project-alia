@@ -8,6 +8,7 @@ pub(super) const RETIRED_CAPACITY: usize = 64;
 
 #[derive(Clone)]
 pub(super) struct RetiredOutput {
+    pub capture: Option<CaptureControlBarrier>,
     pub scope: VoiceScope,
     pub registration: Option<OutputRegistration>,
     pub control: Option<Arc<PlaybackControl>>,
@@ -16,7 +17,7 @@ pub(super) struct RetiredOutput {
     pub stop_error: Option<String>,
 }
 impl RetiredOutput {
-    fn quiescent(&self) -> bool {
+    pub(super) fn quiescent(&self) -> bool {
         self.control
             .as_ref()
             .is_none_or(|control| control.quiescent())
@@ -112,21 +113,21 @@ impl PlaybackSession {
                     "unregistered scope cannot contain remote Response media"
                 );
             }
-            let body = match &self.output_fence {
+            let motion = match &self.output_fence {
                 Some(sink) => match request.scope.generation_epoch.checked_add(1) {
                     Some(epoch) => sink.fence_voice(&VoiceScope {
                         generation_epoch: epoch,
                         ..request.scope
                     }),
                     None => Err(anyhow::anyhow!(
-                        "voice epoch exhausted during body retirement"
+                        "voice epoch exhausted during motion retirement"
                     )),
                 },
                 None => Ok(()),
             };
             let audio = self.retire(active, "original output explicitly retired");
-            self.remember_retirement_error(request.scope, "body", &body);
-            body.and(audio)?;
+            self.remember_retirement_error(request.scope, "motion", &motion);
+            motion.and(audio)?;
         }
         // A stale request must use retained facts, never the replacement scope.
         let retired = self.retired.lock().unwrap_or_else(|e| e.into_inner());

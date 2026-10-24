@@ -25,6 +25,7 @@ grpc_drain_timeout_ms = 1000
 # Native playback always mixes scoped conversation and local cues at gains 1.0/0.2.
 # There is no separate mixer slot. Set capture/playback to "noop" for a no-audio host.
 [modules]
+vad = "silero"
 
 # - [identity]
 # - [audio]
@@ -116,8 +117,6 @@ threshold = 0.5
 min_silence_duration_ms = 700
 min_speech_duration_ms = 250
 window_size = 512
-max_speech_duration_ms = 15000
-buffer_size_sec = 10.0
 provider = "cpu"
 num_threads = 1
 debug = false

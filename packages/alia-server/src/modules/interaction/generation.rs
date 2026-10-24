@@ -35,12 +35,13 @@ use crate::config::{
 use crate::event::EventBus;
 use crate::expression::{ExpressionInput, ExpressionPlan};
 use crate::modules::delivery::transport::DeliveryTarget;
+use crate::providers::llm::LlmService;
 use crate::{
     modules::interaction::{
         cache::DEFAULT_CACHE_SCOPE,
         routing::{RouteDecision, RouterInput},
     },
-    providers::adapter::{ChatMessage, LlmAdapter},
+    providers::adapter::ChatMessage,
 };
 use uuid::Uuid;
 
@@ -726,7 +727,7 @@ async fn route_response(
             messages.push(ChatMessage {
                 role: "user".into(),
                 content: text.into(),
-                name: Some(user_id.into()),
+                user_id: Some(user_id.into()),
                 ..ChatMessage::default()
             });
             let Some(outcome) = run_model(
@@ -842,7 +843,7 @@ async fn route_response(
 async fn run_model(
     request: &GenerationRequest<'_>,
     prepared: &mut PreparedTurn,
-    llm: &dyn LlmAdapter,
+    llm: &LlmService,
     messages: Vec<ChatMessage>,
     preferred_tools: Option<&[String]>,
     route: &'static str,
@@ -868,6 +869,7 @@ async fn run_model(
             Some(preferred) => {
                 select_tools_for_skill(
                     modules,
+                    prepared.uid,
                     preferred,
                     text,
                     tools_config,
@@ -879,6 +881,7 @@ async fn run_model(
             None => {
                 select_all_tools(
                     modules,
+                    prepared.uid,
                     text,
                     tools_config,
                     channel_id,

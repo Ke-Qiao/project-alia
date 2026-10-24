@@ -47,7 +47,7 @@ impl ServoWrite {
 }
 
 pub trait ServoBackend: Send + Sync {
-    /// Called only by the owned native body writer. Cancellation is checked at
+    /// Called only by the owned native motion writer. Cancellation is checked at
     /// each new OS write boundary, never by abandoning an entered syscall.
     fn submit_frame(&self, angles: &[f32], cancelled: &dyn Fn() -> bool) -> ServoWrite;
     /// Release lazily opened native devices on the same owned writer.
@@ -174,7 +174,7 @@ impl ServoBackend for DeferredServoBackend {
             match backend {
                 Ok(backend) => *initialized = Some(backend),
                 Err(error) => {
-                    result.error = Some(format!("native body backend initialization: {error:#}"));
+                    result.error = Some(format!("native motion backend initialization: {error:#}"));
                     return result;
                 }
             }
@@ -315,14 +315,14 @@ fn initialize_pca_boards<Io: Read + Write>(
     let mut boards = Vec::new();
     let initialization = (|| {
         for &address in addresses {
-            ensure!(!cancelled(), "body initialization cancelled");
+            ensure!(!cancelled(), "motion initialization cancelled");
             let mut device = open(address)?;
             let original = device
                 .initialize(cancelled)
                 .with_context(|| format!("initializing PCA9685 address 0x{address:02x}"))?;
             boards.push((device, original));
         }
-        ensure!(!cancelled(), "body initialization cancelled");
+        ensure!(!cancelled(), "motion initialization cancelled");
         Ok::<_, anyhow::Error>(())
     })();
     if let Err(error) = initialization {
@@ -444,27 +444,27 @@ impl Pca9685Device {
 
 impl<Io: Read + Write> Pca9685Device<Io> {
     fn initialize(&mut self, cancelled: &dyn Fn() -> bool) -> Result<Pca9685Snapshot> {
-        ensure!(!cancelled(), "body initialization cancelled");
+        ensure!(!cancelled(), "motion initialization cancelled");
         let mode = self.read_reg(PCA_MODE1)?;
         ensure!(
             mode & PCA_EXTCLK == 0,
             "PCA9685 external clock is unsupported; no configuration registers changed"
         );
-        ensure!(!cancelled(), "body initialization cancelled");
+        ensure!(!cancelled(), "motion initialization cancelled");
         let original = Pca9685Snapshot {
             mode,
             prescale: self.read_reg(PCA_PRESCALE)?,
         };
-        ensure!(!cancelled(), "body initialization cancelled");
+        ensure!(!cancelled(), "motion initialization cancelled");
         let active_mode = (original.mode & !(PCA_RESTART | PCA_SLEEP)) | PCA_AI;
         // Even a failed first write may enter SLEEP; this owner must finish recovery.
         let initialization = (|| {
             self.write_reg(PCA_MODE1, active_mode | PCA_SLEEP)?;
-            ensure!(!cancelled(), "body initialization cancelled");
+            ensure!(!cancelled(), "motion initialization cancelled");
             self.write_reg(PCA_PRESCALE, self.prescale())?;
-            ensure!(!cancelled(), "body initialization cancelled");
+            ensure!(!cancelled(), "motion initialization cancelled");
             self.wake(active_mode)?;
-            ensure!(!cancelled(), "body initialization cancelled");
+            ensure!(!cancelled(), "motion initialization cancelled");
             Ok::<_, anyhow::Error>(())
         })();
         if let Err(error) = initialization {
@@ -836,7 +836,7 @@ mod tests {
         let config = MotionConfig {
             hardware_enabled: true,
             servo_backend: "serial".into(),
-            serial_path: "/definitely-absent-body-test-device".into(),
+            serial_path: "/definitely-absent-motion-test-device".into(),
             serial_startup_delay_ms: 0,
             ..MotionConfig::default()
         };

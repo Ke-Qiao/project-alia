@@ -201,7 +201,7 @@ impl ConversationStore for ConversationService {
             .map(|m| ChatMessage {
                 role: m.role.clone(),
                 content: m.content.clone(),
-                name: m.user_id.clone(),
+                user_id: m.user_id.clone(),
                 ..ChatMessage::default()
             })
             .collect())
@@ -215,7 +215,7 @@ impl ConversationStore for ConversationService {
         let msg = chat_message::ActiveModel {
             id: Set(Uuid::new_v4()),
             session_id: Set(session_id),
-            user_id: Set(message.name),
+            user_id: Set(message.user_id),
             role: Set(message.role),
             content: Set(message.content),
             created_at: Set(chrono::Utc::now().into()),

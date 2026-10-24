@@ -1,6 +1,7 @@
 # Audio and Voice
 
-The only device voice path opens a continuous `VoiceSession` after wake word.
+The device voice path opens a continuous `VoiceSession` after a wake word or an
+explicit authenticated system Start, selected by `speech.trigger`.
 Embedded owns capture, VAD evidence, scoped native output, and short local cues.
 The server owns turn decisions and recognized-input processing. Easy-Turn runs
 on the server; enable its configured provider to admit production voice input.
@@ -16,7 +17,7 @@ sequenceDiagram
     participant Server
     participant Native as Native output
     Mic->>Embedded: Continuous 16 kHz mono frames
-    Embedded->>Embedded: Wake word + bounded pre-roll
+    Embedded->>Embedded: Wake word + pre-roll, or explicit system Start
     Embedded->>Server: Authenticated VoiceSession Open
     Server->>Embedded: Ready with original scope
     Embedded->>Native: Optional scoped wake cue (gain 0.2)
@@ -65,8 +66,11 @@ the active capture clock.
 
 The public R1 documentation separates processed mono UAC capture from an external
 amplifier reference input; it does not establish USB playback or an internal USB
-reference. The actual board/firmware, electrical compatibility and channel meaning
-remain unverified; see the [R1 preflight record](../../../docs/refactor/r02-r1-aec-preflight.md).
+reference. The user's current R1 measurements establish UART_REAL 1.9.6 and
+processed 16 kHz mono UAC; the C-Media output/reference connection is also confirmed.
+Exact reference electrical limits and acoustic AEC performance remain separate
+from this host integration. Follow the [current R1 field record](../../../docs/operations/hardware-deployment-readiness.md#r1-主机侧接入2026-10-21),
+including the user's correction that directional suppression is normal.
 The current capture converter averages every negotiated native input channel before
 conversion. Setting `capture_channels = 1` does not select a processed channel.
 A confirmed processed mono endpoint can use this path; an endpoint combining
@@ -84,10 +88,80 @@ Native playback has exactly two sources: conversation **1.0** and local cue
 and native generation. A cue does not consume remote playback sequence numbers
 or acquire a replacement output owner. There is no configurable mixer slot.
 
+## R1 System-Controlled Capture
+
+The separate [`embedded.r1-system.example.toml`](../../../config/embedded.r1-system.example.toml)
+selects `speech.trigger = "system"` and `modules.wakeword = "noop"`. Native
+capture stays open locally, but PCM is not uploaded until the bound controller
+calls `alia.capture.v1.CaptureControl.Start`. A manual-wake ACK is never a
+WakeWord event or a new bearing. System Start does not play a wake cue or send
+UART commands. The natural-wake preset continues to use the existing R1 owner.
+
+After an **operator-confirmed real R1 power cycle**, use a new non-nil UUID for
+that physical cold boot and run:
+
+```sh
+alia-embedded --initialize-r1 /absolute/private/embedded.toml <cold-boot-uuid>
+```
+
+This is a runtime startup command, not an initialization process that exits.
+It opens native ALSA capture first, checks an actual 16 kHz mono frame without
+resampling, then runs the bounded UART initialization while preserving that
+capture stream. The current firmware must match the exact validated UART_REAL
+1.9.6 build. There is one `manual_wakeup` with fixed **directional beam 0**;
+this is neither omnidirectional pickup nor natural direction detection. The
+control UART closes when initialization finishes, while the capture stream
+continues. Normal startup, reconnect and session reset never send this command.
+
+Before opening the UART, initialization durably creates
+`<state_path>.r1-initialization/<cold-boot-uuid>.jsonl`. An existing claim, even
+empty, failed or incomplete, blocks a second attempt. A matching numeric
+`code:0` ACK appends `command_accepted`; this does not prove speech quality.
+ACK timeout, partial write, cancellation or later startup failure may leave
+the board initialized with an unknown result. Do not delete claims, change the
+state path or invent a new UUID to retry the same boot. A new UUID is permitted
+only after another confirmed physical cold boot. Back up this directory with
+the device state. The program records the operator's cold-boot declaration;
+it does not measure board power.
+
+For an ordinary process restart on the still-powered board, use the same
+private configuration through `ALIA_EMBEDDED_CONFIG_PATH` with no initialization
+arguments. This does not reinitialize the board or prove that its prior state
+survived. Unexpected board restart, USB loss or silence requires diagnosis and
+explicit recovery; there is no periodic wake or automatic cold-boot detection.
+Use the current USB identities and confirmed physical beam-0 position from the
+[field record](../../../docs/architecture/r1-system-controlled-capture-research-2026-10-23.md#71-2026-10-24独立冷启动-cold-03-实测),
+and verify the selected UART and PCM belong to the intended device.
+
+The controller first calls authenticated `Inspect`, then sends its returned
+`device_boot_id` and `generation` as `expected_generation` to Start or Stop.
+Commands use the existing `embedded:control` binding credentials. `active=true`
+means local admission; the original VoiceSession still must authenticate and
+receive Server Ready. Stop targets that exact generation, closes upload,
+joins its network/cue tasks, and waits for native output retirement. It does
+not power down the microphone or establish physical speaker silence. Stale
+commands cannot affect a replacement session; after an uncertain RPC outcome,
+inspect state instead of blindly replaying a command with a new generation.
+Failures return to idle without automatic Start. System Start discards the already-published PCM queue and pre-roll and never
+synthesizes wake metadata. A native block already in flight can include samples
+captured before admission; this is a session boundary, not an acoustic shutter.
+
+The independent cold-03 experiment established one cold boot, 395.56 seconds
+of continuous saved PCM and intelligible speech after 300.02 seconds of silence
+on the current device/firmware/beam/position. One 20 ms auxiliary reference copy
+was missing; saved PCM continuity was intact. These results are not production
+dialogue, all-day operation, another direction, AEC or a real-model acceptance.
+The new runtime/RPC path needs its own field acceptance before those claims.
+
 ## Local VAD and Cues
 
-sherpa-onnx handles wake word and VAD. VAD labels activity but never closes a
-turn, runs a local transcript, or matches a spoken stop phrase. An optional
+Sherpa handles local wake words; R1 can supply its own wake events. The `silero`
+VAD runs the existing ONNX model through Rust `ort` bindings, sharing the bundled
+ONNX Runtime with Sherpa. It retains only a fixed input window and recurrent
+state, rather than an entire speech segment. Strong speech starts activity;
+weaker speech above the hysteresis threshold can sustain it without a duration
+cutoff or periodic model reset. VAD labels activity but never closes a turn,
+runs a local transcript, or matches a spoken stop phrase. An optional
 `wakeword` action (or the triggering wake keyword) resolves the current cue.
 Metadata lives in SQLite and WAV assets stay on disk. Cue records require a
 nonempty audio path with finite positive weight; action-only records and built-in
@@ -111,11 +185,12 @@ is not replayed after conversation resumes. Retirement cancels both sources.
 
 Network failure, capture discontinuity, queue overflow, binding change, invalid
 session evidence, or runtime shutdown cancels and joins the network and cue
-workers and retires the capture scope. A new connection needs a fresh wake.
+workers and retires the capture scope. A new connection needs a fresh wake or,
+in system mode, a new explicit Start.
 There is no separate wakeword interrupt RPC or local follow-up endpointing path.
 
-A future explicit **input-session close** command remains required for a spoken
-"end conversation" tool. It must acknowledge authenticated capture closure.
+`CaptureControl.Stop` provides explicit authenticated input-session closure.
+A spoken "end conversation" tool is not yet wired to this low-level operation.
 The deleted `end_continuous_dialogue` tool is not mapped to Playback Fence,
 which controls output admission and does not stop microphone upload by itself.
 

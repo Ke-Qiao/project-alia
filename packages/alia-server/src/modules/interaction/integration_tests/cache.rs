@@ -439,17 +439,16 @@ async fn changed_skill_catalog_rejects_approved_exact_and_semantic_cache_context
             "catalog-cache-answer"
         }
     }
-    #[async_trait]
-    impl LlmAdapter for RecordingAnswer {
-        async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
-            self.0.lock().unwrap().push(messages.to_vec());
-            Ok("Fresh answer after the skill catalog changed.".into())
-        }
-        async fn chat_stream(
-            &self,
-            _: &[ChatMessage],
-        ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
-            anyhow::bail!("catalog cache regression uses buffered generation")
+    impl RecordingAnswer {
+        fn service(self: &Arc<Self>) -> Arc<LlmService> {
+            let fixture = self.clone();
+            Arc::new(LlmService::test_text("RecordingAnswer", move |messages| {
+                let fixture = fixture.clone();
+                async move {
+                    fixture.0.lock().unwrap().push(messages.to_vec());
+                    Ok("Fresh answer after the skill catalog changed.".into())
+                }
+            }))
         }
     }
     for semantic in [false, true] {
@@ -468,9 +467,9 @@ async fn changed_skill_catalog_rejects_approved_exact_and_semantic_cache_context
             assert!(!skills.is_current(&previous_catalog).await.unwrap());
             let answer = Arc::new(RecordingAnswer(Mutex::new(Vec::new())));
             let services = Arc::get_mut(&mut f.modules).unwrap();
-            services.llm = answer.clone();
-            services.minor_llm = answer.clone();
-            services.major_llm = answer.clone();
+            services.llm = answer.service();
+            services.minor_llm = answer.service();
+            services.major_llm = answer.service();
             f.policy.conversation.streaming_enabled = false;
             let query = if semantic { "How does binary search halve its interval?" } else { QUERY };
             process_event(
@@ -511,18 +510,17 @@ async fn cancelled_generation_leaves_blocked_catalog_finish_without_persistence(
             "held-catalog-answer"
         }
     }
-    #[async_trait]
-    impl LlmAdapter for HeldAnswer {
-        async fn chat(&self, _: &[ChatMessage]) -> anyhow::Result<String> {
-            self.entered.add_permits(1);
-            self.release.acquire().await.unwrap().forget();
-            Ok(ANSWER.into())
-        }
-        async fn chat_stream(
-            &self,
-            _: &[ChatMessage],
-        ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
-            panic!("catalog cancellation regression uses buffered generation")
+    impl HeldAnswer {
+        fn service(self: &Arc<Self>) -> Arc<LlmService> {
+            let fixture = self.clone();
+            Arc::new(LlmService::test_text("HeldAnswer", move |_messages| {
+                let fixture = fixture.clone();
+                async move {
+                    fixture.entered.add_permits(1);
+                    fixture.release.acquire().await.unwrap().forget();
+                    Ok(ANSWER.into())
+                }
+            }))
         }
     }
 
@@ -539,9 +537,9 @@ async fn cancelled_generation_leaves_blocked_catalog_finish_without_persistence(
         });
         let services = Arc::get_mut(&mut f.modules).unwrap();
         services.skills = skills.clone();
-        services.llm = answer.clone();
-        services.minor_llm = answer.clone();
-        services.major_llm = answer.clone();
+        services.llm = answer.service();
+        services.minor_llm = answer.service();
+        services.major_llm = answer.service();
         f.policy.conversation.streaming_enabled = false;
         let user = Uuid::from_u128(42).to_string();
         let target = DeliveryTarget { user_id: user.clone(), voice: None };

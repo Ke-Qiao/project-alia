@@ -1,7 +1,7 @@
 use super::*;
 use crate::module::context::AudioBus;
 use crate::module::lifecycle::ModuleLifecycle;
-use crate::module::traits::{AudioPlaybackBackend, WakeWordEvent};
+use crate::module::traits::{AudioPlaybackBackend, WakeWordEvent, WakeWordSource};
 use crate::storage::EmbeddedStore;
 use alia_core::audio_clock::{AudioClockReading, AudioStreamId, AudioTimeQuality, AudioTiming};
 use alia_proto::voice::{
@@ -174,8 +174,8 @@ impl WakeWordEngine for LocalAudio {
         self.wake_checks.fetch_add(1, Ordering::SeqCst);
         detected.then(|| WakeWordEvent {
             keyword: "wake".into(),
-            confidence: 1.0,
             timestamp_us: 0,
+            source: WakeWordSource::Local,
         })
     }
 }
@@ -389,8 +389,12 @@ async fn harness_with_channel_id(
     let audio = AudioBus::new(audio_capacity);
     let events = EventBus::new(32);
     let local = Arc::new(LocalAudio::default());
+    let boot_id = Uuid::new_v4().to_string();
+    let control = Arc::new(super::super::CaptureControl::new(boot_id.clone()));
     let runtime = Runtime {
+        control: control.attach().unwrap(),
         audio: audio.subscribe(),
+        capture_stopped: None,
         events: events.subscribe(),
         event_bus: events.clone(),
         wakeword: local.clone(),
@@ -400,8 +404,9 @@ async fn harness_with_channel_id(
         binding,
         device_id: "test-device".into(),
         keypair_path,
-        boot_id: Uuid::new_v4().to_string(),
+        boot_id,
         config: SpeechConfig {
+            trigger: SpeechTrigger::Wakeword,
             channel_id,
             pre_roll_ms: 20,
             upload_queue_frames: 8,
@@ -513,6 +518,49 @@ async fn configured_channel_instance_reaches_open_and_auth_metadata_unchanged() 
     tokio::time::timeout(Duration::from_secs(3), output.closed())
         .await
         .unwrap();
+    drop(output);
+    shutdown.cancel();
+    tokio::time::timeout(Duration::from_secs(3), server)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn capture_owner_exit_ends_and_joins_the_active_voice_session() {
+    let Harness {
+        mut runtime,
+        audio,
+        events,
+        local: _,
+        mut seen,
+        shutdown,
+        server,
+        _directory,
+    } = harness_with_channel_id(8, None, "capture-loss".into()).await;
+    let stopped = audio.begin_capture();
+    runtime.capture_stopped = audio.capture_stopped();
+    let mut events = events.subscribe();
+    let playback = runtime.playback_session.clone();
+    publish(&audio, 99, 0);
+    let task = tokio::spawn(runtime.run());
+    let Seen::Opened { output, .. } = received(&mut seen).await else {
+        panic!("expected Open before capture failure");
+    };
+    assert!(matches!(received(&mut seen).await, Seen::Audio(_)));
+    stopped.cancel();
+    tokio::time::timeout(Duration::from_secs(3), task)
+        .await
+        .unwrap()
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(3), output.closed())
+        .await
+        .unwrap();
+    assert!(playback.active_scope().unwrap().is_none());
+    assert!(
+        std::iter::from_fn(|| events.try_recv().ok())
+            .any(|event| matches!(event, ModuleEvent::SpeechEnd))
+    );
     drop(output);
     shutdown.cancel();
     tokio::time::timeout(Duration::from_secs(3), server)
@@ -894,6 +942,7 @@ async fn full_upload_queue_cancels_and_joins_without_waiting_for_network() {
         end_session(&mut Some(session), &EventBus::new(4)),
     )
     .await
+    .unwrap()
     .unwrap();
 }
 
@@ -1496,4 +1545,10 @@ fn paired_output_decision_validates_epoch_and_never_resumes_from_semantic_eviden
 
 mod binding_admission;
 mod cues;
+mod external_wake;
 mod initiative;
+#[cfg(all(target_os = "linux", feature = "sherpa-onnx"))]
+mod r1_hardware;
+#[cfg(target_os = "linux")]
+mod r1_pty;
+mod system_capture;

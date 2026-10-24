@@ -1,24 +1,21 @@
+#[path = "support/llm.rs"]
+mod llm_fixture;
 use alia_server::modules::memory::context::{ContextPolicy, ContextService, ContextSource};
+use alia_server::providers::llm::LlmService;
 use futures::FutureExt;
+use llm_fixture::test_text;
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
-use std::pin::Pin;
 
 use alia_server::config::{MemoryCaptureMode, MemorySection};
+use alia_server::modules::memory::MemoryListOpts;
 use alia_server::modules::memory::MemoryService;
 use alia_server::modules::memory::capture::CaptureTurn;
 use alia_server::modules::memory::capture::{
     MemoryCandidateAction, MemoryCaptureStatus, capture_turn_memory_with_model,
 };
-use alia_server::modules::platform::lifecycle::ModuleLifecycle;
-use alia_server::{
-    modules::memory::MemoryListOpts,
-    providers::adapter::{ChatMessage, LlmAdapter, LlmResponse},
-};
-use async_trait::async_trait;
-use futures::Stream;
-use futures::stream;
 use uuid::Uuid;
 
+#[derive(Clone)]
 struct StaticLlm {
     response: String,
     gate: Option<(
@@ -36,45 +33,25 @@ impl StaticLlm {
     }
 }
 
-#[async_trait]
-impl ModuleLifecycle for StaticLlm {
-    fn name(&self) -> &'static str {
-        "test_memory_capture_llm"
-    }
-}
-
-#[async_trait]
-impl LlmAdapter for StaticLlm {
-    async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
-        if let Some((entered, release)) = &self.gate {
-            entered.notify_one();
-            release.notified().await;
-        }
-        assert!(
-            messages
-                .iter()
-                .any(|message| message.content.contains("Store only durable user facts")),
-            "memory capture prompt should be explicit and English"
-        );
-        Ok(self.response.clone())
-    }
-
-    async fn chat_with_tools(
-        &self,
-        messages: &[ChatMessage],
-        _tools: &[alia_server::providers::adapter::ToolDefinition],
-    ) -> anyhow::Result<LlmResponse> {
-        Ok(LlmResponse::text(self.chat(messages).await?))
-    }
-
-    async fn chat_stream(
-        &self,
-        _messages: &[ChatMessage],
-    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
-        Ok(Box::pin(stream::once({
-            let response = self.response.clone();
-            async move { Ok(response) }
-        })))
+impl StaticLlm {
+    fn service(&self) -> LlmService {
+        let fixture = self.clone();
+        test_text("test_memory_capture_llm", move |messages| {
+            let fixture = fixture.clone();
+            async move {
+                if let Some((entered, release)) = &fixture.gate {
+                    entered.notify_one();
+                    release.notified().await;
+                }
+                assert!(
+                    messages
+                        .iter()
+                        .any(|message| message.content.contains("Store only durable user facts")),
+                    "memory capture prompt should be explicit and English"
+                );
+                Ok(fixture.response.clone())
+            }
+        })
     }
 }
 
@@ -189,7 +166,9 @@ async fn pending_turn_received_before_clear_cannot_be_extracted_later() {
         let llm = StaticLlm::new(
             r#"{"memories":[{"content":"用户喜欢咖啡","importance":0.9,"confidence":0.9}]}"#,
         );
-        let trace = capture_turn_memory_with_model(&llm, &memory, &pending, &memory_config()).await;
+        let trace =
+            capture_turn_memory_with_model(&llm.service(), &memory, &pending, &memory_config())
+                .await;
         assert_eq!(trace.status, MemoryCaptureStatus::Skipped);
         assert_eq!(
             trace.reason.as_deref(),
@@ -217,6 +196,7 @@ async fn deletion_while_extractor_is_waiting_rejects_its_late_result() {
         let release = std::sync::Arc::new(tokio::sync::Notify::new());
         llm.gate = Some((entered.clone(), release.clone()));
         let config = memory_config();
+        let llm = llm.service();
         let capture = capture_turn_memory_with_model(&llm, &memory, &pending, &config);
         let forget = async {
             entered.notified().await;
@@ -266,7 +246,9 @@ async fn llm_selected_capture_stores_only_high_confidence_durable_memories() {
         ]}"#,
         );
 
-        let trace = capture_turn_memory_with_model(&llm, &memory, &pending, &memory_config()).await;
+        let trace =
+            capture_turn_memory_with_model(&llm.service(), &memory, &pending, &memory_config())
+                .await;
 
         assert_eq!(trace.status, MemoryCaptureStatus::Completed);
         assert_eq!(trace.candidates, 2);
@@ -300,7 +282,9 @@ async fn llm_selected_capture_does_not_store_when_model_returns_no_memories() {
         let user_id = pending.user_id;
         let llm = StaticLlm::new(r#"{"memories":[]}"#);
 
-        let trace = capture_turn_memory_with_model(&llm, &memory, &pending, &memory_config()).await;
+        let trace =
+            capture_turn_memory_with_model(&llm.service(), &memory, &pending, &memory_config())
+                .await;
 
         assert_eq!(trace.status, MemoryCaptureStatus::Completed);
         assert_eq!(trace.candidates, 0);
@@ -334,7 +318,9 @@ async fn llm_selected_capture_blocks_sensitive_memories() {
         ]}"#,
         );
 
-        let trace = capture_turn_memory_with_model(&llm, &memory, &pending, &memory_config()).await;
+        let trace =
+            capture_turn_memory_with_model(&llm.service(), &memory, &pending, &memory_config())
+                .await;
 
         assert_eq!(trace.status, MemoryCaptureStatus::Completed);
         assert_eq!(trace.stored, 0);
@@ -387,7 +373,9 @@ async fn llm_selected_capture_updates_existing_preference_memory() {
         ]}"#,
         );
 
-        let trace = capture_turn_memory_with_model(&llm, &memory, &pending, &memory_config()).await;
+        let trace =
+            capture_turn_memory_with_model(&llm.service(), &memory, &pending, &memory_config())
+                .await;
 
         assert_eq!(trace.stored, 1);
         assert_eq!(

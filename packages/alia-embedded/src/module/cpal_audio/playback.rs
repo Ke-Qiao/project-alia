@@ -700,21 +700,33 @@ pub(super) fn run(
     target_buffer_ms: u64,
 ) -> Result<()> {
     let result = (|| {
-        loop {
+        'worker: loop {
             sink.set_control(receiver.0.lock().control.clone());
-            let accept = MixerSource::ALL
+            let mut accept = MixerSource::ALL
                 .map(|source| sink.source_buffered_ms(source) < target_buffer_ms.max(1));
-            match receiver.take_sources(accept) {
-                Some(PlaybackAction::Shutdown) => return Ok(()),
-                Some(PlaybackAction::Stop) => sink.stop()?,
-                Some(PlaybackAction::Play(block)) => sink.enqueue(block)?,
-                None => {
-                    sink.pump()?;
-                    let buffered_ms = sink.buffered_ms();
-                    let accept = MixerSource::ALL
-                        .map(|source| sink.source_buffered_ms(source) < target_buffer_ms.max(1));
-                    receiver.wait(accept, buffered_ms == 0);
+            let mut enqueued = false;
+            // Mix one ready block per lane without starving native writes.
+            for _ in MixerSource::ALL {
+                match receiver.take_sources(accept) {
+                    Some(PlaybackAction::Shutdown) => return Ok(()),
+                    Some(PlaybackAction::Stop) => {
+                        sink.stop()?;
+                        continue 'worker;
+                    }
+                    Some(PlaybackAction::Play(block)) => {
+                        accept[block.source.index()] = false;
+                        sink.enqueue(block)?;
+                        enqueued = true;
+                    }
+                    None => break,
                 }
+            }
+            sink.pump()?;
+            if !enqueued {
+                let buffered_ms = sink.buffered_ms();
+                let accept = MixerSource::ALL
+                    .map(|source| sink.source_buffered_ms(source) < target_buffer_ms.max(1));
+                receiver.wait(accept, buffered_ms == 0);
             }
         }
     })();

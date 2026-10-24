@@ -12,11 +12,8 @@ use alia_server::modules::execution::{ExecutionService, ExecutionToolRegistry};
 use alia_server::modules::memory::context::{ContextPolicy, ContextService, ContextSource};
 use alia_server::modules::platform::lifecycle::ModuleHealth;
 use alia_server::modules::platform::migrations;
-use alia_server::providers::adapter::{
-    ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult,
-};
+use alia_server::providers::adapter::{ToolCall, ToolContext, ToolEntry, ToolRegistry, ToolResult};
 use alia_server::tools::BuiltinToolRegistry;
-use async_trait::async_trait;
 use futures::FutureExt;
 use sea_orm::{
     ConnectOptions, ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement,
@@ -47,24 +44,37 @@ impl Drop for Running<'_> {
     }
 }
 
-#[async_trait]
-impl ToolExecutor for Probe {
-    fn implementation_revision(&self) -> Option<String> {
-        self.revision.map(str::to_string)
-    }
-    fn failure_is_definitive(&self, _result: &ToolResult) -> bool {
-        self.outcome_mode.load(Ordering::SeqCst) == 3
-    }
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "execution_probe".into(),
-            description: "Execution test probe".into(),
-            parameters: json!({"type":"object"}),
-            routing_hints: vec![],
-            source: "builtin".into(),
-            require_confirmation: self.confirmation,
-            required_role: None,
-        }
+impl Probe {
+    fn entry(self: &Arc<Self>) -> anyhow::Result<Arc<ToolEntry>> {
+        let owner = self.clone();
+        let dynamic = rig_core::tool::DynamicTool::new_with_context(
+            rig_core::message::ToolName::new("execution_probe")?,
+            "Execution test probe",
+            json!({"type":"object"}),
+            move |context, args| {
+                let owner = owner.clone();
+                Box::pin(async move {
+                    let invocation = context
+                        .require::<ToolContext>()
+                        .map_err(alia_server::tools::entry::tool_error)?;
+                    owner
+                        .execute(args, &invocation)
+                        .await
+                        .map_err(alia_server::tools::entry::tool_error)?
+                        .publish(context)
+                })
+            },
+        );
+        let owner = self.clone();
+        Ok(ToolEntry::dynamic(
+            dynamic,
+            "builtin",
+            self.revision.unwrap_or(""),
+            self.confirmation,
+            None,
+            json!({}),
+        )?
+        .with_definitive_rejection(move |_| owner.outcome_mode.load(Ordering::SeqCst) == 3))
     }
     async fn execute(
         &self,
@@ -84,6 +94,7 @@ impl ToolExecutor for Probe {
         let mode = self.outcome_mode.load(Ordering::SeqCst);
         anyhow::ensure!(mode != 2, "transport disconnected after dispatch");
         Ok(ToolResult {
+            presentation: None,
             call_id: String::new(),
             success: mode == 0,
             output: arguments,
@@ -149,7 +160,7 @@ impl Fixture {
             sources: std::sync::Mutex::new(Vec::new()),
         });
         let raw = Arc::new(BuiltinToolRegistry::new());
-        raw.register_executor(probe.clone());
+        raw.register_executor(probe.entry().unwrap());
         let service = ExecutionService::new(
             ExecutionRepository::new(db.clone()),
             raw.clone(),
@@ -292,6 +303,7 @@ impl Fixture {
         .expect("expected executor calls");
     }
     async fn cleanup(self) {
+        self.probe.permits.add_permits(32);
         let _ = self.service.shutdown().await;
         self.db.close().await.unwrap();
         self.admin
@@ -531,13 +543,13 @@ async fn queued_memory_after_clear_case(source_clock_offset: chrono::Duration) {
     with_fixture(false, 5, 0, move |f| async move {
         let memory = Arc::new(MemoryService::new());
         memory.attach_runtime_for_test(f.db.clone(), None, Default::default()).await.unwrap();
-        let memory_tool = Arc::new(MemoryStore::new(Some(memory.clone())));
+        let memory_tool = MemoryStore::new(Some(memory.clone())).entry().unwrap();
         let definition = memory_tool.definition();
         // This fixture intentionally leaves the raw registry dependencies unbound;
         // create the same database catalog row that normal builder init seeds.
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO tools(name,description,parameters,source,require_confirmation,enabled) VALUES($1,$2,$3,'builtin',false,true)",
-            vec![definition.name.into(),definition.description.into(),definition.parameters.into()])).await.unwrap();
+            vec![definition.name.to_string().into(),definition.description.clone().into(),definition.parameters.clone().into()])).await.unwrap();
         f.registry.register_tool_executor("builtin", memory_tool).await.unwrap();
         let session = Uuid::new_v4();
         let source = Uuid::new_v4();
@@ -617,21 +629,21 @@ async fn ai_memory_tool_validates_persisted_source_owner_and_epoch_in_postgres()
             "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'probe',$2)",
             vec![session.into(),f.user.to_string().into()])).await.unwrap();
         let arguments = json!({"content":"The user prefers concise replies."});
-        assert!(store.execute(arguments.clone(), &context).await.is_err(), "unpersisted source cannot write");
+        assert!(store.execute(serde_json::from_value(arguments.clone()).unwrap(), &context).await.is_err(), "unpersisted source cannot write");
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user','Please remember my preference.',$4,$5)",
             vec![source.into(),session.into(),f.user.to_string().into(),context.source_received_at.into(),context.source_privacy_epoch.into()])).await.unwrap();
         f.bind_source(&mut context).await;
         for epoch in [None, Some(context.source_privacy_epoch.unwrap() + 1)] {
             let unstamped = ToolContext { source_privacy_epoch: epoch, ..context.clone() };
-            assert!(store.execute(arguments.clone(), &unstamped).await.is_err(), "missing or different source admission cannot write");
+            assert!(store.execute(serde_json::from_value(arguments.clone()).unwrap(), &unstamped).await.is_err(), "missing or different source admission cannot write");
         }
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "UPDATE chat_sessions SET creator_id=$1 WHERE id=$2", vec![Uuid::new_v4().to_string().into(),session.into()])).await.unwrap();
-        assert!(store.execute(arguments.clone(), &context).await.is_err(), "other owner's source cannot write");
+        assert!(store.execute(serde_json::from_value(arguments.clone()).unwrap(), &context).await.is_err(), "other owner's source cannot write");
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "UPDATE chat_sessions SET creator_id=$1 WHERE id=$2", vec![f.user.to_string().into(),session.into()])).await.unwrap();
-        assert!(store.execute(arguments, &context).await.unwrap().success);
+        assert!(store.execute(serde_json::from_value(arguments).unwrap(), &context).await.unwrap().success);
         let saved = memory.list(f.user, Default::default()).await.unwrap();
         assert_eq!(saved.len(), 1);
         assert_eq!(saved[0].source_event_ids, vec![source]);
@@ -711,7 +723,17 @@ async fn shutdown_joins_dispatched_deadline_and_persists_unknown_without_retry()
             .await
             .unwrap();
         f.calls(1).await;
-        f.service.shutdown().await.unwrap();
+        let service = f.service.clone();
+        let mut stopping = tokio::spawn(async move { service.shutdown().await });
+        let _ = f.status(effect.effect_id, EffectStatus::Unknown).await;
+        assert_eq!(f.probe.active.load(Ordering::SeqCst), 1);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut stopping)
+                .await
+                .is_err()
+        );
+        f.probe.permits.add_permits(1);
+        stopping.await.unwrap().unwrap();
         let effect = f.status(effect.effect_id, EffectStatus::Unknown).await;
         assert!(effect.completion.is_some());
         assert_eq!(f.probe.calls.load(Ordering::SeqCst), 1);
@@ -814,7 +836,7 @@ async fn claim_uses_pinned_executor_when_catalog_is_hot_replaced() {
             .unwrap();
         f.calls(1).await; // The first effect has committed its claim and entered this Arc.
         f.registry
-            .register_tool_executor("builtin", replacement.clone())
+            .register_tool_executor("builtin", replacement.entry().unwrap())
             .await
             .unwrap();
         f.probe.permits.add_permits(1);
@@ -852,7 +874,7 @@ async fn same_schema_hot_replacement_invalidates_undispatched_approval() {
             sources: std::sync::Mutex::new(Vec::new()),
         });
         f.registry
-            .register_tool_executor("builtin", replacement.clone())
+            .register_tool_executor("builtin", replacement.entry().unwrap())
             .await
             .unwrap();
         f.service.start().await.unwrap();
@@ -885,22 +907,16 @@ async fn missing_implementation_revision_is_rejected_at_registration_and_proposa
                 outcome_mode: AtomicU8::new(0),
                 sources: std::sync::Mutex::new(Vec::new()),
             });
-            assert!(
-                f.registry
-                    .register_tool_executor("builtin", unversioned.clone())
-                    .await
-                    .is_err()
-            );
-            // A legacy raw registry can contain an unversioned executor; admission
-            // must still reject it instead of persisting an unverifiable proposal.
-            f.raw.register_executor(unversioned.clone());
-            assert!(matches!(
-                f.service.submit(f.call(), &f.context().await).await,
-                Err(ExecutionError::InvalidInput(_))
-            ));
+            assert!(unversioned.entry().is_err());
             assert_eq!(unversioned.calls.load(Ordering::SeqCst), 0);
         }
-        assert!(f.service.list(f.user, None, 100).await.unwrap().is_empty());
+        assert!(
+            f.service
+                .list(f.user, None, 100, None)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     })
     .await;
 }
@@ -1307,7 +1323,7 @@ async fn approval_ack_case(f: Fixture, hold_ack: bool, drop_waiter: bool) {
         .unwrap();
     // Observed through a separate direct database connection: the approval is
     // already durable although the submitting client cannot know that fact.
-    let effects = f.service.list(f.user, None, 10).await.unwrap();
+    let effects = f.service.list(f.user, None, 10, None).await.unwrap();
     assert_eq!(effects.len(), 1);
     let effect = &effects[0];
     assert_eq!(effect.status, EffectStatus::Approved);

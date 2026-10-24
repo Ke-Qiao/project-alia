@@ -1,30 +1,25 @@
-use alia_server::expression::abi::ensure_supported_expression_plugin_abi;
-use alia_server::expression::{EXPRESSION_PLUGIN_ABI_VERSION, ExpressionPluginManifest};
+use alia_server::expression::EXPRESSION_PLUGIN_ABI_VERSION;
+use alia_server::expression::abi::{WasmExpressionConfig, ensure_supported_expression_plugin_abi};
 
 #[test]
-fn manifest_defaults_are_safe_for_dynamic_plugins() {
-    let manifest: ExpressionPluginManifest = toml::from_str(
-        r#"
-name = "demo"
-command = ["demo-plugin"]
-[capabilities]
-appraisal_engine = true
-"#,
-    )
+fn wasm_expression_metadata_has_explicit_version_and_no_native_commands() {
+    let config: WasmExpressionConfig = serde_json::from_value(serde_json::json!({
+        "abi_version": 3, "capabilities":{"appraisal_engine":true}
+    }))
     .unwrap();
-
-    assert!(manifest.enabled);
-    assert_eq!(manifest.abi_version, EXPRESSION_PLUGIN_ABI_VERSION);
-    assert!(manifest.cancel_on_timeout);
-    assert!(manifest.sandbox.clear_env);
-    assert!(manifest.capabilities.appraisal_engine);
+    assert_eq!(config.abi_version, EXPRESSION_PLUGIN_ABI_VERSION);
+    assert!(config.capabilities.appraisal_engine);
+    assert!(
+        serde_json::from_value::<WasmExpressionConfig>(serde_json::json!({
+            "abi_version":3,"command":["python3","plugin.py"]
+        }))
+        .is_err()
+    );
 }
 
 #[test]
-fn rejects_unsupported_plugin_abi_versions() {
-    let error = ensure_supported_expression_plugin_abi(EXPRESSION_PLUGIN_ABI_VERSION + 1)
-        .unwrap_err()
-        .to_string();
-
-    assert!(error.contains("unsupported expression plugin ABI version"));
+fn rejects_replaced_json_process_abi_versions() {
+    assert!(ensure_supported_expression_plugin_abi(1).is_err());
+    assert!(ensure_supported_expression_plugin_abi(2).is_err());
+    assert!(ensure_supported_expression_plugin_abi(EXPRESSION_PLUGIN_ABI_VERSION).is_ok());
 }

@@ -118,11 +118,16 @@ impl BindingManager {
 
     /// Load binding state from SQLite, or start fresh if no state exists.
     pub async fn load(&self) -> Result<()> {
-        if let Some(data) = self
+        if let Some(mut data) = self
             .store
             .load_json::<BindingData>(BINDING_STATE_KEY)
             .await?
         {
+            // Handoff secrets are process-local; a restart retains the original binding.
+            if data.state == BindingState::HandoffPending {
+                data.state = BindingState::Bound;
+                self.store.save_json(BINDING_STATE_KEY, &data).await?;
+            }
             let mut current = self.data.write().await;
             self.revoke_outputs(&mut current);
             *current = data;
@@ -213,10 +218,10 @@ impl BindingManager {
         verify_payload(server_public_key, &payload, auth_token)?;
 
         let mut data = self.data.write().await;
-        if data.state == BindingState::Bound {
+        if data.state != BindingState::Unbound {
             self.record_failure().await;
             bail!(
-                "already bound to server {}",
+                "already bound or handing off from server {}",
                 data.server_id.as_deref().unwrap_or("unknown")
             );
         }
@@ -485,9 +490,9 @@ impl BindingManager {
         admit()
     }
 
-    /// Concrete body payload authentication and admission share one binding
+    /// Concrete motion payload authentication and admission share one binding
     /// read lock. The returned deadline is checked again at each native write.
-    pub async fn with_verified_body<T>(
+    pub async fn with_verified_motion<T>(
         &self,
         token: &str,
         payload: &[u8],
@@ -500,14 +505,14 @@ impl BindingManager {
             "device is not currently bound"
         );
         anyhow::ensure!(
-            payload.len() <= alia_core::body::MAX_BODY_PAYLOAD_BYTES,
-            "body payload is too large"
+            payload.len() <= alia_core::embodiment::motion::MAX_MOTION_PAYLOAD_BYTES,
+            "motion payload is too large"
         );
         // This protocol requires a real bound key even when legacy local
         // development channels explicitly bypass bearer authentication.
         anyhow::ensure!(
             !data.dev_skip_auth,
-            "signed body control requires a cryptographic binding"
+            "signed motion control requires a cryptographic binding"
         );
         let server_id = data
             .server_id
@@ -526,13 +531,13 @@ impl BindingManager {
         )?;
         verify_payload(
             public_key,
-            &alia_transport::body_request_payload(payload),
+            &alia_transport::motion_request_payload(payload),
             signature,
         )?;
         let wall_now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
         let remaining = std::time::Duration::from_secs(claims.exp)
             .checked_sub(wall_now)
-            .ok_or_else(|| anyhow::anyhow!("body authorization expired"))?;
+            .ok_or_else(|| anyhow::anyhow!("motion authorization expired"))?;
         // Bound the lease independently of a token's more permissive skew.
         admit(Instant::now() + remaining.min(std::time::Duration::from_secs(60)))
     }

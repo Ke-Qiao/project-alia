@@ -1,3 +1,4 @@
+mod assets;
 mod manifest;
 mod registry;
 

@@ -103,14 +103,14 @@ pub enum ChannelConfig {
         /// Explicit account associated with this device; audio cannot assert an account.
         #[serde(default)]
         owner_user_id: Option<uuid::Uuid>,
-        /// Body control requires an independently verified, persistent device pin.
+        /// Motion control requires an independently verified, persistent device pin.
         #[serde(default)]
         expected_device_id: Option<String>,
         #[serde(default)]
         expected_device_public_key: Option<String>,
         /// Locally reviewed pins; never learned from the device or model output.
         #[serde(default)]
-        approved_animations: Vec<alia_core::body::BodyAnimationAsset>,
+        approved_animations: Vec<alia_core::embodiment::motion::MotionAnimationAsset>,
         #[serde(default = "default_true")]
         enabled: bool,
         #[serde(default)]
@@ -376,6 +376,11 @@ impl ProvidersSection {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct PluginsSection {
+    /// Optional directory for installed WASM packages and explicit identity grants.
+    #[serde(default)]
+    pub wasm_dir: Option<String>,
+    #[serde(default)]
+    pub mcp: Vec<crate::tools::mcp::McpServerConfig>,
     #[serde(default)]
     pub home_assistant: HomeAssistantPluginSection,
 }
@@ -1215,6 +1220,7 @@ fn default_gpt_sovits_provider() -> String {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ResourcesSection {
     /// Directory containing `.md` skill definition files (TOML frontmatter).
     /// Relative paths are resolved from the config file's parent directory.
@@ -1222,10 +1228,6 @@ pub struct ResourcesSection {
     pub skills_dir: Option<String>,
     #[serde(default)]
     pub cache_policy: CachePolicyResourceSection,
-    /// Directory containing external expression plugin manifest TOML files.
-    /// Each manifest is loaded as a JSON-stdin/stdout dispatcher.
-    #[serde(default)]
-    pub external_expression_plugins_dir: Option<String>,
     /// Language-scoped lexicons used by the local text classifier appraisal
     /// engine. Keys are BCP-47-ish language tags such as `zh` or `en`.
     #[serde(default)]
@@ -2098,7 +2100,7 @@ impl ServerConfig {
                 ..
             } = channel
             {
-                alia_core::body::validate_animation_catalog(approved_animations)?;
+                alia_core::embodiment::motion::validate_animation_catalog(approved_animations)?;
             }
         }
         config.config_dir = config_dir;

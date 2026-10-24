@@ -5,7 +5,8 @@ use serde::Serialize;
 use tokio::sync::RwLock;
 
 use crate::config::{
-    EmbeddedConfig, EmbeddedRuntimeSettings, runtime_settings_for_path, save_runtime_settings,
+    EmbeddedConfig, EmbeddedRuntimeSettings, SettingsSaveError, runtime_settings_for_path,
+    save_runtime_settings,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,6 +40,14 @@ impl EmbeddedSettingsManager {
 
     pub async fn snapshot(&self, requires_restart: bool) -> SettingsSnapshot {
         let settings = self.settings.read().await.clone();
+        self.snapshot_from(settings, requires_restart)
+    }
+
+    fn snapshot_from(
+        &self,
+        settings: EmbeddedRuntimeSettings,
+        requires_restart: bool,
+    ) -> SettingsSnapshot {
         SettingsSnapshot {
             provisioning_mode: !settings.runtime.provisioned,
             settings,
@@ -66,7 +75,8 @@ impl EmbeddedSettingsManager {
     }
 
     pub async fn update_from_value(&self, patch: serde_json::Value) -> Result<SettingsSnapshot> {
-        let before = self.settings.read().await.clone();
+        let mut settings = self.settings.write().await;
+        let before = &*settings;
         let mut current =
             serde_json::to_value(&before).context("serializing current embedded settings")?;
         merge_values(&mut current, patch)?;
@@ -82,10 +92,8 @@ impl EmbeddedSettingsManager {
                 == before.direct_response_defaults.audio_dir.as_os_str(),
             "direct response audio directory is local-only; edit local configuration and restart"
         );
-        save_runtime_settings(&self.path, &merged)?;
-        *self.settings.write().await = merged;
-
-        Ok(self.snapshot(true).await)
+        self.publish(&mut settings, merged)?;
+        Ok(self.snapshot_from(settings.clone(), true))
     }
 
     pub async fn ensure_device_id(&self, device_id: &str) -> Result<bool> {
@@ -94,12 +102,29 @@ impl EmbeddedSettingsManager {
             return Ok(false);
         }
 
-        settings.identity.device_id = device_id.to_string();
-        let persisted = settings.clone();
-        drop(settings);
-
-        save_runtime_settings(&self.path, &persisted)?;
+        let mut persisted = settings.clone();
+        persisted.identity.device_id = device_id.to_string();
+        self.publish(&mut settings, persisted)?;
         Ok(true)
+    }
+
+    fn publish(
+        &self,
+        current: &mut EmbeddedRuntimeSettings,
+        next: EmbeddedRuntimeSettings,
+    ) -> Result<()> {
+        let result = save_runtime_settings(&self.path, &next);
+        // A rename is already visible even when the following directory sync fails.
+        if result.is_ok()
+            || result.as_ref().is_err_and(|error| {
+                error
+                    .downcast_ref::<SettingsSaveError>()
+                    .is_some_and(SettingsSaveError::was_published)
+            })
+        {
+            *current = next;
+        }
+        result
     }
 }
 

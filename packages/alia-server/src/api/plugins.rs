@@ -219,14 +219,14 @@ async fn purge_storage(
     }))
 }
 
-fn require_admin(auth: &AuthUser) -> Result<()> {
+pub(super) fn require_admin(auth: &AuthUser) -> Result<()> {
     if !auth.is_admin() {
         return Err(AppError::Forbidden);
     }
     Ok(())
 }
 
-async fn require_current_actor(
+pub(super) async fn require_current_actor(
     db: &impl ConnectionTrait,
     auth: &AuthUser,
     admin: bool,

@@ -1,6 +1,8 @@
 # 插件契约与信任边界
 
-更新：2026-10-17；D01—D03已由用户确认。本页定义目标契约及实施分界，**不声明全部目标已实现**。PN01已完成Server管理HTTP权限、本人数据scope与等待后身份复验，证据见[PN01检查点](../refactor/resume-checkpoint-pn01-2026-10-17.md)；其余运行器／隔离／生命周期能力继续按后续阶段推进。默认shadow、当前政策、Execution批准、Context来源／隐私校验、Delivery/Body身份与取消保持；R03暂停。
+> 实施更新（2026-10-19）：Rig 工具构建、MCP、Extism WASM、表达 ABI 3 及 Embedded processor 已完成软件接入和 macOS 回归；当前部署与限额见 [WASM 插件](../operations/wasm-plugins.md)和 [MCP](../operations/mcp-tools.md)，证据见[软件发布记录](../operations/software-release.md)。当前待办见 [Project TODO](../todo.md)。下文目标契约和历史检查点不表示所有 host 能力、平台或真实服务已验收。
+
+目标契约定稿于 2026-10-17，D01—D03 已由用户确认。PN01 的管理权限／本人 scope 与 PN02—PN04 的当前软件支持面已交付，阶段状态见[实施清单](../refactor/checklists/plugin-contract-2026-10-17.md)。默认 shadow、当前政策、Execution 批准、Context 来源／隐私校验、Delivery／Motion 身份与取消保持；真实模型、ROS／具体具身适配器暂缓，R03 暂停。
 
 ## 1. 目标与决策状态
 
@@ -12,23 +14,23 @@
 | D02 未审核代码运行方式 | 用户已确认 | 安装后默认不运行；默认隔离执行，后端不能满足约束则拒绝；另保留必须由管理员单独明确授予宿主代码执行信任的受信本机模式，绝不自动降级 |
 | D03 升级与撤权 | 用户已确认 | 升级先封闭新调用，原期限内排空旧调用并完成清理后切换；停用／撤权取消并清理；新版本不继承旧执行批准 |
 
-当前机制没有完整不可信代码隔离。文档的目标规则不能代替实现、动态负例和运行平台验证；后续未实现的能力必须报告不支持，不能借旧入口绕过。
+当前不可信代码入口限于有界 WASM；原生设备和远端服务不继承这一隔离声明。文档的目标规则不能代替实现、动态负例和运行平台验证；未实现的 host 能力必须报告不支持，不能借旧入口绕过。
 
 ## 2. 扩展分类与不可替换核心
 
 | 类型 | 当前能力 | 目标边界 |
 | --- | --- | --- |
 | 受信编译期扩展／Provider | Rust trait、Bootstrap注册、编译feature选择；工具经Execution | 随应用发布；与宿主处于同一信任域。不能对任意同进程Rust代码声称安全隔离 |
-| 外部工具／服务 | 既有服务adapter，尚无通用MCP host | 通过既有Execution入口和未来MCP／正式API适配接入；远端身份、凭据、工具目录和效果语义分别核对 |
-| 本地进程扩展 | Server表达JSON子进程；Embedded包管理和JSON命令／事件 | 现实现按受信宿主代码理解；未来按明确执行模式运行，实例owner和输入输出协议受控 |
-| 未经审查代码 | 当前无满足该信任域的运行后端 | 支持安装为未激活资产；后续提供经验证的隔离执行及受限宿主能力，不要求先将代码标成受信 |
+| 外部工具／服务 | 受信服务 adapter 与 rmcp 客户端接统一工具目录 | 通过 Execution；远端身份、凭据、工具目录和效果语义分别核对 |
+| 本地进程扩展 | Embedded 显式 trusted_native 设备模式；Server 表达已移除 JSON 子进程 | 原生模式按受信宿主代码理解，不能作为未审核 processor 的降级路径 |
+| 未经审查代码 | Extism WASM：安装未启用、精确 pin 授权、独立 Engine、无 ambient host I/O | 当前支持计算型工具、表达与 processor；扩展 host 能力需逐项设计与验证 |
 | Skills／资源包 | 现有目录内容身份、索引发布和工具可见性 | 属于不可信内容／能力说明，不是代码执行授权；不得用Skill内容安装、启动或授权程序 |
 
-Interaction、Context、Memory、Execution、Delivery、Companion与Platform的规范数据及最终政策归核心所有。插件可提交候选／事件／结果，由核心校验后采纳；不能接管SQL、替换核心registry、提交已批准的账本结果、任意读取完整记忆，或自行建立播放／Body权限。表达安全插件之后仍执行不可替换的内建校验。
+Interaction、Context、Memory、Execution、Delivery、Companion与Platform的规范数据及最终政策归核心所有。插件可提交候选／事件／结果，由核心校验后采纳；不能接管SQL、替换核心registry、提交已批准的账本结果、任意读取完整记忆，或自行建立播放／Motion权限。表达安全插件之后仍执行不可替换的内建校验。
 
 这些是扩展接口和隔离宿主接口的边界；受信同进程／本机代码实际拥有宿主权限，其违规风险由代码信任与部署控制承担，不能宣称上述规则对恶意受信代码构成强制隔离。
 
-Rust features只决定编译进哪些受信实现，不提供运行时安装、授权或沙箱。第三方支持不要求把所有扩展放入同一运行时，也不要求当前新增WASM、容器调度器或动态库ABI。
+Rust features 只决定编译进哪些受信实现，不提供运行时安装、授权或沙箱。当前未审核代码选择 Extism WASM；第三方支持不要求把所有扩展放入同一运行时，也不因此新增容器调度器或动态库 ABI。
 
 ## 3. 五项独立信任事实
 
@@ -105,46 +107,46 @@ Rust features只决定编译进哪些受信实现，不提供运行时安装、�
 
 ## 8. 命令、事件与结果
 
-明确区分`sent`、`accepted`、`running`、`completed`、`cancelled`、`failed`、`unknown`、`rejected`。这些是目标语义，不是在当前protobuf里已有的保证。子进程自报completed只证明它报告完成；需要外部事实的效果仍由对应适配器核验，物理到位／实际播放必须有原Body／Playback证据。
+明确区分`sent`、`accepted`、`running`、`completed`、`cancelled`、`failed`、`unknown`、`rejected`。这些是目标语义，不是在当前protobuf里已有的保证。子进程自报completed只证明它报告完成；需要外部事实的效果仍由对应适配器核验，物理到位／实际播放必须有原Motion／Playback证据。
 
 同一个逻辑请求重试沿用command ID及参数摘要；重复ID不同payload拒绝。观察和取消绑定原运行实例，迟到结果不得写入新实例／新会话。经过可能产生副作用的边界后，丢ACK保留unknown并观察原调用；不能生成新UUID重发。取消只能表示停止后续工作或请求取消，不能声称撤销已发生的外部效果。
 
 stdin/stdout/stderr、请求体、单行／单消息、累计输出、并发、队列和订阅者都有宿主上限；在读入过程中限制，不能等完整收集后才截断。日志按UTF-8边界处理、默认不包含私有内容／密钥／原始stderr。慢消费者、非法帧、部分消息、事件序列缺口和broadcast lag明确报告，保留取消入口及原owner清理；流关闭不能被解释为所有事件均已送达。
 
-## 9. 未审核代码的后续接入目标
+## 9. 未审核代码的当前支持面与扩展边界
 
-后续必须交付可安装、可隔离运行的未审核示例，而不仅有文档中的未来字段。支持面按运行后端声明：WASM适合受限host调用，通用Python／native程序需要经验证的进程／容器／虚拟化隔离；本轮不选择或安装后端，也不承诺一个后端兼容所有语言和平台。当前Mac Server与Pi Embedded仍是范围，其他平台不自动扩张。
+已交付可安装、授权和隔离运行的真实 Rust PDK WASM 示例，并完成本机动态验证。支持面按运行后端声明：当前没有文件、网络、存储或设备 host function；通用 Python／native 程序需要另行验证的隔离后端，不承诺一个后端兼容所有语言和平台。Mac Server 与 Pi Embedded 仍是目标范围，但当前 WASM 本机通过不等于 Pi 实机容量已验收，其他平台不自动扩张。
 
 未审核执行默认不能访问宿主HOME、配置、密钥、数据库、设备、任意网络、进程创建、Docker socket或管理IPC。包只读，临时目录和自身数据namespace按授权提供；即使允许容器也不挂载宿主控制socket或使用privileged作为默认。CPU／内存／输出／时间限额必须由实际后端执行，不支持的限额不能用manifest字段冒充。
 
 宿主能力通过经过身份和scope校验的代理提供。private Context/Appraisal只提供本次获准且最小化的输入，拒绝直接序列化全部ExpressionInput／materialized memory；结果仍是候选，重新经过来源与政策校验。Appraisal实现pin及SQL批准保持，插件安装身份不能直接充当解释器批准。敏感日志、缓存和导出也受原撤销／保留规则约束。
 
-效果类网络／工具／设备调用走Execution或对应规范Delivery/Body入口；插件不能拿宿主凭据后自由绕行。需要普通网络访问的插件必须明确范围和风险：对任意获授网络或文件访问，无法承诺其全部副作用都由Alia账本观察，不能把任意网络授权宣传成严格效果代理。首先提供明确的代理能力；扩大直连能力须另行验收且不改变现有业务批准。
+效果类网络／工具／设备调用走Execution或对应规范Delivery/Motion入口；插件不能拿宿主凭据后自由绕行。需要普通网络访问的插件必须明确范围和风险：对任意获授网络或文件访问，无法承诺其全部副作用都由Alia账本观察，不能把任意网络授权宣传成严格效果代理。首先提供明确的代理能力；扩大直连能力须另行验收且不改变现有业务批准。
 
 私有输入与外发能力的组合需要单独核对用途和当前数据政策，不能因为两项能力各自获准就默认允许将私有数据发送出去。撤权阻止后续读取／调用，不能召回已经交给外部代码或远端的数据；这一边界须在授予与审计中可见。
 
 本地stdio MCP也是执行代码，必须进入同一安装／授权／隔离模型；远端MCP则绑定可信连接配置、凭据受众和工具目录身份。工具注解、描述、返回内容、URI和资源请求不能授予权限或提升为系统指令。外部服务自身的执行不可被本机sandbox证明，需要明确结果可信度和unknown语义。
 
-## 10. 现实现与后续实施映射
+## 10. WASM 迁移前的检查点
 
-PN01的HTTP权限与本人数据边界已复现、修复并定向验证；其他条目仍是静态核对与待实施差异。
+以下保留 WASM 迁移前的 PN01–PN03 验证记录。其后的运行器、表达 ABI 3 和部署授权链已更换为[当前实现](../operations/wasm-plugins.md)；不能把下表旧入口作为仍可使用的替代路径。
 
 | 当前入口／事实 | 目标差异 | 后续主要调用／测试范围 |
 | --- | --- | --- |
 | Server管理HTTP要求当前admin，本人三入口固定认证UUID与user scope，删除末尾事务复验 | PN01已完成HTTP边界；受信Rust接口仍非不可信broker | 7项真实HTTP＋4项原storage回归；原始失败、跨owner拒绝和等待撤权见PN01证据 |
 | `CompiledToolPlugin`和Execution registry已有受信接口、实现修订／批准 | 保留核心机制；不直接作为不可信host ABI | Bootstrap／tools／Skills索引、catalog_gate、Execution账本／取消／旧批准失效 |
-| Embedded ZIP原地发布，name/entry/版本／总量边界不足 | 有界暂存与内容身份，安装／启用分离 | PluginManager、registry、proto、Server channel调用者、包故障注入 |
-| Embedded stop signal、按name回写、Stopping可重启／卸载 | instance owner、D03切换与真实清理 | registry／PluginCleanup、无硬件子进程、start/stop/uninstall并发与crash |
-| command成功仅sent，事件流和管道边界有限 | 原命令身份、结果语义、流预算与撤权 | proto两端、send_plugin_command、事件订阅者、非幂等unknown测试 |
-| 表达JSON `wait_with_output`、事后日志预览、清环境变量 | 有界输出、UTF-8日志、原owner清理；不能宣称sandbox | expression ABI／extensions、生产路径假插件回归 |
-| JSON Appraisal无provenance pin，示例raw trace与正式门槛不一致 | 内容身份接原批准链，最小私有输入 | Appraisal/Context、示例、批准／篡改／撤销拒绝回归 |
+| Embedded ZIP有界暂存、校验名称／版本／路径与内容身份，原子发布为未激活 | 已落地；受信宿主进程不提供未审核代码隔离 | PluginManager、registry、proto、Server调用者、恶意包与篡改回归 |
+| Embedded运行实例持有原child、进程组与管道，ready后才Running | 已落地；清理未完保留Stopping并禁止重启／卸载 | registry／PluginCleanup、无硬件子进程、后代持pipe与切换回归 |
+| command绑定instance与稳定ID，写入仅unknown，显式终态回执 | 已落地；内存回执不是持久Execution账本，物理效果仍需另外观测 | proto两端、重复请求／冲突／伪造实例拒绝、流预算与DataLoss |
+| 表达JSON有界并发I/O、原owner取消／回收、注销等待 | 已落地；不能宣称sandbox，逃离进程组不在保证内 | expression ABI／extensions、真实子进程取消／超量／管道回归 |
+| 表达ABI 2收窄输入，示例关闭raw trace；JSON Appraisal仍无provenance pin | 正式私有入口继续拒绝；待解释器／依赖部署身份接原批准链 | Appraisal/Context、ABI版本／最小输入、批准／撤销拒绝回归 |
 | 存储已有单条上限／scope声明／TTL／CAS／retention | 这些不等于不可信caller隔离或插件总配额 | scoped host API、跨owner拒绝、累计quota、卸载保留与导出条件 |
 
-具体源码位置与已有测试见[三份分工和Root交接](../refactor/handoffs/2026-10-17-plugin-contract/README.md)。当前没有通用MCP／隔离后端或独立第三方SDK交付证据；旧noop生命周期为空插件目录，不代表插件进程矩阵通过。
+历史源码位置与测试见[三份分工和Root交接](../refactor/handoffs/2026-10-17-plugin-contract/README.md)。echo 示例现已迁移为[真实 Rust WASM processor](../../packages/alia-embedded/examples/echo-plugin/README.md)。当前运行器和测试入口见[部署说明](../operations/wasm-plugins.md)；旧 noop／进程回归不能代替 WASM 动态验证。
 
-## 11. 后续软件验收矩阵
+## 11. 软件验收行为映射
 
-PA01已由PN01覆盖本轮HTTP管理与本人数据边界；其余项继续按后续阶段推进，不能将HTTP修复扩称为完整插件隔离验收。
+此表定义各项必须观察的行为，不作统一的完成计数。PN01 的 HTTP 管理／本人数据边界、后续包／生命周期修复和 WASM／MCP 回归已有[软件验证记录](../operations/software-release.md)；当前未提供的 host 能力、生产服务和 Pi 实机仍须另验，不能将 HTTP 修复或本机通过扩称为全能力隔离验收。
 
 | ID | 必须观察的行为 | 无硬件验证方法 |
 | --- | --- | --- |
@@ -156,11 +158,11 @@ PA01已由PN01覆盖本轮HTTP管理与本人数据边界；其余项继续按�
 | PA06 | 超时、客户端取消、管道满、超量输出、UTF-8边界、后代进程都收口 | 有界假插件及进程owner观察 |
 | PA07 | sent≠完成，重复参数冲突拒绝，丢ACK／超时不自动重放副作用 | 计数型无设备fixture＋稳定command/EffectRun ID |
 | PA08 | 断连／撤权关闭事件准入，慢消费者和序列缺口可见 | loopback流／有界队列 |
-| PA09 | 表达/Appraisal输出不能扩权、伪造来源或取代最终安全校验 | 已有Context/Appraisal/Body生产入口及合成输入 |
-| PA10 | 未审核插件确实不能访问未授予文件／网络／密钥／设备，限额真实生效 | 后续选定隔离后端的负例；仅manifest检查不算通过 |
+| PA09 | 表达/Appraisal输出不能扩权、伪造来源或取代最终安全校验 | 已有Context/Appraisal/Motion生产入口及合成输入 |
+| PA10 | 未审核插件确实不能访问未授予文件／网络／密钥／设备，限额真实生效 | 当前 Extism WASM 的真实 guest、import 拒绝及资源限额负例；扩大 host 能力时另验，不能只查 manifest |
 | PA11 | 安装→授权→调用→升级→撤销→卸载与数据保留完整闭环 | 一个受信示例及一个未审核隔离示例，各有原失败和清理证据 |
 
-先复现静态差异再修，不以扩大期限、降低并发、跳过测试求绿。隔离后端尚未选择时PA10/PA11不填通过，未审核代码接入继续作为明确目标保留；不因此阻止其余PA02—PA09的纯软件实施。PN02—PN04不是无插件R02音频试验的前置条件。
+先复现静态差异再修，不以扩大期限、降低并发、跳过测试求绿。隔离后端现已选择 Extism，PA10／PA11 的结论须限定实际语言、权限和平台；当前无 host 存储接口，不能据此声称已验不可信存储 broker。软件扩展与 R02 无插件音频现场出口分别验收。
 
 ## 12. 行业资料依据与项目选择
 
@@ -170,4 +172,4 @@ PA01已由PN01覆盖本轮HTTP管理与本人数据边界；其余项继续按�
 - [Wasmtime安全模型](https://docs.wasmtime.dev/security.html)：Wasm对外作用通过明确提供的接口，WASI文件访问基于能力。本项目据此要求宿主接口最小化，但不将Wasmtime预选为所有插件的后端。
 - [TUF规范](https://theupdateframework.github.io/specification/latest/#fetch-target)：更新目标的长度／摘要与版本元数据分别检查。本项目采用内容身份和受控更新原则；未审核本地导入不要求先接入签名仓库，签名与审核结论保持独立。本轮不实现TUF仓库／密钥体系。
 
-本契约替代旧概念文档中宽泛的“未来插件注册一切”描述，具体扩展点逐项列出支持与权限；完整插件市场、依赖自动安装、任意跨平台backend和通用驱动平台仍非当前范围。下一轮按[实施checklist](../refactor/checklists/plugin-contract-2026-10-17.md)执行，未知机制不创建空框架。
+本契约替代旧概念文档中宽泛的“未来插件注册一切”描述，具体扩展点逐项列出支持与权限；完整插件市场、依赖自动安装、任意跨平台 backend 和通用驱动平台仍非当前范围。后续从[当前待办](../todo.md)选择具体目标，不重复实施已完成阶段，也不为未知机制创建空框架。

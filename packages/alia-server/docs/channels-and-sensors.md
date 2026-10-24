@@ -28,7 +28,7 @@ even when only one instance is registered.
 ## Embedded Channel
 
 The embedded channel uses VoiceSession v2 for continuous input, Playback v3 for
-scoped PCM and output control, and Body v1 for signed device commands and facts.
+scoped PCM and output control, and Motion v1 for signed device commands and facts.
 Every media delivery requires an identity; unsupported adapters fail before
 output admission. Local wake cues enter Embedded's scoped mixer directly.
 
@@ -38,7 +38,10 @@ or motion output authority.
 
 ## Sensor Registry
 
-The server has one shared `SensorRegistry`. It is visible to:
+The server's Embodiment module owns the shared `SensorRegistry` in
+`modules::embodiment::sensors`. Channels provide device transport, while the
+registry owns sensor definitions, read freshness, persistence and cleanup. It is
+visible to:
 
 - REST API under `/api/v1/sensors`
 - built-in `sensor_read` and `sensor_list` tools
@@ -48,6 +51,12 @@ The server has one shared `SensorRegistry`. It is visible to:
 
 The registry stores sensor definitions and latest/time-series readings. It also
 tracks source ownership for dependency checks.
+
+Incoming channel readings update this registry and publish sensor events. They
+do not directly extend a generation Context or authorize device actions. A
+model-requested `sensor_read` uses the normal Execution tool path; its canonical
+receipt becomes Context evidence through `ContextService::extend_execution`.
+The registry itself does not own dialogue, memory policy, or actuator authority.
 
 Sensor reads have one shared policy path:
 

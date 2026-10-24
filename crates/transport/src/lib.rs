@@ -221,14 +221,14 @@ pub fn sign_payload(signing_key: &SigningKey, payload: &[u8]) -> Vec<u8> {
     signing_key.sign(payload).to_bytes().to_vec()
 }
 
-/// Sign the exact bounded body request bytes. A request signature cannot be
+/// Sign the exact bounded motion request bytes. A request signature cannot be
 /// reused as a device receipt, a bearer token or another control protocol.
-pub fn body_request_payload(payload: &[u8]) -> Vec<u8> {
-    framed_payload(&[b"alia-body-v2-request", payload])
+pub fn motion_request_payload(payload: &[u8]) -> Vec<u8> {
+    framed_payload(&[b"alia-motion-v2-request", payload])
 }
 
-pub fn body_reply_payload(payload: &[u8]) -> Vec<u8> {
-    framed_payload(&[b"alia-body-v2-reply", payload])
+pub fn motion_reply_payload(payload: &[u8]) -> Vec<u8> {
+    framed_payload(&[b"alia-motion-v2-reply", payload])
 }
 
 pub fn verify_payload(public_key: &[u8], payload: &[u8], signature: &[u8]) -> Result<()> {

@@ -307,6 +307,49 @@ fn next(events: &mpsc::Receiver<Event>) -> Event {
 }
 
 #[test]
+fn queued_media_does_not_starve_native_output_until_buffer_target() {
+    let (sender, receiver) = channel(1);
+    let pcm: Vec<i16> = (0..1600).collect();
+    sender.submit_clip(&pcm, 8000).unwrap();
+    let buffer = PlaybackBuffer::new(receiver.generation());
+    let (events, received) = mpsc::channel();
+    let handle = thread::spawn(move || {
+        let mut sink = TestSink {
+            buffer,
+            stalled: false,
+            reported_stall: false,
+            events,
+        };
+        // The fake output target exceeds a conversion block; writes must not
+        // wait for that target while more source media is queued.
+        run(receiver, &mut sink, 300)
+    });
+    let mut observed = Vec::new();
+    let mut output_samples = 0;
+    while output_samples < pcm.len() {
+        let event = next(&received);
+        if let Event::Output(samples) = &event {
+            output_samples += samples.len();
+        }
+        observed.push(event);
+    }
+    sender.shutdown();
+    assert_eq!(next(&received), Event::Stopped);
+    handle.join().unwrap().unwrap();
+
+    let expected: Vec<_> = pcm
+        .chunks(160)
+        .flat_map(|chunk| {
+            [
+                Event::Enqueued(chunk.to_vec()),
+                Event::Output(chunk.to_vec()),
+            ]
+        })
+        .collect();
+    assert_eq!(observed, expected);
+}
+
+#[test]
 fn full_device_buffer_and_full_media_queue_do_not_delay_stop() {
     let (sender, receiver) = channel(1);
     sender.submit_clip(&[1], 8000).unwrap(); // The only media slot is full.
@@ -551,6 +594,62 @@ fn scoped_ingress_never_initializes_or_resurrects_native_audio() {
         backend.runtime.lock().unwrap().is_none(),
         "no hardware was opened by network admission"
     );
+}
+
+#[tokio::test]
+async fn playback_owner_health_never_reopens_device_and_tracks_exit_and_stop() {
+    use super::super::{CpalAudioPlayback, PlaybackRuntime};
+    use crate::config::{AudioBackend, AudioConfig};
+    use crate::module::lifecycle::{ModuleHealth, ModuleLifecycle};
+    use crate::module::traits::AudioPlaybackBackend;
+
+    for fail_owner in [false, true] {
+        let backend = CpalAudioPlayback::new(
+            // No real device can satisfy a probe, even while our fake owner runs.
+            AudioConfig {
+                playback_backend: AudioBackend::Alsa,
+                playback_device: "hw:alia-test-missing-exclusive-output".into(),
+                ..Default::default()
+            },
+            crate::module::volume::AudioVolumeState::new(Default::default()),
+        );
+        assert!(!backend.is_available());
+        let (sender, receiver) = channel_with_generation(1, backend.generation.clone());
+        let fail = receiver.device_failed();
+        let thread = thread::spawn(move || {
+            while !matches!(receiver.take(false), Some(PlaybackAction::Shutdown)) {
+                receiver.wait([false; 2], true);
+            }
+        });
+        *backend.runtime.lock().unwrap() = Some(PlaybackRuntime { sender, thread });
+        assert!(backend.is_available());
+        assert_eq!(backend.health_check().await, ModuleHealth::Healthy);
+
+        if fail_owner {
+            fail();
+            tokio::time::timeout(Duration::from_secs(3), async {
+                while !backend
+                    .runtime
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .thread
+                    .is_finished()
+                {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(!backend.is_available());
+            assert_eq!(backend.health_check().await, ModuleHealth::Unhealthy);
+        }
+        backend.stop().await.unwrap();
+        assert!(backend.runtime.lock().unwrap().is_none());
+        assert!(!backend.is_available());
+        assert_eq!(backend.health_check().await, ModuleHealth::Unhealthy);
+    }
 }
 
 #[test]

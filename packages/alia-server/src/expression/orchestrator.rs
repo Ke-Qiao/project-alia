@@ -186,7 +186,7 @@ async fn cancel_owned(
 ) -> ExpressionExecutionResult {
     let Some(command_id) = active.command_id.as_deref() else {
         return ExpressionExecutionResult::skipped(
-            "no outstanding body command; local plan retired",
+            "no outstanding motion command; local plan retired",
         );
     };
     let capabilities = negotiate_expression_capabilities(channel).await;
@@ -200,7 +200,7 @@ async fn cancel_owned(
     }
     let output = tokio::time::timeout(OPERATION_TIMEOUT, channel.execute_action(ChannelAction {
         name: "cancel_expression".into(),
-        params: serde_json::json!({"command_id": command_id, "voice_scope": active.scope, "target_user_id": user, "plan_id": active.plan_id, "reason": reason, "body_intent": active.command_params}),
+        params: serde_json::json!({"command_id": command_id, "voice_scope": active.scope, "target_user_id": user, "plan_id": active.plan_id, "reason": reason, "motion_intent": active.command_params}),
     })).await;
     match output {
         Ok(Ok(output)) => validate_result(
@@ -226,7 +226,7 @@ async fn cancel_owned(
     }
 }
 
-/// Body dispatch is attached to the same canonical Response as speech/text
+/// Motion dispatch is attached to the same canonical Response as speech/text
 /// output. Missing source authority cannot be replaced by a local identity.
 pub async fn execute_expression_plan_phase_with_response(
     orchestrator: &ExpressionOrchestrator,
@@ -287,7 +287,7 @@ pub async fn execute_expression_plan_phase_with_response(
             }
             if active.command_id.is_some() {
                 return ExpressionExecutionResult::skipped(
-                    "prior body command has no terminal acknowledgement",
+                    "prior motion command has no terminal acknowledgement",
                 );
             }
         } else if !active.closed {
@@ -478,7 +478,7 @@ async fn refresh_observation(
     let command_id = original.command_id.as_ref().unwrap();
     let output = tokio::time::timeout(OPERATION_TIMEOUT, channel.execute_action(ChannelAction {
         name: "observe_expression".into(), params: serde_json::json!({
-            "command_id":command_id,"voice_scope":original.scope,"target_user_id":target.user_id,"plan_id":original.plan_id,"body_intent":original.command_params
+            "command_id":command_id,"voice_scope":original.scope,"target_user_id":target.user_id,"plan_id":original.plan_id,"motion_intent":original.command_params
         }),
     })).await;
     let Ok(Ok(output)) = output else {
@@ -550,20 +550,21 @@ fn validate_result(
     {
         return invalid("missing or mismatched typed action receipts");
     }
-    if let Some(body) = &result.body {
-        if body.validate().is_err()
-            || body.command.source_command_id != command_id
-            || body.command.scope.voice() != scope
-            || body.command.plan_id != plan_id
-            || Uuid::parse_str(user_id).ok() != Some(body.command.owner_id)
+    if let Some(motion) = &result.motion {
+        if motion.validate().is_err()
+            || motion.command.source_command_id != command_id
+            || motion.command.scope.voice() != scope
+            || motion.command.plan_id != plan_id
+            || Uuid::parse_str(user_id).ok() != Some(motion.command.owner_id)
         {
-            return invalid("invalid original body command evidence");
+            return invalid("invalid original motion command evidence");
         }
         let cancellation = expected == ["cancel_expression"];
-        if !cancellation && body.command.actions.len() != expected.len() {
-            return invalid("body command action count differs from original plan");
+        if !cancellation && motion.command.actions.len() != expected.len() {
+            return invalid("motion command action count differs from original plan");
         }
-        let derived = ExpressionExecutionResult::from_body(body.clone(), expected, cancellation);
+        let derived =
+            ExpressionExecutionResult::from_motion(motion.clone(), expected, cancellation);
         if result.status != derived.status
             || result
                 .action_receipts
@@ -572,7 +573,7 @@ fn validate_result(
                 .any(|(a, b)| a.status != b.status)
         {
             return invalid(
-                "body submission was misrepresented as execution or position completion",
+                "motion submission was misrepresented as execution or position completion",
             );
         }
         return result;
@@ -587,7 +588,7 @@ fn validate_result(
     {
         result
     } else {
-        invalid("expression acknowledgement has no original body command evidence")
+        invalid("expression acknowledgement has no original motion command evidence")
     }
 }
 
@@ -602,7 +603,7 @@ fn unknown(
         status: "unknown".into(),
         command_id,
         voice_scope,
-        body: None,
+        motion: None,
         action_receipts: vec![ExpressionActionReceipt {
             action: action.into(),
             status: ExpressionActionStatus::Unknown,
@@ -681,9 +682,10 @@ mod tests {
         ExpressionRuntime, ExpressionSafetyClass, ExpressiveStance, FallbackPolicy,
     };
     use crate::modules::platform::lifecycle::ModuleLifecycle;
-    use alia_core::body::{
-        BodyAction, BodyBackend, BodyCommand, BodyCommandIdentity, BodyControlLease, BodyEnd,
-        BodyMotion, BodyPriority, BodyProgress, BodyScope, BodySubmissionBoundary,
+    use alia_core::embodiment::motion::{
+        MotionAction, MotionBackend, MotionCommand, MotionCommandIdentity, MotionControlLease,
+        MotionEnd, MotionKind, MotionPriority, MotionProgress, MotionScope,
+        MotionSubmissionBoundary,
     };
     use async_trait::async_trait;
     use serde_json::{Value, json};
@@ -694,7 +696,7 @@ mod tests {
     struct MockChannel {
         protocol: bool,
         calls: Mutex<Vec<ChannelAction>>,
-        commands: Mutex<BTreeMap<String, BodyCommand>>,
+        commands: Mutex<BTreeMap<String, MotionCommand>>,
         observations: Mutex<BTreeMap<String, Value>>,
         mutate: Mutex<Mutate>,
         cancel_mutate: Mutex<Mutate>,
@@ -779,9 +781,9 @@ mod tests {
                 let scope: VoiceScope =
                     serde_json::from_value(action.params["voice_scope"].clone()).unwrap();
                 let mut commands = self.commands.lock().unwrap();
-                let command = BodyCommand {
-                    identity: BodyCommandIdentity {
-                        lease: BodyControlLease {
+                let command = MotionCommand {
+                    identity: MotionCommandIdentity {
+                        lease: MotionControlLease {
                             device_boot_id: scope.device_boot_id,
                             server_instance_id: Uuid::from_u128(1),
                             generation: 1,
@@ -792,22 +794,22 @@ mod tests {
                     source_command_id: source_id.clone(),
                     owner_id: Uuid::parse_str(action.params["target_user_id"].as_str().unwrap())
                         .unwrap(),
-                    scope: BodyScope::Voice { scope },
+                    scope: MotionScope::Voice { scope },
                     priority: match plan.priority {
-                        ExpressionPriority::Low => BodyPriority::Low,
-                        ExpressionPriority::Normal => BodyPriority::Normal,
-                        ExpressionPriority::High => BodyPriority::High,
+                        ExpressionPriority::Low => MotionPriority::Low,
+                        ExpressionPriority::Normal => MotionPriority::Normal,
+                        ExpressionPriority::High => MotionPriority::High,
                     },
                     interruptible: plan.interruptible,
                     actions: plan
                         .timeline
                         .iter()
-                        .map(|action| BodyAction {
+                        .map(|action| MotionAction {
                             duration_ms: action.duration_ms,
                             intensity: action.intensity,
                             motion: match action.action.as_str() {
-                                "small_nod" => BodyMotion::SmallNod,
-                                "small_bow" => BodyMotion::SmallBow,
+                                "small_nod" => MotionKind::SmallNod,
+                                "small_bow" => MotionKind::SmallBow,
                                 _ => panic!("unsupported mock action"),
                             },
                         })
@@ -833,7 +835,7 @@ mod tests {
                     .collect()
             };
             let count = command.actions.len() as u32;
-            let progress = BodyProgress {
+            let progress = MotionProgress {
                 identity: command.identity,
                 receipt_sequence: 1,
                 accepted_actions: count,
@@ -843,24 +845,24 @@ mod tests {
                 partial_frame: None,
                 last_partial_channels: Vec::new(),
                 last_uncertain_channels: Vec::new(),
-                backend: Some(BodyBackend {
+                backend: Some(MotionBackend {
                     instance_id: Uuid::from_u128(2),
-                    boundary: BodySubmissionBoundary::Simulated,
+                    boundary: MotionSubmissionBoundary::Simulated,
                     channels: 3,
                 }),
                 writer_quiescent: true,
                 position_confirmed_actions: None,
                 end: Some(if cancellation {
-                    BodyEnd::Cancelled {
+                    MotionEnd::Cancelled {
                         reason: "test cancel".into(),
                     }
                 } else {
-                    BodyEnd::Submitted
+                    MotionEnd::Submitted
                 }),
             };
             progress.validate(None, &command).unwrap();
-            let result = serde_json::to_value(ExpressionExecutionResult::from_body(
-                super::super::types::BodyExecutionEvidence {
+            let result = serde_json::to_value(ExpressionExecutionResult::from_motion(
+                super::super::types::MotionExecutionEvidence {
                     command,
                     progress: Some(progress),
                     unknown_reason: None,
@@ -895,7 +897,7 @@ mod tests {
     }
     fn accepted(mut value: Value) -> Value {
         value["status"] = json!("accepted");
-        let progress = &mut value["body"]["progress"];
+        let progress = &mut value["motion"]["progress"];
         progress["started_actions"] = json!(0);
         progress["submitted_actions"] = json!(0);
         progress["submitted_frames"] = json!(0);
@@ -930,7 +932,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_body_evidence_and_local_skip_cannot_retire_a_writer() {
+    fn missing_motion_evidence_and_local_skip_cannot_retire_a_writer() {
         let result: ExpressionExecutionResult =
             serde_json::from_value(json!({"status":"accepted"})).unwrap();
         assert!(!result.writer_retired());
@@ -967,8 +969,8 @@ mod tests {
                 v.as_object_mut().unwrap().remove("action_receipts");
                 v
             }),
-            ("no body evidence", |mut v| {
-                v.as_object_mut().unwrap().remove("body");
+            ("no motion evidence", |mut v| {
+                v.as_object_mut().unwrap().remove("motion");
                 v
             }),
             ("accepted contradicts submitted facts", |mut v| {
@@ -993,7 +995,7 @@ mod tests {
                 v
             }),
             ("forged physical completion", |mut v| {
-                v["body"]["progress"]["position_confirmed_actions"] = json!(1);
+                v["motion"]["progress"]["position_confirmed_actions"] = json!(1);
                 v
             }),
             ("old completed status", |mut v| {
@@ -1040,23 +1042,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unknown_body_outcome_retires_only_with_original_quiescence_evidence() {
+    async fn unknown_motion_outcome_retires_only_with_original_quiescence_evidence() {
         for quiescent in [false, true] {
             let orchestrator = ExpressionOrchestrator::default();
             let channel = MockChannel::new();
             *channel.mutate.lock().unwrap() = if quiescent {
                 |mut value| {
                     value["status"] = json!("unknown");
-                    value["body"]["progress"]["end"] =
+                    value["motion"]["progress"]["end"] =
                         json!({"kind":"unknown", "reason":"feedback unavailable"});
                     value
                 }
             } else {
                 |mut value| {
                     value["status"] = json!("unknown");
-                    value["body"]["progress"]["end"] =
+                    value["motion"]["progress"]["end"] =
                         json!({"kind":"unknown", "reason":"writer acknowledgement lost"});
-                    value["body"]["progress"]["writer_quiescent"] = json!(false);
+                    value["motion"]["progress"]["writer_quiescent"] = json!(false);
                     value
                 }
             };
@@ -1071,7 +1073,7 @@ mod tests {
             assert_eq!(result.writer_retired(), quiescent);
             assert!(
                 result
-                    .body
+                    .motion
                     .as_ref()
                     .unwrap()
                     .progress
@@ -1108,7 +1110,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unsupported_command_protocol_has_no_body_or_cancel_side_effects() {
+    async fn unsupported_command_protocol_has_no_motion_or_cancel_side_effects() {
         let orchestrator = ExpressionOrchestrator::default();
         let mut channel = MockChannel::new();
         channel.protocol = false;
@@ -1148,7 +1150,7 @@ mod tests {
         );
         assert_eq!(
             first
-                .body
+                .motion
                 .as_ref()
                 .unwrap()
                 .progress

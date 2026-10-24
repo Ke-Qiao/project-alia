@@ -6,12 +6,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
-
-use crate::modules::platform::sensors::{
+use crate::modules::embodiment::sensors::{
     SensorFreshnessPolicy, SensorReadMode, SensorRegistry, SensorStalePolicy,
 };
-use crate::providers::adapter::{ToolContext, ToolDefinition, ToolExecutor, ToolResult};
+use crate::providers::adapter::{ToolContext, ToolEntry, ToolResult};
 
 /// Tool: read the latest value from a sensor.
 pub struct SensorReadTool {
@@ -24,60 +22,18 @@ impl SensorReadTool {
     }
 }
 
-#[async_trait]
-impl ToolExecutor for SensorReadTool {
-    fn implementation_revision(&self) -> Option<String> {
-        Some("alia.builtin.SensorReadTool".into())
-    }
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "sensor_read".to_string(),
-            description: "Read a sensor value. Uses fresh/on-demand reads when available, with stale cache fallback by default.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "sensor_id": {
-                        "type": "string",
-                        "description": "The sensor ID to read (for example, 'room:temperature' or 'plugin.weather:humidity')"
-                    },
-                    "read_mode": {
-                        "type": "string",
-                        "enum": ["best_effort", "fresh", "cache_only"],
-                        "description": "best_effort returns cache if fresh and falls back to stale data on remote failure; fresh tries the source reader when cache is old/missing; cache_only never calls the source reader."
-                    },
-                    "max_age_sec": {
-                        "type": "number",
-                        "description": "Maximum cache age accepted as fresh before trying an on-demand read."
-                    },
-                    "timeout_ms": {
-                        "type": "integer",
-                        "description": "Timeout for an on-demand sensor read."
-                    },
-                    "stale_policy": {
-                        "type": "string",
-                        "enum": ["allow_stale", "fail_closed"],
-                        "description": "Whether stale cached data is acceptable if a fresh read fails."
-                    }
-                },
-                "required": ["sensor_id"]
-            }),
-            routing_hints: Vec::new(),
-            source: "builtin".to_string(),
-            require_confirmation: false,
-            required_role: None,
-        }
+impl SensorReadTool {
+    pub fn entry(self) -> anyhow::Result<Arc<ToolEntry>> {
+        let revision = "alia.builtin.SensorReadTool";
+        ToolEntry::from_tool(self, "builtin".to_string(), revision, false, None)
     }
 
-    async fn execute(
+    pub async fn execute(
         &self,
-        arguments: serde_json::Value,
+        arguments: SensorReadToolArgs,
         _ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
-        let sensor_id = arguments
-            .get("sensor_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("sensor_id is required"))?;
-
+        let sensor_id = arguments.sensor_id.as_str();
         let policy = tool_freshness_policy(&arguments, self.sensors.offline_threshold());
         let result = self.sensors.read(sensor_id, policy.clone()).await?;
         let def = result.definition.clone();
@@ -93,6 +49,7 @@ impl ToolExecutor for SensorReadTool {
             Some(r) => {
                 let unit = def.map(|d| d.unit).unwrap_or_default();
                 Ok(ToolResult {
+                    presentation: None,
                     call_id: String::new(),
                     success: true,
                     output: serde_json::json!({
@@ -111,6 +68,7 @@ impl ToolExecutor for SensorReadTool {
                 })
             }
             None => Ok(ToolResult {
+                presentation: None,
                 call_id: String::new(),
                 success: true,
                 output: serde_json::json!({
@@ -129,6 +87,49 @@ impl ToolExecutor for SensorReadTool {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SensorReadToolArgs {
+    #[schemars(length(min = 1, max = 512))]
+    pub sensor_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_mode: Option<ReadMode>,
+    #[schemars(range(min = 0, max = 86400))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_age_sec: Option<f64>,
+    #[schemars(range(min = 1, max = 30000))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale_policy: Option<StalePolicy>,
+}
+
+impl rig_core::tool::Tool for SensorReadTool {
+    const NAME: &'static str = "sensor_read";
+    type Args = SensorReadToolArgs;
+    type Output = rig_core::tool::ToolOutput;
+    type Error = rig_core::tool::ToolExecutionError;
+    fn description(&self) -> String {
+        "Read a sensor value. Uses fresh/on-demand reads when available, with stale cache fallback by default.".to_string()
+    }
+    fn parameters(&self) -> serde_json::Value {
+        crate::tools::entry::parameters::<Self::Args>()
+    }
+    async fn call(
+        &self,
+        context: &mut rig_core::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
+        let invocation = context
+            .require::<ToolContext>()
+            .map_err(crate::tools::entry::tool_error)?;
+        self.execute(args, &invocation)
+            .await
+            .map_err(crate::tools::entry::tool_error)?
+            .publish(context)
+    }
+}
+
 /// Tool: list all registered sensors with their current status.
 pub struct SensorListTool {
     sensors: Arc<SensorRegistry>,
@@ -141,72 +142,44 @@ impl SensorListTool {
 }
 
 fn tool_freshness_policy(
-    arguments: &serde_json::Value,
+    arguments: &SensorReadToolArgs,
     offline_threshold: Duration,
 ) -> SensorFreshnessPolicy {
     let mut policy = SensorFreshnessPolicy::tool_default(offline_threshold);
-    if let Some(mode) = arguments
-        .get("read_mode")
-        .and_then(serde_json::Value::as_str)
-        .and_then(SensorReadMode::from_str)
-    {
-        policy.mode = mode;
+    if let Some(mode) = &arguments.read_mode {
+        policy.mode = match mode {
+            ReadMode::BestEffort => SensorReadMode::BestEffort,
+            ReadMode::Fresh => SensorReadMode::Fresh,
+            ReadMode::CacheOnly => SensorReadMode::CacheOnly,
+        };
     }
-    if let Some(stale_policy) = arguments
-        .get("stale_policy")
-        .and_then(serde_json::Value::as_str)
-        .and_then(SensorStalePolicy::from_str)
-    {
-        policy.stale_policy = stale_policy;
+    if let Some(stale) = &arguments.stale_policy {
+        policy.stale_policy = match stale {
+            StalePolicy::AllowStale => SensorStalePolicy::AllowStale,
+            StalePolicy::FailClosed => SensorStalePolicy::FailClosed,
+        };
     }
-    if let Some(max_age_sec) = arguments
-        .get("max_age_sec")
-        .and_then(serde_json::Value::as_f64)
-        .filter(|value| value.is_finite() && *value >= 0.0)
-    {
-        policy.max_age = Duration::from_millis((max_age_sec * 1000.0).round() as u64);
+    if let Some(seconds) = arguments.max_age_sec {
+        policy.max_age = Duration::from_millis((seconds * 1000.0).round() as u64);
     }
-    if let Some(timeout_ms) = arguments
-        .get("timeout_ms")
-        .and_then(serde_json::Value::as_u64)
-        .filter(|value| *value > 0)
-    {
-        policy.timeout = Duration::from_millis(timeout_ms);
+    if let Some(milliseconds) = arguments.timeout_ms {
+        policy.timeout = Duration::from_millis(milliseconds);
     }
     policy
 }
 
-#[async_trait]
-impl ToolExecutor for SensorListTool {
-    fn implementation_revision(&self) -> Option<String> {
-        Some("alia.builtin.SensorListTool".into())
-    }
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "sensor_list".to_string(),
-            description: "List all registered sensors with their current status, latest values, and online/offline state.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "source": {
-                        "type": "string",
-                        "description": "Filter by source, such as 'component:<name>', 'plugin:<name>', or 'api'. Omit to list all."
-                    }
-                }
-            }),
-            routing_hints: Vec::new(),
-            source: "builtin".to_string(),
-            require_confirmation: false,
-            required_role: None,
-        }
+impl SensorListTool {
+    pub fn entry(self) -> anyhow::Result<Arc<ToolEntry>> {
+        let revision = "alia.builtin.SensorListTool";
+        ToolEntry::from_tool(self, "builtin".to_string(), revision, false, None)
     }
 
-    async fn execute(
+    pub async fn execute(
         &self,
-        arguments: serde_json::Value,
+        arguments: SensorListToolArgs,
         _ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
-        let source_filter = arguments.get("source").and_then(|v| v.as_str());
+        let source_filter = arguments.source.as_deref();
         let mut sensors = self.sensors.list_sensors().await?;
 
         if let Some(source) = source_filter {
@@ -219,6 +192,7 @@ impl ToolExecutor for SensorListTool {
 
         let count = sensors.len();
         Ok(ToolResult {
+            presentation: None,
             call_id: String::new(),
             success: true,
             output: serde_json::json!({
@@ -228,4 +202,51 @@ impl ToolExecutor for SensorListTool {
             display: Some(format!("{} sensors registered", count)),
         })
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SensorListToolArgs {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+impl rig_core::tool::Tool for SensorListTool {
+    const NAME: &'static str = "sensor_list";
+    type Args = SensorListToolArgs;
+    type Output = rig_core::tool::ToolOutput;
+    type Error = rig_core::tool::ToolExecutionError;
+    fn description(&self) -> String {
+        "List all registered sensors with their current status, latest values, and online/offline state.".to_string()
+    }
+    fn parameters(&self) -> serde_json::Value {
+        crate::tools::entry::parameters::<Self::Args>()
+    }
+    async fn call(
+        &self,
+        context: &mut rig_core::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
+        let invocation = context
+            .require::<ToolContext>()
+            .map_err(crate::tools::entry::tool_error)?;
+        self.execute(args, &invocation)
+            .await
+            .map_err(crate::tools::entry::tool_error)?
+            .publish(context)
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ReadMode {
+    BestEffort,
+    Fresh,
+    CacheOnly,
+}
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StalePolicy {
+    AllowStale,
+    FailClosed,
 }

@@ -5,6 +5,125 @@ use alia_embedded::config::{
 };
 
 #[test]
+fn silero_configuration_rejects_removed_limits_and_unsupported_formats() {
+    for old in ["max_speech_duration_ms = 15000", "buffer_size_sec = 10.0"] {
+        let text = format!("[vad]\n{old}\n");
+        assert!(toml::from_str::<EmbeddedRuntimeSettings>(&text).is_err());
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("embedded.toml");
+        std::fs::write(&path, text).unwrap();
+        assert!(alia_embedded::config::load_config(&path).is_err());
+    }
+    for invalid in [
+        "sample_rate = 8000",
+        "window_size = 256",
+        "provider = 'cuda'",
+        "num_threads = 0",
+        "threshold = nan",
+        "threshold = 1.0",
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("embedded.toml");
+        std::fs::write(&path, format!("[vad]\n{invalid}\n")).unwrap();
+        assert!(
+            alia_embedded::config::load_config(&path).is_err(),
+            "{invalid}"
+        );
+    }
+    assert_eq!(EmbeddedRuntimeSettings::default().modules.vad, "silero");
+}
+
+#[tokio::test]
+async fn invalid_vad_update_preserves_memory_and_disk() {
+    use alia_embedded::config::{load_config, save_runtime_config};
+    use alia_embedded::settings::EmbeddedSettingsManager;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("embedded.toml");
+    let config = load_config(&path).unwrap();
+    save_runtime_config(&config).unwrap();
+    let manager = EmbeddedSettingsManager::new(&config);
+    let before_memory = manager.snapshot_json(false).await.unwrap();
+    let before_disk = std::fs::read(&path).unwrap();
+    for patch in [
+        serde_json::json!({"vad":{"max_speech_duration_ms":15000}}),
+        serde_json::json!({"vad":{"buffer_size_sec":10.0}}),
+        serde_json::json!({"vad":{"provider":"cuda"}}),
+    ] {
+        assert!(manager.update_from_value(patch).await.is_err());
+        assert_eq!(manager.snapshot_json(false).await.unwrap(), before_memory);
+        assert_eq!(std::fs::read(&path).unwrap(), before_disk);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_settings_patches_and_device_id_keep_all_committed_changes() {
+    use alia_embedded::config::{EmbeddedConfig, load_config};
+    use alia_embedded::settings::EmbeddedSettingsManager;
+    use std::sync::Arc;
+    let directory = tempfile::tempdir().unwrap();
+    let config = EmbeddedConfig {
+        config_path: directory.path().join("embedded.toml"),
+        ..Default::default()
+    };
+    let manager = Arc::new(EmbeddedSettingsManager::new(&config));
+    let gate = Arc::new(tokio::sync::Barrier::new(3));
+    let mut tasks = Vec::new();
+    for patch in [
+        serde_json::json!({"identity":{"device_name":"updated-name"}}),
+        serde_json::json!({"motion":{"fps":60}}),
+    ] {
+        let manager = manager.clone();
+        let gate = gate.clone();
+        tasks.push(tokio::spawn(async move {
+            gate.wait().await;
+            manager.update_from_value(patch).await.unwrap();
+        }));
+    }
+    gate.wait().await;
+    assert!(manager.ensure_device_id("new-device").await.unwrap());
+    for task in tasks {
+        task.await.unwrap();
+    }
+    let snapshot = manager.snapshot(false).await;
+    let persisted = load_config(&config.config_path).unwrap();
+    for settings in [snapshot.settings, persisted.runtime_settings()] {
+        assert_eq!(settings.identity.device_name, "updated-name");
+        assert_eq!(settings.identity.device_id, "new-device");
+        assert_eq!(settings.motion.fps, 60);
+    }
+    assert!(!manager.ensure_device_id("replacement").await.unwrap());
+}
+
+#[tokio::test]
+async fn failed_device_id_save_keeps_memory_unchanged_and_allows_retry() {
+    use alia_embedded::config::EmbeddedConfig;
+    use alia_embedded::settings::EmbeddedSettingsManager;
+    let directory = tempfile::tempdir().unwrap();
+    let target = directory.path().join("embedded.toml");
+    std::fs::create_dir(&target).unwrap();
+    let manager = EmbeddedSettingsManager::new(&EmbeddedConfig {
+        config_path: target.clone(),
+        ..Default::default()
+    });
+    assert!(manager.ensure_device_id("new-device").await.is_err());
+    assert!(
+        manager
+            .snapshot(false)
+            .await
+            .settings
+            .identity
+            .device_id
+            .is_empty()
+    );
+    std::fs::remove_dir(&target).unwrap();
+    assert!(manager.ensure_device_id("new-device").await.unwrap());
+    assert_eq!(
+        manager.snapshot(false).await.settings.identity.device_id,
+        "new-device"
+    );
+}
+
+#[test]
 fn obsolete_source_wav_recorder_configuration_is_rejected() {
     for enabled in [false, true] {
         let text = format!("[audio_debug]\nenabled = {enabled}\n");
@@ -145,12 +264,12 @@ fn has_motion_protection_defaults() {
     assert_eq!(settings.motion.max_servo_speed_deg_per_sec, 60.0);
 }
 
-fn reviewed_fixture_asset() -> alia_core::body::BodyAnimationAsset {
+fn reviewed_fixture_asset() -> alia_core::embodiment::motion::MotionAnimationAsset {
     let bytes = b"frames\n1 0 0\n";
-    alia_core::body::BodyAnimationAsset {
+    alia_core::embodiment::motion::MotionAnimationAsset {
         file: "reviewed.anim".into(),
         version: 1,
-        sha256: alia_core::body::body_animation_sha256(bytes),
+        sha256: alia_core::embodiment::motion::motion_animation_sha256(bytes),
         bytes: bytes.len() as u32,
     }
 }
@@ -175,7 +294,7 @@ fn local_animation_catalog_roundtrips_and_invalid_catalogs_are_rejected_before_s
     let valid = std::fs::read(&config.config_path).unwrap();
     for invalid in [
         vec![reviewed_fixture_asset(); 2],
-        vec![alia_core::body::BodyAnimationAsset {
+        vec![alia_core::embodiment::motion::MotionAnimationAsset {
             version: 0,
             ..reviewed_fixture_asset()
         }],
@@ -464,6 +583,107 @@ fn shipped_embedded_example_loads_through_the_runtime_loader() {
     let config =
         alia_embedded::config::load_config(&path).expect("shipped embedded example must be usable");
     assert_eq!(config.speech.channel_id, "pi-living-room");
+}
+
+#[test]
+fn r1_requires_explicit_path_without_changing_existing_defaults() {
+    use alia_embedded::config::{load_config, save_runtime_settings};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("embedded.toml");
+    let settings = EmbeddedRuntimeSettings::default();
+    assert!(settings.r1.serial_path.as_os_str().is_empty());
+    assert_ne!(settings.modules.wakeword, "r1");
+    save_runtime_settings(&path, &settings).unwrap();
+    let original = std::fs::read(&path).unwrap();
+    let mut invalid = settings;
+    invalid.modules.wakeword = "r1".into();
+    assert!(save_runtime_settings(&path, &invalid).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+    std::fs::write(&path, "[modules]\nwakeword = 'r1'\n").unwrap();
+    assert!(load_config(&path).is_err());
+}
+
+#[test]
+fn r1_path_roundtrip_and_preflight_do_not_open_the_control_device() {
+    use alia_embedded::config::{load_config, save_runtime_config};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("embedded.toml");
+    std::fs::write(
+        &path,
+        "[modules]\nwakeword = 'r1'\n[r1]\nserial_path = 'control-port'\n[motion]\nenabled = false\nhardware_enabled = false\n",
+    )
+    .unwrap();
+    let config = load_config(&path).unwrap();
+    assert_eq!(config.r1.serial_path, dir.path().join("control-port"));
+    save_runtime_config(&config).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("serial_path = \"control-port\""));
+    let report = alia_embedded::preflight::check_config(&path).unwrap();
+    assert_eq!(report["r1_control"]["selected"], true);
+    assert_eq!(report["r1_control"]["device_opened"], false);
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    assert_eq!(
+        load_config(&path).unwrap().r1.serial_path,
+        config.r1.serial_path
+    );
+}
+
+#[test]
+fn r1_preset_uses_explicit_duplex_audio_with_independent_clocks() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/embedded.r1.example.toml");
+    let config = alia_embedded::config::load_config(&path).unwrap();
+    assert_eq!(config.modules.wakeword, "r1");
+    assert_eq!(config.modules.audio_capture, "cpal");
+    assert_eq!(config.modules.audio_playback, "cpal");
+    assert_eq!(config.audio.capture_device, "hw:CARD=L6Microphone,DEV=0");
+    assert_eq!(
+        config.audio.capture_backend,
+        alia_embedded::config::AudioBackend::Alsa
+    );
+    assert_eq!(config.audio.capture_sample_rate, 16000);
+    assert_eq!(config.audio.capture_channels, 1);
+    assert_eq!(config.audio.capture_volume, 1.0);
+    assert_eq!(config.audio.playback_device, "hw:CARD=Device,DEV=0");
+    assert_eq!(
+        config.audio.playback_backend,
+        alia_embedded::config::AudioBackend::Alsa
+    );
+    assert_eq!(config.audio.playback_sample_rate, 48000);
+    assert_eq!(config.audio.playback_channels, 2);
+    assert_eq!(config.audio.playback_volume, 1.0);
+    assert!(!config.audio.alsa_playback_lock_to_capture_rate);
+    assert!(config.speech.validate(&config.audio).is_ok());
+    assert!(!config.motion.hardware_enabled && !config.motion.enabled);
+    assert!(!config.dev.skip_binding);
+    for unsupported in ["beam = 0", "manual_wakeup = true", "aec = true"] {
+        assert!(
+            toml::from_str::<EmbeddedRuntimeSettings>(&format!("[r1]\n{unsupported}")).is_err()
+        );
+    }
+}
+
+#[test]
+fn system_capture_is_explicit_and_does_not_enable_uart_commands_in_config() {
+    use alia_embedded::config::SpeechTrigger;
+    let defaults: EmbeddedRuntimeSettings = toml::from_str("").unwrap();
+    assert_eq!(defaults.speech.trigger, SpeechTrigger::Wakeword);
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/embedded.r1-system.example.toml");
+    let config = alia_embedded::config::load_config(&path).unwrap();
+    assert_eq!(config.speech.trigger, SpeechTrigger::System);
+    assert_eq!(config.modules.wakeword, "noop");
+    assert_eq!(config.audio.capture_device, "hw:CARD=L6Microphone,DEV=0");
+    assert_eq!(config.audio.capture_sample_rate, 16000);
+    assert_eq!(config.audio.capture_channels, 1);
+    assert!(config.speech.validate(&config.audio).is_ok());
+    let saved = toml::to_string(&config.runtime_settings()).unwrap();
+    let loaded: EmbeddedRuntimeSettings = toml::from_str(&saved).unwrap();
+    assert_eq!(loaded.speech.trigger, SpeechTrigger::System);
+    let report = alia_embedded::preflight::check_config(&path).unwrap();
+    assert_eq!(report["speech_trigger"], "system");
+    assert_eq!(report["r1_control"]["device_opened"], false);
+    assert!(toml::from_str::<EmbeddedRuntimeSettings>("[speech]\ntrigger='auto'\n").is_err());
+    assert!(toml::from_str::<EmbeddedRuntimeSettings>("[r1]\nmanual_wakeup=true\n").is_err());
 }
 
 #[tokio::test]

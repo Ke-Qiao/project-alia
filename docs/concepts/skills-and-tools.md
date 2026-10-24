@@ -20,12 +20,11 @@ context and available tools. The LLM then decides whether to call tools.
 3. The skill contributes a prompt template and a bounded set of tool names.
 4. The tool registry resolves those names into tool definitions.
 5. The LLM receives the prompt plus tool definitions.
-6. Native function/tool calls are preferred when the provider supports them.
-7. Text-based tool-call parsing is a fallback and should only accept strict
-   structured envelopes.
-8. Execution validates identity, policy, implementation and approval, records
+6. Rig AgentRun processes native function/tool calls. Text resembling a tool
+   invocation remains text; there is no text-based execution fallback.
+7. Execution validates identity, policy, implementation and approval, records
    the effect, and returns its actual result or uncertainty to the LLM loop.
-9. Final assistant text is delivered and persisted.
+8. Final assistant text is delivered and persisted.
 
 ## Tool Registration
 
@@ -34,16 +33,37 @@ Every tool should be registered into the database catalog, including tools from:
 - built-in Rust code
 - server components
 - embedded channel actions
-- future plugins
+- MCP services and WASM plugins
 
 Code-backed tools still need database metadata so routing, frontend display,
 permissions, confirmation policy, and dependency tracking can work consistently.
 
 Registration and Skill selection do not authorize an effect. Package trust,
 runtime capability grants and per-effect approval are independent, as defined
-in the [plugin contract](../architecture/plugin-contract.md). Future external
+in the [plugin contract](../architecture/plugin-contract.md). External
 tools must use the same Execution authority; tool descriptions and responses
 remain source-tagged data.
+
+Rust tool authors implement Rig `Tool` with one `Deserialize + JsonSchema`
+argument type and register a `ToolEntry` with an implementation revision and
+host policy. Dynamic schemas use the same bounded local validator. See
+[MCP configuration](../operations/mcp-tools.md) and
+[WASM packages](../operations/wasm-plugins.md) for external registrations.
+
+## Public Fetch
+
+`fetch` accepts `url`, optional `max_bytes` (default 65536, at most 1048576),
+and optional `timeout_sec` (default 10, at most 30). It accepts public HTTP(S)
+destinations and validates and pins DNS addresses for every redirect. URL
+credentials, arbitrary headers, private networks, proxies and HTTPS downgrade
+redirects are rejected. Existing callers must remove the old `headers` argument.
+
+UTF-8 HTML becomes Markdown with relative links resolved against the final URL;
+scripts, styles and embedded objects are removed. Text and JSON remain text.
+The result includes the final URL, HTTP status, byte count, format, truncation
+flag, and `untrusted: true`. Download limits do not enlarge Execution's 64 KiB
+receipt limit: text may be shortened further to fit the full serialized receipt,
+including JSON escaping. Unsupported binary/compressed responses fail explicitly.
 
 ## Skill Registration
 

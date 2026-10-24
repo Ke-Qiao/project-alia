@@ -4,7 +4,3 @@
 # e.g. "../skills" => <config_dir>/../skills/ (dev layout)
 #      "skills"    => <config_dir>/skills/     (deployed layout)
 skills_dir = "../skills"
-
-# Optional directory of external expression plugin manifests. Each TOML file is
-# loaded as an ABI v1 JSON-stdin/stdout dispatcher at server startup.
-external_expression_plugins_dir = "expression_plugins"

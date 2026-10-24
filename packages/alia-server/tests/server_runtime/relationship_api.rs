@@ -66,10 +66,7 @@ async fn count(state: &AppState, owner: Uuid, table: &str) -> i64 {
 }
 
 fn client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-        .unwrap()
+    skills::client()
 }
 
 #[tokio::test]

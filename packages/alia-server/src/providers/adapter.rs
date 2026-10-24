@@ -13,29 +13,6 @@ use crate::modules::platform::lifecycle::ModuleLifecycle;
 
 // ========== Common types ==========
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct LlmToolCall {
-    pub id: String,
-    pub tool_name: String,
-    pub arguments: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct LlmResponse {
-    pub content: String,
-    #[serde(default)]
-    pub tool_calls: Vec<LlmToolCall>,
-}
-
-impl LlmResponse {
-    pub fn text(content: String) -> Self {
-        Self {
-            content,
-            tool_calls: Vec::new(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmCapabilities {
     pub provider: String,
@@ -80,12 +57,9 @@ impl LlmCapabilities {
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tool_calls: Vec<LlmToolCall>,
+    /// Domain author identity, never a provider tool or function name.
+    #[serde(default, alias = "name", skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
 }
 
 impl ChatMessage {
@@ -93,9 +67,7 @@ impl ChatMessage {
         Self {
             role: role.into(),
             content: content.into(),
-            name: None,
-            tool_call_id: None,
-            tool_calls: Vec::new(),
+            user_id: None,
         }
     }
 }
@@ -247,47 +219,6 @@ impl SttCapabilities {
             provider_specific: BTreeMap::new(),
         }
     }
-}
-
-// ========== LLM Adapter ==========
-
-#[async_trait]
-pub trait LlmAdapter: ModuleLifecycle {
-    async fn llm_capabilities(&self) -> LlmCapabilities {
-        LlmCapabilities::minimal(self.name())
-    }
-
-    /// Single-turn chat (non-streaming)
-    async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String>;
-
-    /// Single-turn chat with native tool definitions when the provider supports
-    /// function/tool calling. Providers that do not support tool calling fall
-    /// back to plain text so the pipeline can still use its text protocol
-    /// parser.
-    async fn chat_with_tools(
-        &self,
-        messages: &[ChatMessage],
-        _tools: &[ToolDefinition],
-    ) -> anyhow::Result<LlmResponse> {
-        Ok(LlmResponse::text(self.chat(messages).await?))
-    }
-
-    /// Streaming chat with native tool definitions, aggregated back into a
-    /// provider-neutral response. Providers without streaming tool-call support
-    /// may fall back to the non-streaming tool path.
-    async fn chat_stream_with_tools(
-        &self,
-        messages: &[ChatMessage],
-        tools: &[ToolDefinition],
-    ) -> anyhow::Result<LlmResponse> {
-        self.chat_with_tools(messages, tools).await
-    }
-
-    /// Streaming chat, returns a token stream
-    async fn chat_stream(
-        &self,
-        messages: &[ChatMessage],
-    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>>;
 }
 
 // ========== STT Adapter ==========
@@ -1026,21 +957,7 @@ pub trait SchedulerBackend: ModuleLifecycle {
 
 // ========== Tool Registry ==========
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolDefinition {
-    pub name: String,
-    pub description: String,
-    pub parameters: serde_json::Value, // JSON Schema
-    /// Optional routing hints owned by the tool provider. These are not shown
-    /// to the LLM as executable arguments; they only help the server narrow
-    /// large tool catalogs before a turn reaches the model.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub routing_hints: Vec<String>,
-    /// Owner source. Use "builtin", "component:<name>", "api", or a plugin name.
-    pub source: String,
-    pub require_confirmation: bool,
-    pub required_role: Option<String>,
-}
+pub use crate::tools::entry::{ToolDefinition, ToolEntry};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCall {
@@ -1054,6 +971,9 @@ pub struct ToolResult {
     pub call_id: String,
     pub success: bool,
     pub output: serde_json::Value,
+    /// Model content built by the host adapter, separate from foreign JSON.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<rig_core::tool::ToolOutput>,
     pub display: Option<String>,
 }
 
@@ -1073,7 +993,7 @@ pub struct ToolRoutingIndexEntry {
     pub routing_embedding: Option<ToolRoutingEmbedding>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolContext {
     pub user_id: Uuid,
     /// Original model input lineage; required for every AI-originated effect.
@@ -1092,34 +1012,13 @@ pub struct ToolContext {
     pub source: String, // "ai" | "manual" | "scheduler"
     pub channel_id: Option<String>,
     /// Cancels waiting and undispatched work; dispatched effects are independent.
+    #[serde(skip)]
     pub cancel: Option<tokio_util::sync::CancellationToken>,
-}
-
-#[async_trait]
-pub trait ToolExecutor: Send + Sync {
-    fn definition(&self) -> ToolDefinition;
-    /// Identifies the loaded implementation and any immutable configuration
-    /// that selects external targets. Missing revisions cannot execute durably.
-    /// Compiled implementations are additionally bound to the host binary hash.
-    fn implementation_revision(&self) -> Option<String> {
-        None
-    }
-    /// Opt in only when a returned failure proves rejection/non-execution.
-    /// Some legacy adapters encode transport errors as Ok(success=false), so
-    /// the durable execution service must treat that case as unknown by default.
-    fn failure_is_definitive(&self, _result: &ToolResult) -> bool {
-        false
-    }
-    async fn execute(
-        &self,
-        arguments: serde_json::Value,
-        ctx: &ToolContext,
-    ) -> anyhow::Result<ToolResult>;
 }
 
 #[derive(Clone)]
 pub struct PreparedTool {
-    pub executor: Arc<dyn ToolExecutor>,
+    pub executor: Arc<ToolEntry>,
     pub registration_revision: String,
 }
 
@@ -1132,15 +1031,13 @@ pub trait ToolRegistry: ModuleLifecycle {
     }
     /// List all available tools
     async fn list_tools(&self) -> anyhow::Result<Vec<ToolDefinition>>;
+    async fn list_tools_for(&self, _user_id: Uuid) -> anyhow::Result<Vec<ToolDefinition>> {
+        self.list_tools().await
+    }
     /// Get a specific tool definition
     async fn get_tool(&self, name: &str) -> anyhow::Result<Option<ToolDefinition>>;
     /// Execute a tool call
     async fn execute(&self, call: ToolCall, ctx: &ToolContext) -> anyhow::Result<ToolResult>;
-    /// Register plugin tool metadata only.
-    ///
-    /// Implementations may reject this because tools should be executable
-    /// units. Rust/server plugins should prefer `register_tool_executor`.
-    async fn register_plugin_tool(&self, tool: ToolDefinition) -> anyhow::Result<()>;
     /// Register a code-backed tool executor. This is the preferred path for
     /// Rust plugins/components because tools are executable units, not only DB
     /// metadata. `owner_source` should be "builtin", "component:<name>", or a
@@ -1148,8 +1045,17 @@ pub trait ToolRegistry: ModuleLifecycle {
     async fn register_tool_executor(
         &self,
         owner_source: &str,
-        executor: Arc<dyn ToolExecutor>,
+        executor: Arc<ToolEntry>,
     ) -> anyhow::Result<()>;
+    /// Atomically replace a managed source's executable catalog after staging
+    /// all schemas and database projections. Old pinned entries remain owned.
+    async fn replace_source_tools(
+        &self,
+        _owner: &str,
+        _entries: Vec<Arc<ToolEntry>>,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("managed catalog replacement is unavailable")
+    }
     /// Unregister a plugin tool
     async fn unregister_plugin_tool(&self, tool_name: &str) -> anyhow::Result<()>;
     /// Unregister all tools owned by a plugin.

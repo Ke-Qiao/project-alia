@@ -53,8 +53,8 @@ voice v2 的 `TurnEvidence.output_decision` 区分 Unchanged、PauseRequested、
 - `Settled` 返回原 backend 与原身份的最终软件进度，要求控制门已永久关闭、已进入的 native writes 已收尾。它不证明物理 Presented 或扬声器静音。
 - 设备保留最多 64 条退休记录，包含原登记、控制门、提交对象和未完成写入的所有权，并为当前 scope 预留退休槽。容量压力只能回收已收尾记录；未收尾记录不能为了接纳新 scope 而丢弃。旧输出的查询、精确取消与收尾不得修改新 session。仍保留的退休 exact scope 不能被 Ready 重新激活，即使绑定已经更换；合法新 session 使用新身份。
 - 退休与鉴权的同步 admission 在原锁序内执行；等待 native writes 在锁外执行。返回前重新认证。整个 output 的收尾超时由 Server 报告为不完整，并继续保留同一个在途等待；不能改报成功。
-- 首次退休当前 exact scope 同步关闭其 Body 准入；查询已替换的旧 scope 不触碰新的 Body owner。Pause 本身仍只控制本包定义的声音及生产背压。
-- Body 失败也必须继续执行 audio 退休，原 native / Body 错误保留到最终 shutdown；后续成功 close 不能抹除它。每条退休记录保留首次错误，运行时错误列表最多 64 条，后续错误仍记录日志。
+- 首次退休当前 exact scope 同步关闭其 Motion 准入；查询已替换的旧 scope 不触碰新的 Motion owner。Pause 本身仍只控制本包定义的声音及生产背压。
+- Motion 失败也必须继续执行 audio 退休，原 native / Motion 错误保留到最终 shutdown；后续成功 close 不能抹除它。每条退休记录保留首次错误，运行时错误列表最多 64 条，后续错误仍记录日志。
 
 Server 在 Bind 入队前固定本地候选身份，在异步设备登记前固定可信规范 Response ID。永久取消即使发生在排队或 Register ACK 等待期间，也按数据库的不可变身份核验并取消原 Response；设备 registration 只在获得实际登记事实后记录。候选记录不授权取消另一个规范请求。
 

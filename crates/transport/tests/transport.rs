@@ -8,35 +8,41 @@ use alia_transport::{
 use ed25519_dalek::SigningKey;
 
 #[test]
-fn body_v2_signature_binds_content_and_rejects_old_or_opposite_domains() {
-    use alia_transport::{body_reply_payload, body_request_payload};
+fn motion_v2_signature_binds_content_and_rejects_old_or_opposite_domains() {
+    use alia_transport::{motion_reply_payload, motion_request_payload};
     let key = SigningKey::from_bytes(&[29; 32]);
     let public = key.verifying_key().to_bytes();
     let payload =
         br#"{"version":2,"asset":{"file":"reviewed.anim","version":1,"sha256":"abc","bytes":3}}"#;
-    let request = body_request_payload(payload);
+    let request = motion_request_payload(payload);
     let signature = sign_payload(&key, &request);
     assert!(verify_payload(&public, &request, &signature).is_ok());
-    assert!(verify_payload(&public, &body_reply_payload(payload), &signature).is_err());
+    assert!(verify_payload(&public, &motion_reply_payload(payload), &signature).is_err());
     let changed = String::from_utf8(payload.to_vec())
         .unwrap()
         .replace("abc", "def");
     assert!(
         verify_payload(
             &public,
-            &body_request_payload(changed.as_bytes()),
+            &motion_request_payload(changed.as_bytes()),
             &signature
         )
         .is_err()
     );
-    // Match the length-framed v1 bytes explicitly; no downgrade verifier exists.
-    let mut old_domain = Vec::new();
-    for part in [b"alia-body-v1-request".as_slice(), payload.as_slice()] {
-        old_domain.extend_from_slice(&(part.len() as u32).to_be_bytes());
-        old_domain.extend_from_slice(part);
+    // Neither the retired Body domains nor an earlier Motion version may pass.
+    for domain in [
+        b"alia-body-v1-request".as_slice(),
+        b"alia-body-v2-request".as_slice(),
+        b"alia-motion-v1-request".as_slice(),
+    ] {
+        let mut old_domain = Vec::new();
+        for part in [domain, payload.as_slice()] {
+            old_domain.extend_from_slice(&(part.len() as u32).to_be_bytes());
+            old_domain.extend_from_slice(part);
+        }
+        let old_signature = sign_payload(&key, &old_domain);
+        assert!(verify_payload(&public, &request, &old_signature).is_err());
     }
-    let old_signature = sign_payload(&key, &old_domain);
-    assert!(verify_payload(&public, &request, &old_signature).is_err());
 }
 
 #[test]

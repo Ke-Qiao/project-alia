@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package alia.motion.v1;
+
+// Payloads are strict alia-core MotionRequest / MotionReply JSON bytes. The exact
+// bytes, not a reserialized object, are signed with the direction-specific
+// alia-motion-v2 domain. The envelope RPC namespace stays v1; the signed JSON
+// contract is version 2. Every reply echoes the signed request nonce and device.
+service MotionControl {
+  rpc Exchange(SignedMotionPayload) returns (SignedMotionPayload);
+}
+
+message SignedMotionPayload {
+  bytes payload = 1;
+  bytes signature = 2;
+}

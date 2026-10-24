@@ -1138,7 +1138,24 @@ fn stmt(sql: &str, values: Vec<SqlValue>) -> Statement {
     Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, values)
 }
 fn digest(value: &impl Serialize) -> DeliveryResult<String> {
-    Ok(format!("{:x}", Sha256::digest(serde_json::to_vec(value)?)))
+    // JSONB reorders keys; keep the pre-Rig sorted-object identity after feature unification.
+    let mut value = serde_json::to_value(value)?;
+    value.sort_all_objects();
+    Ok(format!("{:x}", Sha256::digest(serde_json::to_vec(&value)?)))
+}
+
+#[test]
+fn delivery_intent_digest_preserves_sorted_json_identity() {
+    let value: Value = serde_json::from_str(r#"{"z":[{"second":2,"first":1}],"a":0}"#).unwrap();
+    let sorted = br#"{"a":0,"z":[{"first":1,"second":2}]}"#;
+    assert_eq!(
+        digest(&value).unwrap(),
+        format!("{:x}", Sha256::digest(sorted))
+    );
+    assert_eq!(
+        digest(&value).unwrap(),
+        digest(&serde_json::from_slice::<Value>(sorted).unwrap()).unwrap()
+    );
 }
 fn enum_name(value: impl Serialize) -> DeliveryResult<String> {
     Ok(serde_json::to_value(value)?.as_str().unwrap().to_string())

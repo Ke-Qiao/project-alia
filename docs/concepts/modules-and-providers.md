@@ -93,7 +93,7 @@ Channels are I/O paths, not model providers. A channel owns transport details:
 
 Interaction and Delivery own turn decisions, pause authorization and response
 lifetimes. The embedded adapter carries those contracts to VoiceSession,
-Playback and Body services; it does not create a second turn or output owner.
+Playback and Motion services; it does not create a second turn or output owner.
 
 ## Feature Flags
 
@@ -107,7 +107,8 @@ Cargo features compile optional backend support:
 - insights: `insights`
 - server turn evidence adapter: `turn-easy`
 
-Embedded enables `sherpa-onnx` by default for both wake word and VAD. Its other
+Embedded enables the `sherpa-onnx` feature by default for Sherpa wake words and
+the shared ONNX Runtime used by the Rust `silero` VAD. Its other
 optional backend feature is `vision-opencv`. Continuous VoiceSession, native
 voice/cue mixing, settings and sensor services are compiled independently of
 these model features. Local cues use the configured direct-response metadata;

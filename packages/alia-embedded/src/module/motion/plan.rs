@@ -1,7 +1,7 @@
 use super::neck_mapper::NeckMapper;
 use crate::config::MotionConfig;
-use alia_core::body::{
-    BodyAnimationAsset, BodyCommand, BodyMotion, BodyTarget, MAX_BODY_PAYLOAD_BYTES,
+use alia_core::embodiment::motion::{
+    MAX_MOTION_PAYLOAD_BYTES, MotionAnimationAsset, MotionCommand, MotionKind, MotionTarget,
     validate_animation_catalog,
 };
 use anyhow::{Context, Result, ensure};
@@ -9,26 +9,26 @@ use anyhow::{Context, Result, ensure};
 /// Preparation performs bounded file reads only. It never claims an identity or
 /// touches hardware; submit rechecks all authority after this work has joined.
 #[derive(Debug)]
-pub struct PreparedBodyCommand {
-    pub(super) command: BodyCommand,
+pub struct PreparedMotionCommand {
+    pub(super) command: MotionCommand,
     pub(super) signed_bytes: Vec<u8>,
     pub(super) actions: Vec<Vec<[f32; 3]>>,
 }
 
 pub(super) fn prepare(
     config: &MotionConfig,
-    command: BodyCommand,
+    command: MotionCommand,
     signed_bytes: Vec<u8>,
-) -> Result<PreparedBodyCommand> {
+) -> Result<PreparedMotionCommand> {
     validate_canonical(&command, &signed_bytes)?;
     validate_animation_catalog(&config.approved_animations).map_err(anyhow::Error::msg)?;
     let mut actions = Vec::new();
     for action in &command.actions {
         let (max_intensity, max_duration) = match action.motion {
-            BodyMotion::SmallNod => (0.45, 900),
-            BodyMotion::SmallBow => (0.35, 1200),
-            BodyMotion::LookAt { .. } => (0.45, 1200),
-            BodyMotion::Animation { .. } => (0.45, 5000),
+            MotionKind::SmallNod => (0.45, 900),
+            MotionKind::SmallBow => (0.35, 1200),
+            MotionKind::LookAt { .. } => (0.45, 1200),
+            MotionKind::Animation { .. } => (0.45, 5000),
         };
         ensure!(
             action.intensity <= max_intensity && action.duration_ms <= max_duration,
@@ -38,7 +38,7 @@ pub(super) fn prepare(
             .div_ceil(1000)
             .max(1) as usize;
         let points = match &action.motion {
-            BodyMotion::SmallNod => {
+            MotionKind::SmallNod => {
                 let amplitude = (3.0 + action.intensity * 20.0).min(12.0);
                 vec![
                     [0.0; 3],
@@ -47,7 +47,7 @@ pub(super) fn prepare(
                     [0.0; 3],
                 ]
             }
-            BodyMotion::SmallBow => {
+            MotionKind::SmallBow => {
                 let amplitude = (4.0 + action.intensity * 22.0).min(12.0);
                 vec![
                     [0.0; 3],
@@ -56,11 +56,11 @@ pub(super) fn prepare(
                     [0.0; 3],
                 ]
             }
-            BodyMotion::LookAt { target } => vec![
+            MotionKind::LookAt { target } => vec![
                 [0.0; 3],
                 match target {
-                    BodyTarget::Rotation { degrees } => *degrees,
-                    BodyTarget::FaceCenter {
+                    MotionTarget::Rotation { degrees } => *degrees,
+                    MotionTarget::FaceCenter {
                         cx,
                         cy,
                         width,
@@ -68,7 +68,7 @@ pub(super) fn prepare(
                     } => face_rotation(config, *cx, *cy, *width, *height)?,
                 },
             ],
-            BodyMotion::Animation { asset, fps, loops } => {
+            MotionKind::Animation { asset, fps, loops } => {
                 let frames = read_animation(config, asset)?;
                 let count = frames
                     .len()
@@ -106,29 +106,29 @@ pub(super) fn prepare(
                 .collect(),
         );
     }
-    Ok(PreparedBodyCommand {
+    Ok(PreparedMotionCommand {
         command,
         signed_bytes,
         actions,
     })
 }
 
-pub(super) fn validate_canonical(command: &BodyCommand, canonical: &[u8]) -> Result<()> {
+pub(super) fn validate_canonical(command: &MotionCommand, canonical: &[u8]) -> Result<()> {
     command.validate().map_err(anyhow::Error::msg)?;
     ensure!(
-        !canonical.is_empty() && canonical.len() <= MAX_BODY_PAYLOAD_BYTES,
-        "invalid body intent size"
+        !canonical.is_empty() && canonical.len() <= MAX_MOTION_PAYLOAD_BYTES,
+        "invalid motion intent size"
     );
     ensure!(
         canonical == serde_json::to_vec(command)?,
-        "body canonical bytes do not match the command"
+        "motion canonical bytes do not match the command"
     );
     Ok(())
 }
 
 pub(super) fn read_animation(
     config: &MotionConfig,
-    asset: &BodyAnimationAsset,
+    asset: &MotionAnimationAsset,
 ) -> Result<Vec<[f32; 3]>> {
     let bytes = super::assets::read_approved(config, asset)?;
     let content = std::str::from_utf8(&bytes).context("animation must be UTF-8")?;
@@ -229,7 +229,7 @@ pub(super) fn expand(
                 .max(1.0) as usize;
             ensure!(
                 frames.len().checked_add(steps).is_some_and(|n| n <= limit),
-                "speed-limited body plan exceeds 30 seconds / 3600 frames"
+                "speed-limited motion plan exceeds 30 seconds / 3600 frames"
             );
             for step in 1..=steps {
                 frames.push(PlannedFrame {
@@ -255,15 +255,20 @@ pub(super) fn expand(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alia_core::body::{
-        BodyAction, BodyCommandIdentity, BodyControlLease, BodyPriority, BodyScope,
+    use alia_core::embodiment::motion::{
+        MotionAction, MotionCommandIdentity, MotionControlLease, MotionPriority, MotionScope,
     };
     use uuid::Uuid;
 
-    fn animation(asset: BodyAnimationAsset, fps: u32, loops: u32, duration_ms: u32) -> BodyCommand {
-        BodyCommand {
-            identity: BodyCommandIdentity {
-                lease: BodyControlLease {
+    fn animation(
+        asset: MotionAnimationAsset,
+        fps: u32,
+        loops: u32,
+        duration_ms: u32,
+    ) -> MotionCommand {
+        MotionCommand {
+            identity: MotionCommandIdentity {
+                lease: MotionControlLease {
                     device_boot_id: Uuid::new_v4(),
                     server_instance_id: Uuid::new_v4(),
                     generation: 1,
@@ -273,20 +278,20 @@ mod tests {
             plan_id: Uuid::new_v4(),
             source_command_id: "animation-test".into(),
             owner_id: Uuid::new_v4(),
-            scope: BodyScope::Nonvoice {
+            scope: MotionScope::Nonvoice {
                 scope_id: Uuid::new_v4(),
             },
-            priority: BodyPriority::Normal,
+            priority: MotionPriority::Normal,
             interruptible: true,
-            actions: vec![BodyAction {
+            actions: vec![MotionAction {
                 duration_ms,
                 intensity: 0.1,
-                motion: BodyMotion::Animation { asset, fps, loops },
+                motion: MotionKind::Animation { asset, fps, loops },
             }],
         }
     }
 
-    fn prepared(config: &MotionConfig, command: BodyCommand) -> Result<PreparedBodyCommand> {
+    fn prepared(config: &MotionConfig, command: MotionCommand) -> Result<PreparedMotionCommand> {
         let bytes = serde_json::to_vec(&command)?;
         prepare(config, command, bytes)
     }
@@ -298,13 +303,13 @@ mod tests {
         fps: u32,
         loops: u32,
         duration_ms: u32,
-    ) -> BodyCommand {
+    ) -> MotionCommand {
         let name = format!("{file}.anim");
         let bytes = std::fs::read(config.animation_dir.join(&name)).unwrap();
-        let asset = BodyAnimationAsset {
+        let asset = MotionAnimationAsset {
             file: name,
             version: 1,
-            sha256: alia_core::body::body_animation_sha256(&bytes),
+            sha256: alia_core::embodiment::motion::motion_animation_sha256(&bytes),
             bytes: bytes.len().min(65_536) as u32,
         };
         config.approved_animations = vec![asset.clone()];
@@ -317,7 +322,7 @@ mod tests {
         fps: u32,
         loops: u32,
         duration_ms: u32,
-    ) -> Result<PreparedBodyCommand> {
+    ) -> Result<PreparedMotionCommand> {
         let command = approve_fixture(config, file, fps, loops, duration_ms);
         prepared(config, command)
     }
@@ -381,10 +386,10 @@ mod tests {
         let mut command = approve_fixture(&mut config, "bad", 30, 1, 100);
         command.actions.insert(
             0,
-            BodyAction {
+            MotionAction {
                 duration_ms: 100,
                 intensity: 0.1,
-                motion: BodyMotion::SmallNod,
+                motion: MotionKind::SmallNod,
             },
         );
         assert!(
@@ -430,7 +435,7 @@ mod tests {
             ..MotionConfig::default()
         };
         assert!(prepared_fixture(&mut config, "link", 30, 1, 100).is_err());
-        let directory_asset = BodyAnimationAsset {
+        let directory_asset = MotionAnimationAsset {
             file: "directory.anim".into(),
             version: 1,
             sha256: "0".repeat(64),

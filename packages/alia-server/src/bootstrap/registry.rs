@@ -1,3 +1,4 @@
+use crate::providers::llm::LlmService;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,8 +20,7 @@ use crate::{
         platform::insights::InsightService,
     },
     providers::adapter::{
-        EmbeddingAdapter, LlmAdapter, RuleEvaluator, SchedulerBackend, SttAdapter, ToolRegistry,
-        TtsAdapter,
+        EmbeddingAdapter, RuleEvaluator, SchedulerBackend, SttAdapter, ToolRegistry, TtsAdapter,
     },
 };
 
@@ -30,11 +30,11 @@ pub struct ModuleRegistry {
     pub(crate) health_gate: Mutex<()>,
     pub(crate) health_cancel: CancellationToken,
     // AI adapters
-    pub llm: Arc<dyn LlmAdapter>,
-    pub minor_llm: Arc<dyn LlmAdapter>,
-    pub major_llm: Arc<dyn LlmAdapter>,
-    pub memory_capture_llm: Option<Arc<dyn LlmAdapter>>,
-    pub sentence_expression_llm: Option<Arc<dyn LlmAdapter>>,
+    pub llm: Arc<LlmService>,
+    pub minor_llm: Arc<LlmService>,
+    pub major_llm: Arc<LlmService>,
+    pub memory_capture_llm: Option<Arc<LlmService>>,
+    pub sentence_expression_llm: Option<Arc<LlmService>>,
     pub stt: Arc<dyn SttAdapter>,
     pub tts: Arc<dyn TtsAdapter>,
     pub embedding: Arc<dyn EmbeddingAdapter>,
@@ -78,16 +78,11 @@ impl ModuleRegistry {
 
     /// Aggregate health check for GET /health endpoint
     pub async fn health(&self) -> HashMap<String, ModuleHealth> {
-        let mut modules: Vec<(&str, &dyn ModuleLifecycle)> = vec![
-            ("llm.minor", self.minor_llm.as_ref()),
-            ("llm.major", self.major_llm.as_ref()),
-        ];
-        if let Some(llm) = &self.memory_capture_llm {
-            modules.push(("llm.memory_capture", llm.as_ref()));
-        }
-        if let Some(llm) = &self.sentence_expression_llm {
-            modules.push(("llm.sentence_expression", llm.as_ref()));
-        }
+        let mut modules: Vec<(&str, &dyn ModuleLifecycle)> = self
+            .llm_roles()
+            .into_iter()
+            .map(|(role, llm)| (role, llm.as_ref() as &dyn ModuleLifecycle))
+            .collect();
         modules.extend([
             ("stt", self.stt.as_ref() as &dyn ModuleLifecycle),
             ("tts", self.tts.as_ref()),
@@ -106,18 +101,26 @@ impl ModuleRegistry {
         aggregate_health(&modules, &self.health_gate, &self.health_cancel).await
     }
 
-    /// A configured instance may serve multiple roles but has one lifecycle.
-    pub(crate) fn unique_llms(&self) -> Vec<&Arc<dyn LlmAdapter>> {
-        let mut unique: Vec<&Arc<dyn LlmAdapter>> = Vec::new();
-        for llm in [
-            Some(&self.minor_llm),
-            Some(&self.major_llm),
-            self.memory_capture_llm.as_ref(),
-            self.sentence_expression_llm.as_ref(),
+    fn llm_roles(&self) -> Vec<(&'static str, &Arc<LlmService>)> {
+        [
+            ("llm.default", Some(&self.llm)),
+            ("llm.minor", Some(&self.minor_llm)),
+            ("llm.major", Some(&self.major_llm)),
+            ("llm.memory_capture", self.memory_capture_llm.as_ref()),
+            (
+                "llm.sentence_expression",
+                self.sentence_expression_llm.as_ref(),
+            ),
         ]
         .into_iter()
-        .flatten()
-        {
+        .filter_map(|(role, llm)| llm.map(|llm| (role, llm)))
+        .collect()
+    }
+
+    /// A configured instance may serve multiple roles but has one lifecycle.
+    pub(crate) fn unique_llms(&self) -> Vec<&Arc<LlmService>> {
+        let mut unique: Vec<&Arc<LlmService>> = Vec::new();
+        for (_, llm) in self.llm_roles() {
             if !unique.iter().any(|known| Arc::ptr_eq(known, llm)) {
                 unique.push(llm);
             }

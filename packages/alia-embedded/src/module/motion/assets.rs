@@ -2,12 +2,15 @@
 use std::io::Read;
 use std::path::Path;
 
-use alia_core::body::BodyAnimationAsset;
+use alia_core::embodiment::motion::MotionAnimationAsset;
 use anyhow::{Context, Result, ensure};
 
 use crate::config::MotionConfig;
 
-pub(super) fn read_approved(config: &MotionConfig, asset: &BodyAnimationAsset) -> Result<Vec<u8>> {
+pub(super) fn read_approved(
+    config: &MotionConfig,
+    asset: &MotionAnimationAsset,
+) -> Result<Vec<u8>> {
     ensure!(
         config
             .approved_animations
@@ -19,7 +22,7 @@ pub(super) fn read_approved(config: &MotionConfig, asset: &BodyAnimationAsset) -
     read_verified(file, asset)
 }
 
-fn read_verified(file: std::fs::File, asset: &BodyAnimationAsset) -> Result<Vec<u8>> {
+fn read_verified(file: std::fs::File, asset: &MotionAnimationAsset) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     file.take(u64::from(asset.bytes) + 1)
         .read_to_end(&mut bytes)?;
@@ -143,10 +146,10 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("path.anim");
         let original = b"frames\n1 0 0\n";
-        let asset = BodyAnimationAsset {
+        let asset = MotionAnimationAsset {
             file: "path.anim".into(),
             version: 1,
-            sha256: alia_core::body::body_animation_sha256(original),
+            sha256: alia_core::embodiment::motion::motion_animation_sha256(original),
             bytes: original.len() as u32,
         };
         std::fs::write(&path, original).unwrap();

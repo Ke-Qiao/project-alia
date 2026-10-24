@@ -1,5 +1,10 @@
 //! Real PostgreSQL tests. Every case uses its own schema in the disposable
 //! ALIA_TEST_DATABASE_URL database; no mock database or missing-table fallback.
+#[cfg(feature = "insights")]
+#[path = "support/llm.rs"]
+mod llm_fixture;
+#[cfg(feature = "insights")]
+use alia_server::providers::llm::LlmService;
 use alia_server::{
     config::{ConversationSection, MemorySection},
     modules::{
@@ -12,6 +17,8 @@ use alia_server::{
     providers::{adapter::*, embedding::NoopEmbedding},
 };
 use futures::FutureExt;
+#[cfg(feature = "insights")]
+use llm_fixture::test_text;
 use sea_orm::{
     ConnectOptions, ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement,
     TransactionTrait,
@@ -805,32 +812,24 @@ mod insights {
         calls: AtomicUsize,
         messages: tokio::sync::Mutex<Vec<ChatMessage>>,
     }
-    #[async_trait]
-    impl ModuleLifecycle for HeldReviewer {
-        fn name(&self) -> &'static str {
-            "held-cache-reviewer"
+    impl HeldReviewer {
+        fn service(self: &Arc<Self>) -> Arc<LlmService> {
+            let fixture = self.clone();
+            Arc::new(test_text("held-cache-reviewer", move |messages| {
+                let fixture = fixture.clone();
+                async move {
+                    fixture.calls.fetch_add(1, Ordering::SeqCst);
+                    *fixture.messages.lock().await = messages.to_vec();
+                    if fixture.hold_once.swap(false, Ordering::SeqCst) {
+                        fixture.entered.notify_one();
+                        fixture.release.notified().await;
+                    }
+                    Ok(fixture.reply.clone())
+                }
+            }))
         }
     }
-    #[async_trait]
-    impl LlmAdapter for HeldReviewer {
-        async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
-            self.calls.fetch_add(1, Ordering::SeqCst);
-            *self.messages.lock().await = messages.to_vec();
-            if self.hold_once.swap(false, Ordering::SeqCst) {
-                self.entered.notify_one();
-                self.release.notified().await;
-            }
-            Ok(self.reply.clone())
-        }
-        async fn chat_stream(
-            &self,
-            _messages: &[ChatMessage],
-        ) -> anyhow::Result<
-            std::pin::Pin<Box<dyn futures::Stream<Item = anyhow::Result<String>> + Send>>,
-        > {
-            anyhow::bail!("insights tests use nonstreaming calls")
-        }
-    }
+
     fn probe(reply: Value, hold: bool) -> Arc<HeldReviewer> {
         Arc::new(HeldReviewer {
             hold_once: AtomicBool::new(hold),
@@ -889,7 +888,7 @@ mod insights {
             scheduler: None,
             conditions: None,
             memory,
-            llm: Some(llm),
+            llm: Some(llm.service()),
             embedding: Some(embedding),
             cache: Some(f.cache.clone()),
         })

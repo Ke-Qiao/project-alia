@@ -1,0 +1,73 @@
+# R1 host integration for the existing UART_REAL firmware, Linux only.
+# Copy into a private instance directory and provide the VAD model first.
+# Normal startup opens the control UART, microphone and playback device before binding.
+# No firmware, wake word, beam, AEC or raw-audio configuration is sent to R1.
+
+[runtime]
+provisioned = false
+
+[device_runtime]
+listen_addr = "127.0.0.1:50051"
+state_path = "r1/state/embedded.sqlite3"
+plugins_dir = "r1/plugins"
+
+[identity]
+device_id = ""
+device_name = "Alia R1"
+keypair_path = "r1/identity/device.key"
+
+[modules]
+wakeword = "r1"
+vad = "silero"
+direct_response = "noop"
+audio_capture = "cpal"
+audio_playback = "cpal"
+face_tracker = "noop"
+discovery = "noop"
+
+[r1]
+# Confirm the physical device when multiple CH340 adapters are attached.
+serial_path = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
+
+[audio]
+capture_backend = "alsa"
+capture_device = "hw:CARD=L6Microphone,DEV=0"
+capture_sample_rate = 16000
+capture_channels = 1
+# Initial linear gains; an existing instance restores its persisted volume instead.
+capture_volume = 1.0
+playback_backend = "alsa"
+playback_device = "hw:CARD=Device,DEV=0"
+playback_sample_rate = 48000
+playback_channels = 2
+playback_volume = 1.0
+# Separate USB devices keep independent clocks; the analog reference does not synchronize them.
+alsa_playback_lock_to_capture_rate = false
+
+[vad]
+model_path = "models/silero-vad/silero_vad.onnx"
+
+[speech]
+channel_id = "pi-living-room"
+
+[motion]
+enabled = false
+hardware_enabled = false
+calibration_confirmed = false
+approved_animations = []
+
+[vision]
+enabled = false
+
+[vision_debug]
+enabled = false
+
+[hmmd_mmwave]
+enabled = false
+
+[discovery]
+mdns_enabled = false
+ble_provision_enabled = false
+
+[dev]
+skip_binding = false

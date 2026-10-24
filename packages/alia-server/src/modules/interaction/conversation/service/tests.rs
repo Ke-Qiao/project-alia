@@ -37,7 +37,7 @@ async fn durable_input_provenance_preserves_time_owner_and_atomicity() {
         let session = backend.create_session("voice-test", &owner.to_string()).await.unwrap();
         let received = chrono::Utc::now() - chrono::Duration::hours(1);
         let mut message = ChatMessage::new("user", "用户喜欢咖啡");
-        message.name = Some(Uuid::new_v4().to_string());
+        message.user_id = Some(Uuid::new_v4().to_string());
         let id = backend.append_sourced_message(owner, session, message, received, epoch, admitted.relationship_epoch).await.unwrap();
         let row = db.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "SELECT user_id,source_received_at,source_privacy_epoch,source_relationship_epoch,created_at FROM chat_messages WHERE id=$1", [id.into()])).await.unwrap().unwrap();

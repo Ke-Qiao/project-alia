@@ -13,6 +13,12 @@ import tempfile
 
 
 REMOVED_PATHS = (
+    "src/modules/body_delivery.rs",
+    "src/modules/body_delivery",
+    "src/channels/embedded/body.rs",
+    "src/channels/embedded/body",
+    "src/api/body_deliveries.rs",
+    "src/modules/platform/sensors",
     "src/module",
     "src/providers/memory",
     "src/providers/conversation",
@@ -29,8 +35,23 @@ REMOVED_PATHS = (
     "src/modules/memory/context/companion",
     "src/providers/tts/audio_budget.rs",
     "src/providers/tts/audio_budget_tests.rs",
+    "src/providers/llm/openai.rs",
+    "src/providers/llm/anthropic.rs",
+    "src/providers/llm/gemini.rs",
+    "src/providers/llm/streaming.rs",
+    "src/providers/llm/test_support.rs",
 )
 REQUIRED_PATHS = (
+    "src/modules/embodiment/motion_delivery.rs",
+    "src/modules/embodiment/motion_delivery/repository.rs",
+    "src/channels/embedded/motion.rs",
+    "src/api/motion_deliveries.rs",
+    "src/providers/llm/service.rs",
+    "src/tools/entry.rs",
+    "src/tools/fetch.rs",
+    "src/tools/mcp/mod.rs",
+    "src/tools/wasm.rs",
+    "src/plugins/wasm.rs",
     "src/bootstrap/builder.rs",
     "src/bootstrap/factory.rs",
     "src/bootstrap/registry.rs",
@@ -53,9 +74,18 @@ REQUIRED_PATHS = (
     "src/modules/interaction/persona/service.rs",
     "src/modules/interaction/skills/registry.rs",
     "src/modules/platform/insights/service.rs",
-    "src/modules/platform/sensors/registry.rs",
+    "src/modules/embodiment/sensors/registry.rs",
 )
 RETIRED_SYMBOLS = (
+    "BodyAction", "BodyAnimationAsset", "BodyApiError", "BodyAuthorization", "BodyBackend",
+    "BodyCommand", "BodyCommandIdentity", "BodyControl", "BodyControlClient", "BodyControlLease",
+    "BodyControlServer", "BodyControlState", "BodyDeliveryOrigin", "BodyDeliveryRecord",
+    "BodyDeliveryRepository", "BodyDeliveryStore", "BodyDispatch", "BodyEnd", "BodyEvidence",
+    "BodyExecutionEvidence", "BodyIntent", "BodyLookupError", "BodyMotion", "BodyObservation",
+    "BodyOperation", "BodyPriority", "BodyProgress", "BodyReply", "BodyRequest", "BodyScope",
+    "BodySubmissionBoundary", "BodyTarget", "EmbeddedBodyRuntime", "EmbeddedBodyService",
+    "InvalidBodyEvidence", "PreparedBodyCommand", "SignedBodyClient", "SignedBodyPayload",
+    "LlmAdapter", "LlmResponse", "LlmToolCall", "ToolExecutor", "NoopLlm",
     "MemoryBackend", "NoopMemory", "AliaMemory", "PipelinePolicies", "SharedPipelinePolicies",
     "spawn_pipeline", "ConversationBackend", "DatabaseConversationBackend", "CacheBackend",
     "DbCache", "RouterStrategy", "MultiLayerRouter", "PassthroughRouter", "DirectRouter",
@@ -71,6 +101,10 @@ OLD_SYMBOLS = re.compile(
     r"|\bchannels\s*::\s*pipeline\b"
     r"|\bmemory_policy\s*::"
     r"|\btts\s*::\s*audio_budget\b"
+    r"|\bplatform\s*::\s*sensors\b"
+    r"|\b(?:alia_core|alia_proto)\s*::\s*body\b"
+    r"|\bmodules\s*::\s*body_delivery\b"
+    r"|\bembedded\s*::\s*body\b"
     r"|\bfactory\s*::\s*create_(?:" + FIXED_FACTORIES + r")\b"
 )
 MEMORY_DECLARATION = re.compile(
@@ -103,9 +137,7 @@ NARROW_INITIALIZATION_FILES = (
     "src/modules/interaction/routing/service.rs",
     "src/modules/interaction/persona/service.rs",
     "src/modules/interaction/skills/registry.rs",
-    "src/providers/llm/openai.rs",
-    "src/providers/llm/anthropic.rs",
-    "src/providers/llm/gemini.rs",
+    "src/providers/llm/service.rs",
     "src/providers/embedding/openai.rs",
     "src/providers/stt/whisper.rs",
     "src/providers/tts/gpt_sovits.rs",
@@ -178,7 +210,7 @@ def check(server: Path) -> list[str]:
                     for export in exports
                 ):
                     errors.append(f"{relative}: outbound contract must be owned by Delivery without forwarding exports")
-            if relative.startswith("src/modules/memory/context/") and "/tests" not in relative:
+            if relative.startswith("src/modules/memory/context/") and "/tests" not in relative and not path.name.endswith("_tests.rs"):
                 if re.search(r"\b(?:private_grant|CompanionPolicy|CompanionPolicySnapshot|CanonicalObservation)\b", text):
                     errors.append(f"{relative}: Context owns Companion business policy or projection")
             if relative == "src/bootstrap/factory.rs":
@@ -262,6 +294,11 @@ def self_test() -> None:
             "pub struct ModuleContext {}",
             "use crate::modules::platform::lifecycle::ModuleContext as Dependencies;",
             "pub use crate::modules::platform::lifecycle::{ModuleContext};",
+            "use crate::modules::platform::sensors::SensorRegistry;",
+            "use alia_core::body::*;",
+            "use alia_proto::body::*;",
+            "use crate::modules::body_delivery::*;",
+            "use crate::channels::embedded::body::*;",
         ):
             fixture.write_text(invalid)
             assert any("retired symbol/path" in error for error in check(server)), invalid
@@ -271,16 +308,16 @@ def self_test() -> None:
         for owner in FIXED_FACTORIES.split("|"):
             fixture.write_text(f"let core = factory::create_{owner}();")
             assert any("retired symbol/path" in error for error in check(server)), owner
-        fixture.write_text("fn use_ports(_: &dyn ConversationStore, _: &dyn CacheStore, _: &dyn SensorReadProvider, _: &dyn LlmAdapter) {}")
+        fixture.write_text("fn use_ports(_: &dyn ConversationStore, _: &dyn CacheStore, _: &dyn SensorReadProvider, _: &LlmService) {}")
         assert not check(server)
         fixture.write_text("")
         factory = server / "src/bootstrap/factory.rs"
         for owner in FIXED_FACTORIES.split("|"):
             factory.write_text(f"pub fn create_{owner}() {{}}")
             assert any("fixed core factory" in error for error in check(server)), owner
-        factory.write_text("pub fn create_llm() -> Box<dyn LlmAdapter> {}")
+        factory.write_text("pub fn create_llm() -> Box<LlmService> {}")
         api = server / "src/api/personas.rs"
-        api.parent.mkdir(parents=True)
+        api.parent.mkdir(parents=True, exist_ok=True)
         api.write_text("async fn create_persona() {}")
         assert not check(server)
         skills_api = server / "src/api/skills.rs"
@@ -324,11 +361,11 @@ def self_test() -> None:
             "pub const DEFAULT_CACHE_SCOPE: &str = \"default\";",
             "pub fn sanitize_assistant_name() {}",
             "pub use crate::modules::interaction::cache::*;",
-            "pub use crate::modules::platform::sensors::{SensorDefinition};",
+            "pub use crate::modules::embodiment::sensors::{SensorDefinition};",
         ):
             adapter.write_text(invalid)
             assert any("fixed core contract" in error for error in check(server)), invalid
-        adapter.write_text("pub trait LlmAdapter {} pub use crate::modules::platform::lifecycle::ModuleLifecycle;")
+        adapter.write_text("pub trait TtsAdapter {} pub use crate::modules::platform::lifecycle::ModuleLifecycle;")
         assert not check(server)
         adapter.write_text("")
         capture = server / "src/modules/memory/capture.rs"
@@ -366,6 +403,11 @@ def self_test() -> None:
         invitation.write_text("use crate::modules::companion::invitation::lock_invitation_grant;")
         assert not check(server)
         invitation.write_text("")
+        history_test = server / "src/modules/memory/context/invitation/history_tests.rs"
+        history_test.parent.mkdir(parents=True, exist_ok=True)
+        history_test.write_text("let fixture_policy: CompanionPolicy;")
+        assert not check(server), "test fixtures may construct another domain's policy"
+        history_test.unlink()
         for relative, invalid, expected in (
             ("src/modules/delivery/transport.rs", "use crate::channels::adapter::ChannelAdapter;", "Delivery depends on"),
             ("src/modules/delivery/audio.rs", "use crate::providers::tts::Budget;", "Delivery depends on"),

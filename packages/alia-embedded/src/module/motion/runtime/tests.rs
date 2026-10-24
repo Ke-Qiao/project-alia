@@ -1,5 +1,5 @@
 use super::*;
-use alia_core::body::{BodyAction, BodyMotion, BodyPriority, BodyTarget};
+use alia_core::embodiment::motion::{MotionAction, MotionKind, MotionPriority, MotionTarget};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::module::motion::servo::{ServoBoundary, ServoWrite};
@@ -139,13 +139,13 @@ fn unstarted() -> (MotionRuntime, Arc<ProbeServo>) {
     (runtime, servo)
 }
 
-fn authorization() -> BodyAuthorization {
-    BodyAuthorization {
+fn authorization() -> MotionAuthorization {
+    MotionAuthorization {
         expires_at: Instant::now() + Duration::from_secs(30),
     }
 }
 
-fn open(runtime: &MotionRuntime) -> BodyControlLease {
+fn open(runtime: &MotionRuntime) -> MotionControlLease {
     runtime
         .open_control(
             runtime.control_state().generation,
@@ -155,22 +155,22 @@ fn open(runtime: &MotionRuntime) -> BodyControlLease {
         .unwrap()
 }
 
-fn command(lease: BodyControlLease, sequence: u64) -> BodyCommand {
-    BodyCommand {
-        identity: BodyCommandIdentity { lease, sequence },
+fn command(lease: MotionControlLease, sequence: u64) -> MotionCommand {
+    MotionCommand {
+        identity: MotionCommandIdentity { lease, sequence },
         plan_id: Uuid::new_v4(),
         source_command_id: format!("test:{sequence}"),
         owner_id: Uuid::new_v4(),
-        scope: BodyScope::Nonvoice {
+        scope: MotionScope::Nonvoice {
             scope_id: Uuid::new_v4(),
         },
-        priority: BodyPriority::Normal,
+        priority: MotionPriority::Normal,
         interruptible: true,
-        actions: vec![BodyAction {
+        actions: vec![MotionAction {
             duration_ms: 1,
             intensity: 0.1,
-            motion: BodyMotion::LookAt {
-                target: BodyTarget::Rotation {
+            motion: MotionKind::LookAt {
+                target: MotionTarget::Rotation {
                     degrees: [1.0, 0.0, 0.0],
                 },
             },
@@ -178,25 +178,25 @@ fn command(lease: BodyControlLease, sequence: u64) -> BodyCommand {
     }
 }
 
-async fn prepared(runtime: &MotionRuntime, command: &BodyCommand) -> PreparedBodyCommand {
+async fn prepared(runtime: &MotionRuntime, command: &MotionCommand) -> PreparedMotionCommand {
     runtime
         .prepare(command.clone(), serde_json::to_vec(command).unwrap())
         .await
         .unwrap()
 }
 
-async fn submitted(runtime: &MotionRuntime, command: &BodyCommand) -> BodyObservation {
+async fn submitted(runtime: &MotionRuntime, command: &MotionCommand) -> MotionObservation {
     runtime
         .submit(prepared(runtime, command).await, authorization())
         .unwrap()
 }
 
-async fn terminal(mut observation: BodyObservation, command: &BodyCommand) -> BodyProgress {
+async fn terminal(mut observation: MotionObservation, command: &MotionCommand) -> MotionProgress {
     tokio::time::timeout(Duration::from_secs(3), async {
         let mut previous = None;
         loop {
             let next = observation.snapshot();
-            if previous.as_ref().is_none_or(|previous: &BodyProgress| {
+            if previous.as_ref().is_none_or(|previous: &MotionProgress| {
                 previous.receipt_sequence != next.receipt_sequence
             }) {
                 next.validate(previous.as_ref(), command).unwrap();
@@ -209,7 +209,7 @@ async fn terminal(mut observation: BodyObservation, command: &BodyCommand) -> Bo
         }
     })
     .await
-    .expect("body command terminal evidence")
+    .expect("motion command terminal evidence")
 }
 
 #[tokio::test]
@@ -226,13 +226,13 @@ async fn submitted_receipts_are_monotonic_and_do_not_claim_motor_position() {
         assert!(!initial.writer_quiescent);
     }
     let end = terminal(observation, &command).await;
-    assert_eq!(end.end, Some(BodyEnd::Submitted));
+    assert_eq!(end.end, Some(MotionEnd::Submitted));
     assert_eq!(end.submitted_actions, 1);
     assert_eq!(end.submitted_frames, 1);
     assert!(end.position_confirmed_actions.is_none());
     assert_eq!(
         end.backend.unwrap().boundary,
-        alia_core::body::BodySubmissionBoundary::Simulated
+        alia_core::embodiment::motion::MotionSubmissionBoundary::Simulated
     );
     assert_eq!(servo.count(), 2);
     assert_eq!(servo.max_active.load(Ordering::Acquire), 1);
@@ -281,7 +281,7 @@ async fn proven_rejection_consumes_identity_and_cannot_turn_into_late_submission
     assert_eq!(rejected.started_actions, 0);
     assert_eq!(rejected.submitted_frames, 0);
     assert!(rejected.writer_quiescent);
-    assert!(matches!(rejected.end, Some(BodyEnd::Rejected { .. })));
+    assert!(matches!(rejected.end, Some(MotionEnd::Rejected { .. })));
     assert_eq!(
         runtime.submit(late, authorization()).unwrap().snapshot(),
         rejected
@@ -328,7 +328,7 @@ async fn rejection_must_return_existing_live_and_terminal_facts_without_replacin
     );
     servo.release();
     let end = terminal(original, &command).await;
-    assert_eq!(end.end, Some(BodyEnd::Submitted));
+    assert_eq!(end.end, Some(MotionEnd::Submitted));
     assert_eq!(
         runtime
             .reject(command, canonical, "later retry failed")
@@ -373,8 +373,8 @@ async fn concurrent_submit_and_reject_publish_one_immutable_outcome() {
         let other_end = terminal(reject.await.unwrap().unwrap(), &command).await;
         assert_eq!(end, other_end);
         match end.end {
-            Some(BodyEnd::Submitted) => submitted_count += 1,
-            Some(BodyEnd::Rejected { .. }) => assert_eq!(end.submitted_frames, 0),
+            Some(MotionEnd::Submitted) => submitted_count += 1,
+            Some(MotionEnd::Rejected { .. }) => assert_eq!(end.submitted_frames, 0),
             other => panic!("unexpected concurrent outcome {other:?}"),
         }
     }
@@ -483,7 +483,7 @@ async fn absent_old_lease_receipt_cannot_be_called_rejected_after_it_already_exe
     let old = command(open(&runtime), 1);
     assert_eq!(
         terminal(submitted(&runtime, &old).await, &old).await.end,
-        Some(BodyEnd::Submitted)
+        Some(MotionEnd::Submitted)
     );
     let new_lease = open(&runtime);
     for sequence in 1..=64 {
@@ -518,7 +518,7 @@ async fn expired_authority_can_prove_unadmitted_identity_without_reviving_write_
         .open_control(
             0,
             Uuid::new_v4(),
-            BodyAuthorization {
+            MotionAuthorization {
                 expires_at: Instant::now() + Duration::from_millis(100),
             },
         )
@@ -536,7 +536,7 @@ async fn expired_authority_can_prove_unadmitted_identity_without_reviving_write_
         .unwrap()
         .snapshot();
     rejected.validate(None, &command).unwrap();
-    assert!(matches!(rejected.end, Some(BodyEnd::Rejected { .. })));
+    assert!(matches!(rejected.end, Some(MotionEnd::Rejected { .. })));
     assert_eq!(rejected.accepted_actions, 0);
     assert!(runtime.renew_control(&lease, authorization()).is_err());
     assert_eq!(servo.count(), 1);
@@ -576,7 +576,7 @@ async fn invalid_or_unknown_lease_commands_cannot_fabricate_rejection_or_consume
         terminal(submitted(&runtime, &valid).await, &valid)
             .await
             .end,
-        Some(BodyEnd::Submitted)
+        Some(MotionEnd::Submitted)
     );
     assert_eq!(servo.count(), 2);
     runtime.stop().await.unwrap();
@@ -619,10 +619,10 @@ async fn replacing_control_cannot_overlap_native_output_or_let_old_close_revoke_
     assert_eq!(servo.active.load(Ordering::Acquire), 1);
     servo.release();
     let old_end = terminal(old_observation, &first).await;
-    assert!(matches!(old_end.end, Some(BodyEnd::Cancelled { .. })));
+    assert!(matches!(old_end.end, Some(MotionEnd::Cancelled { .. })));
     assert_eq!(old_end.submitted_frames, 1);
     let new_end = terminal(new_observation, &second).await;
-    assert_eq!(new_end.end, Some(BodyEnd::Submitted));
+    assert_eq!(new_end.end, Some(MotionEnd::Submitted));
     assert_eq!(runtime.control_state().lease, Some(new_lease));
     assert_eq!(servo.max_active.load(Ordering::Acquire), 1);
     runtime.stop().await.unwrap();
@@ -646,7 +646,7 @@ async fn cancellation_deadline_keeps_native_owner_and_accepts_late_quiescent_che
     assert_eq!(servo.active.load(Ordering::Acquire), 1);
     servo.release();
     let end = terminal(observation, &command).await;
-    assert!(matches!(end.end, Some(BodyEnd::Cancelled { .. })));
+    assert!(matches!(end.end, Some(MotionEnd::Cancelled { .. })));
     assert_eq!(
         runtime
             .cancel(command.identity, "late acknowledgement")
@@ -689,7 +689,7 @@ async fn shutdown_waiter_drop_keeps_join_and_holds_after_entered_write_returns()
     servo.release();
     runtime.stop().await.unwrap();
     let end = terminal(observation, &command).await;
-    assert!(matches!(end.end, Some(BodyEnd::Cancelled { .. })));
+    assert!(matches!(end.end, Some(MotionEnd::Cancelled { .. })));
     assert_eq!(
         servo.count(),
         2,
@@ -856,7 +856,7 @@ async fn lease_close_and_binding_revocation_hold_after_the_entered_write() {
         assert_eq!(servo.active.load(Ordering::Acquire), 1);
         servo.release();
         let end = terminal(observation, &command).await;
-        assert!(matches!(end.end, Some(BodyEnd::Cancelled { .. })));
+        assert!(matches!(end.end, Some(MotionEnd::Cancelled { .. })));
         assert!(end.writer_quiescent);
         assert_eq!(end.submitted_frames, 1);
         assert_eq!(end.position_confirmed_actions, None);
@@ -887,7 +887,7 @@ async fn dropping_observer_keeps_the_native_owner_and_current_control_lease() {
     assert!(observation.snapshot().end.is_none());
     servo.release();
     let end = terminal(observation, &command).await;
-    assert_eq!(end.end, Some(BodyEnd::Submitted));
+    assert_eq!(end.end, Some(MotionEnd::Submitted));
     assert_eq!(runtime.control_state().lease, Some(lease));
     runtime.stop().await.unwrap();
     assert_eq!(
@@ -930,7 +930,7 @@ async fn shutdown_join_error_is_sticky_and_a_completed_writer_handle_is_not_poll
         panic!("injected owner-level join failure")
     }));
     let first = runtime.stop().await.unwrap_err().to_string();
-    assert!(first.contains("joining owned body writer"));
+    assert!(first.contains("joining owned motion writer"));
     assert!(runtime.writer.lock().await.is_none());
     assert_eq!(runtime.stop().await.unwrap_err().to_string(), first);
     assert_eq!(servo.count(), 0);
@@ -944,7 +944,7 @@ async fn preparation_join_error_does_not_skip_joining_the_native_writer() {
         panic!("injected preparation owner failure")
     }));
     let first = runtime.stop().await.unwrap_err().to_string();
-    assert!(first.contains("joining body preparation"));
+    assert!(first.contains("joining motion preparation"));
     assert!(runtime.preparations.lock().await.is_empty());
     assert!(runtime.writer.lock().await.is_none());
     assert_eq!(runtime.stop().await.unwrap_err().to_string(), first);
@@ -963,7 +963,7 @@ async fn dropping_library_runtime_seals_admission_and_finishes_its_existing_writ
     assert!(!observation.snapshot().writer_quiescent);
     servo.release();
     let end = terminal(observation, &command).await;
-    assert!(matches!(end.end, Some(BodyEnd::Cancelled { .. })));
+    assert!(matches!(end.end, Some(MotionEnd::Cancelled { .. })));
     assert_eq!(servo.max_active.load(Ordering::Acquire), 1);
 }
 
@@ -975,7 +975,7 @@ async fn expired_authority_cannot_be_renewed_to_revive_an_entered_command() {
         .open_control(
             0,
             Uuid::new_v4(),
-            BodyAuthorization {
+            MotionAuthorization {
                 expires_at: Instant::now() + Duration::from_millis(300),
             },
         )
@@ -987,7 +987,7 @@ async fn expired_authority_cannot_be_renewed_to_revive_an_entered_command() {
     let observation = runtime
         .submit(
             prepared,
-            BodyAuthorization {
+            MotionAuthorization {
                 expires_at: Instant::now() + Duration::from_millis(40),
             },
         )
@@ -998,7 +998,7 @@ async fn expired_authority_cannot_be_renewed_to_revive_an_entered_command() {
     assert!(runtime.control_state().lease.is_none());
     servo.release();
     let end = terminal(observation, &command).await;
-    assert!(matches!(end.end, Some(BodyEnd::Cancelled { .. })));
+    assert!(matches!(end.end, Some(MotionEnd::Cancelled { .. })));
     assert_eq!(end.submitted_frames, 1);
     assert_eq!(servo.count(), 2);
     runtime.stop().await.unwrap();
@@ -1016,7 +1016,7 @@ async fn voice_epoch_fence_preserves_old_checkpoint_without_cancelling_new_epoch
     };
     runtime.activate_voice(&old_scope).unwrap();
     let mut old = command(lease, 1);
-    old.scope = BodyScope::Voice { scope: old_scope };
+    old.scope = MotionScope::Voice { scope: old_scope };
     let _native_guard = servo.block_next();
     let old_observation = submitted(&runtime, &old).await;
     servo.wait_entered().await;
@@ -1033,7 +1033,7 @@ async fn voice_epoch_fence_preserves_old_checkpoint_without_cancelling_new_epoch
             .is_err()
     );
     let mut new = command(lease, 3);
-    new.scope = BodyScope::Voice { scope: new_scope };
+    new.scope = MotionScope::Voice { scope: new_scope };
     let new_observation = submitted(&runtime, &new).await;
     runtime.close_voice(&old_scope).unwrap();
     runtime.fence_voice(&old_scope).unwrap();
@@ -1041,11 +1041,11 @@ async fn voice_epoch_fence_preserves_old_checkpoint_without_cancelling_new_epoch
     servo.release();
     assert!(matches!(
         terminal(old_observation, &old).await.end,
-        Some(BodyEnd::Cancelled { .. })
+        Some(MotionEnd::Cancelled { .. })
     ));
     assert_eq!(
         terminal(new_observation, &new).await.end,
-        Some(BodyEnd::Submitted)
+        Some(MotionEnd::Submitted)
     );
     runtime.close_voice(&new_scope).unwrap();
     let mut closed = command(lease, 4);
@@ -1081,7 +1081,7 @@ async fn queued_cancellation_is_immediately_quiescent_even_when_another_native_c
     servo.release();
     assert_eq!(
         terminal(first_observation, &first).await.end,
-        Some(BodyEnd::Submitted)
+        Some(MotionEnd::Submitted)
     );
     runtime.stop().await.unwrap();
 }
@@ -1093,7 +1093,7 @@ async fn native_partial_failure_preserves_complete_and_uncertain_channels_and_se
     let command = command(open(&runtime), 1);
     servo.partial.store(true, Ordering::Release);
     let end = terminal(submitted(&runtime, &command).await, &command).await;
-    assert!(matches!(end.end, Some(BodyEnd::Failed { .. })));
+    assert!(matches!(end.end, Some(MotionEnd::Failed { .. })));
     assert_eq!(end.submitted_frames, 0);
     assert_eq!(end.partial_frame, Some(0));
     assert_eq!(end.last_partial_channels, vec![0]);
@@ -1111,7 +1111,7 @@ async fn native_panic_is_unknown_and_no_replacement_writer_is_spawned() {
     let command = command(open(&runtime), 1);
     servo.panic.store(true, Ordering::Release);
     let end = terminal(submitted(&runtime, &command).await, &command).await;
-    assert!(matches!(end.end, Some(BodyEnd::Unknown { .. })));
+    assert!(matches!(end.end, Some(MotionEnd::Unknown { .. })));
     assert_eq!(
         runtime
             .reject(
@@ -1139,7 +1139,7 @@ async fn entire_speed_expansion_is_checked_before_the_first_command_frame() {
     runtime.start().await.unwrap();
     let command = command(open(&runtime), 1);
     let end = terminal(submitted(&runtime, &command).await, &command).await;
-    assert!(matches!(end.end, Some(BodyEnd::Rejected { .. })));
+    assert!(matches!(end.end, Some(MotionEnd::Rejected { .. })));
     assert_eq!(end.started_actions, 0);
     assert_eq!(end.submitted_frames, 0);
     assert_eq!(servo.count(), 1);
@@ -1193,10 +1193,10 @@ async fn preparation_capacity_and_stop_ownership_survive_dropped_rpc_waiters() {
     let directory = tempfile::tempdir().unwrap();
     let bytes = b"frames\n1 0 0\n";
     std::fs::write(directory.path().join("reviewed.anim"), bytes).unwrap();
-    let asset = alia_core::body::BodyAnimationAsset {
+    let asset = alia_core::embodiment::motion::MotionAnimationAsset {
         file: "reviewed.anim".into(),
         version: 1,
-        sha256: alia_core::body::body_animation_sha256(bytes),
+        sha256: alia_core::embodiment::motion::motion_animation_sha256(bytes),
         bytes: bytes.len() as u32,
     };
     Arc::make_mut(&mut runtime.config).animation_dir = directory.path().into();
@@ -1223,7 +1223,7 @@ async fn preparation_capacity_and_stop_ownership_survive_dropped_rpc_waiters() {
         let runtime = runtime.clone();
         let mut command = command(lease, sequence);
         command.actions[0].duration_ms = 100;
-        command.actions[0].motion = BodyMotion::Animation {
+        command.actions[0].motion = MotionKind::Animation {
             asset: asset.clone(),
             fps: 30,
             loops: 1,
@@ -1271,10 +1271,10 @@ async fn prepared_approved_animation_cannot_revive_a_retired_identity_or_revoked
     let bytes = b"frames\n1 0 0\n";
     let path = directory.path().join("reviewed.anim");
     std::fs::write(&path, bytes).unwrap();
-    let asset = alia_core::body::BodyAnimationAsset {
+    let asset = alia_core::embodiment::motion::MotionAnimationAsset {
         file: "reviewed.anim".into(),
         version: 1,
-        sha256: alia_core::body::body_animation_sha256(bytes),
+        sha256: alia_core::embodiment::motion::motion_animation_sha256(bytes),
         bytes: bytes.len() as u32,
     };
     Arc::make_mut(&mut runtime.config).animation_dir = directory.path().into();
@@ -1283,7 +1283,7 @@ async fn prepared_approved_animation_cannot_revive_a_retired_identity_or_revoked
     let lease = open(&runtime);
     let mut intent = command(lease, 1);
     intent.actions[0].duration_ms = 100;
-    intent.actions[0].motion = BodyMotion::Animation {
+    intent.actions[0].motion = MotionKind::Animation {
         asset,
         fps: 30,
         loops: 1,
@@ -1354,7 +1354,7 @@ async fn face_latest_slot_and_expression_use_one_writer() {
     servo.release();
     assert_eq!(
         terminal(observation, &command).await.end,
-        Some(BodyEnd::Submitted)
+        Some(MotionEnd::Submitted)
     );
     assert_eq!(servo.max_active.load(Ordering::Acquire), 1);
     runtime.revoke_control("binding revoked").unwrap();
@@ -1374,8 +1374,8 @@ async fn global_speed_clock_applies_across_consecutive_command_identities() {
     let lease = open(&runtime);
     for sequence in 1..=4 {
         let mut command = command(lease, sequence);
-        command.actions[0].motion = BodyMotion::LookAt {
-            target: BodyTarget::Rotation {
+        command.actions[0].motion = MotionKind::LookAt {
+            target: MotionTarget::Rotation {
                 degrees: [sequence as f32, 0.0, 0.0],
             },
         };

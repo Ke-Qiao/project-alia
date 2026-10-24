@@ -36,7 +36,7 @@ pub(super) fn build_llm_messages(
         messages.push(ChatMessage {
             role: "system".into(),
             content: sp,
-            name: None,
+            user_id: None,
             ..ChatMessage::default()
         });
     }
@@ -44,7 +44,7 @@ pub(super) fn build_llm_messages(
     messages.push(ChatMessage {
         role: "user".into(),
         content: text.to_string(),
-        name: Some(user_id.to_string()),
+        user_id: Some(user_id.to_string()),
         ..ChatMessage::default()
     });
     messages
@@ -307,7 +307,7 @@ pub(super) fn system_message(content: String) -> ChatMessage {
     ChatMessage {
         role: "system".into(),
         content,
-        name: None,
+        user_id: None,
         ..ChatMessage::default()
     }
 }
@@ -354,7 +354,7 @@ mod tests {
         let history = vec![ChatMessage {
             role: "user".into(),
             content: "介绍一下明日方舟终末地".into(),
-            name: Some("embedded-user".into()),
+            user_id: Some("embedded-user".into()),
             ..ChatMessage::default()
         }];
 

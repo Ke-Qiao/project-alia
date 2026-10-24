@@ -200,6 +200,87 @@ fn config(dir: &tempfile::TempDir) -> EmbeddedConfig {
 }
 
 #[tokio::test]
+async fn r1_initialization_rejects_implicit_or_incompatible_startup_before_devices() {
+    let dir = tempfile::tempdir().unwrap();
+    let seen = Arc::new(Observed::default());
+    let cfg = config(&dir);
+    assert!(
+        EmbeddedBuilder::from_config(cfg.clone())
+            .await
+            .unwrap()
+            .with_r1_initialization(uuid::Uuid::nil())
+            .is_err()
+    );
+    let error = EmbeddedBuilder::from_config(cfg)
+        .await
+        .unwrap()
+        .with_audio_capture(Probe::new("capture", &seen))
+        .with_r1_initialization(uuid::Uuid::new_v4())
+        .unwrap()
+        .build()
+        .await
+        .err()
+        .expect("incompatible initialization must fail");
+    assert!(format!("{error:#}").contains("R1"));
+    assert!(
+        seen.events().is_empty(),
+        "validation must precede module initialization"
+    );
+    assert!(!dir.path().join("state").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn r1_initialization_checks_each_startup_boundary_before_module_init() {
+    use alia_embedded::config::{AudioBackend, SpeechTrigger};
+    for case in 0..7 {
+        let dir = tempfile::tempdir().unwrap();
+        let seen = Arc::new(Observed::default());
+        let mut cfg = config(&dir);
+        cfg.r1.serial_path = dir.path().join("must-not-open-uart");
+        cfg.speech.trigger = SpeechTrigger::System;
+        cfg.modules.audio_capture = "cpal".into();
+        cfg.audio.capture_backend = AudioBackend::Alsa;
+        cfg.audio.capture_device = "hw:CARD=L6Microphone,DEV=0".into();
+        match case {
+            0 => cfg.speech.trigger = SpeechTrigger::Wakeword,
+            1 => cfg.modules.wakeword = "r1".into(),
+            2 => cfg.modules.audio_capture = "noop".into(),
+            3 => cfg.audio.capture_backend = AudioBackend::Auto,
+            4 => cfg.audio.capture_device = "default".into(),
+            _ => {}
+        }
+        let mut builder = EmbeddedBuilder::from_config(cfg)
+            .await
+            .unwrap()
+            .with_audio_playback(Probe::new("playback", &seen));
+        if case == 5 {
+            builder = builder.with_wakeword(Probe::new("wakeword", &seen));
+        }
+        if case == 6 {
+            builder = builder.with_audio_capture(Probe::new("capture", &seen));
+        }
+        let error = builder
+            .with_r1_initialization(uuid::Uuid::new_v4())
+            .unwrap()
+            .build()
+            .await
+            .err()
+            .expect("must reject before devices");
+        let message = format!("{error:#}");
+        assert!(
+            message.contains(if matches!(case, 0 | 1 | 5) {
+                "speech.trigger='system'"
+            } else {
+                "native ALSA hw capture"
+            }),
+            "case {case}: {message}"
+        );
+        assert!(seen.events().is_empty(), "case {case} initialized a module");
+    }
+}
+
+#[tokio::test]
 async fn factory_and_partial_init_failure_roll_back_in_reverse_order() {
     let dir = tempfile::tempdir().unwrap();
     let seen = Arc::new(Observed::default());

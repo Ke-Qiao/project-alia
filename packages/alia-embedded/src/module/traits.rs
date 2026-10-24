@@ -7,11 +7,23 @@ use super::lifecycle::ModuleLifecycle;
 // ─── Wake Word Engine ────────────────────────────────────────────────────────
 
 /// Detection event from the wake word engine.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct WakeWordEvent {
     pub keyword: String,
-    pub confidence: f32,
+    /// Host observation time since the UNIX epoch, not a PCM or board clock.
     pub timestamp_us: u64,
+    pub source: WakeWordSource,
+}
+
+/// Source observations do not authorize movement or establish a robot bearing.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WakeWordSource {
+    Local,
+    R1 {
+        message_id: u16,
+        angle_deg: Option<f64>,
+        beam: Option<u8>,
+    },
 }
 
 /// Wake word detection engine (slot: `wakeword`).
@@ -22,7 +34,7 @@ pub trait WakeWordEngine: ModuleLifecycle {
     /// Discard partial detection history after capture loss or a fresh start.
     fn reset(&self) -> Result<()>;
 
-    /// Feed PCM frames, returns detection event if wake word is found.
+    /// Feed PCM or consume one fresh hardware notification on the speech worker.
     fn detect(&self, pcm: &[i16]) -> Option<WakeWordEvent>;
 }
 
@@ -92,7 +104,7 @@ pub trait AudioCaptureBackend: ModuleLifecycle {
     /// Stop capturing.
     fn stop_capture(&self) -> Result<()>;
 
-    /// Whether the capture device is currently available (hot-plug detection).
+    /// Whether the capture owner is running. Must not reopen the device to probe it.
     fn is_available(&self) -> bool;
 }
 

@@ -1,10 +1,79 @@
 # Server 与 Embedded 无前端操作入口
 
-更新：2026-10-17。本轮以当前开发 Mac Server、Pi 5 / 8 GB Embedded 为目标，Easy-Turn 位于 Server。Pi 的 Ubuntu24.04.4 / aarch64 已经只读核对；实际音频链、执行器接线/校准、服务目录和模型服务仍待现场资料。以下指向当前 CLI/REST 和既有权限契约；Web/iOS/Android 不参与安装或验收。
+更新：2026-10-25。部署目标为 Mac Server、Pi 5 / 8 GB Embedded，Easy-Turn 位于 Server。Pi 的 Ubuntu 24.04.4 / aarch64 和 R1 分阶段采播基线已有记录；本轮复用这些结果，准备候选版本后的生产安装与真实模型验收。服务账户／路径、模型方案、常驻启停和实际升级恢复仍待下一轮落实。以下指向当前 CLI/REST；Web/iOS/Android 不参与本轮安装或验收。
 
 当前硬件/部署输入、只读核对与R02/R03→R05门槛集中在 [部署资料清单](hardware-deployment-readiness.md)。
 
 当前软件产物／平台证据和真实模型端点／版本／部署待确认项见[软件发布记录](software-release.md)。Linux noop通过不代表当前Mac部署或真实模型链已验收。
+
+Harness／Embodiment 版本切换使用[成套升级与失败恢复步骤](upgrade-recovery.md)：双端协议、数据库迁移、插件 grant 和 Appraisal pin 必须一起核对。
+
+## Mac 与 Pi 的安装和常驻入口
+
+以下是**待部署材料**，本轮没有安装服务、切换二进制或启动设备。先在部署清单填入双端主机、服务账户、候选 commit／产物 SHA-256、绝对版本目录、私有配置／状态／模型／日志／备份目录、监听地址和端口。复用已有绑定时沿用原身份和状态；首次部署才创建新身份。`DEPLOY_USER`、`CANDIDATE` 和 `/absolute/...` 都是待替换值，不是现场已确认路径。
+
+1. 从[候选交付记录](software-release.md)选定同一源码身份的 Mac Server 和 Linux ARM64 Embedded，核对归档与解包后二进制摘要，放入各自独立版本目录。不要复制整个开发仓库或覆盖现有运行文件。Linux 按交付包的 `ldd` 清单核对依赖；两端都复核平台和可执行权限。
+2. 私有目录由实际服务账户拥有，目录权限 `0700`、含凭据配置 `0600`；版本目录只用于代码，配置、SQLite、插件、R1 claim 和模型放在版本目录外。核对服务账户对目标 PCM／UART 的实际访问权限，不把整个设备目录设为全员可写。Server 的 PG／pgvector 和所选模型服务须先单独就绪；下列服务管理器不负责启动或等待它们。
+3. 按下节准备配置，在 Pi 用候选二进制 `--check-config` 检查副本；核对 `speech.channel_id` 与 Server channel、设备公钥 pin、真实网络可达地址。Mac 的 `server.public_endpoint` 必须是 Pi 可达地址，不能把 `0.0.0.0` 当作对端地址。生产身份首次配对只在受控网络和人工核对目标后执行，见本页账号入口。
+4. 首次正常启停、配对和模型链验收通过后，再启用常驻启动。保存实际服务文件及其摘要、所有非敏感环境变量和凭据来源名称；不要把 secret 写进下面的公共模板。生产日志与备份留在私有目录，不收集完整 settings 响应。
+
+Mac 使用系统级 LaunchDaemon，以选定的普通账户运行 Server；它不依赖 GUI 登录。保存为私有待审副本 `com.alia.server.plist`，替换用户和路径并用 `plutil -lint` 检查：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.alia.server</string>
+  <key>UserName</key><string>DEPLOY_USER</string>
+  <key>ProgramArguments</key><array><string>/absolute/releases/CANDIDATE/alia-server</string></array>
+  <key>WorkingDirectory</key><string>/absolute/alia</string>
+  <key>EnvironmentVariables</key><dict>
+    <key>ALIA_CONFIG_PATH</key><string>/absolute/private/server.toml</string>
+    <key>RUST_LOG</key><string>info</string>
+  </dict>
+  <key>StandardOutPath</key><string>/absolute/private/log/server.stdout.log</string>
+  <key>StandardErrorPath</key><string>/absolute/private/log/server.stderr.log</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><false/>
+</dict></plist>
+```
+
+下一轮安装时将审核后的文件以 `root:wheel`、`0644` 放到 `/Library/LaunchDaemons/com.alia.server.plist`，先确保日志父目录存在。`sudo launchctl bootstrap system /Library/LaunchDaemons/com.alia.server.plist` 会立即启动；用 `sudo launchctl print system/com.alia.server` 核对 PID、退出状态，读取上面的两个日志。普通停止先 `sudo launchctl kill SIGTERM system/com.alia.server`，等待 PID 退出并记录清理结果；确认退出后 `sudo launchctl bootout system/com.alia.server` 卸载。禁用下次开机加载还需移走这一个 plist，保留私有副本；不要删除配置和状态。再次加载前核对数据库、模型与当前版本。LaunchDaemon 与用户 LaunchAgent 的登录边界见 [Apple 指南](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html)。
+
+Pi 使用系统级 `alia-embedded.service`；这里的普通启动**不发送 R1 初始化命令**：
+
+```ini
+[Unit]
+Description=Alia Embedded
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+User=DEPLOY_USER
+WorkingDirectory=/absolute/alia
+Environment=ALIA_EMBEDDED_CONFIG_PATH=/absolute/private/embedded.toml
+Environment=RUST_LOG=info
+ExecStart=/absolute/releases/CANDIDATE/alia-embedded
+Restart=no
+KillMode=mixed
+TimeoutStopSec=60
+SendSIGKILL=no
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+下一轮用目标 Pi 的 `systemd-analyze verify /absolute/alia-embedded.service` 检查替换后的文件，再安装到 `/etc/systemd/system/alia-embedded.service`、`sudo systemctl daemon-reload`。`sudo systemctl start alia-embedded` 才会启动设备；首次验收后 `sudo systemctl enable alia-embedded` 才设置开机启动。诊断使用 `systemctl status alia-embedded`、`systemctl show alia-embedded -p MainPID -p Result -p ExecMainCode -p ExecMainStatus` 和 `journalctl -u alia-embedded --since '本轮开始时间'`。正常停止用 `sudo systemctl stop alia-embedded`；禁用开机启动用 `sudo systemctl disable alia-embedded`。60 秒是服务管理器的停止观察上限，不修改应用或测试期限；超时仍记录失败，不以自动强杀或重启隐藏资源未清理。`KillMode=mixed` 先让主进程负责子任务关闭，`SendSIGKILL=no` 保留未退出进程供定位，后续启动前必须确认它们已经退出。语义见 [systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html) 与 [systemd.kill](https://www.freedesktop.org/software/systemd/man/latest/systemd.kill.html)。
+
+两个模板均不自动重启失败进程；初次生产验收先保留原退出与 Unknown 状态，后续若启用重启策略，应连同故障恢复一起验收。系统服务也不会防止 Mac 休眠，24 小时验收需同时记录实际供电／休眠策略和日志保留上界。不要为了长稳验证临时增大应用期限。
+
+R1 系统模式在**确认真实板端冷启动后**，需要用同一个长期运行进程执行一次 `--initialize-r1`，不能先运行初始化然后另启一份普通 runtime。采用上述 systemd 服务时，可在已停服且设备 owner 已释放的现场窗口创建唯一的临时 `/run/systemd/system/alia-embedded.service.d/initialization.conf`：清空 `ExecStart=`，再指定同一候选二进制的 `ExecStart=/absolute/releases/CANDIDATE/alia-embedded --initialize-r1 /absolute/private/embedded.toml 已确认冷启动的新UUID`。`daemon-reload` 后只启动一次；保存初始化结果和 claim，再移除这一个临时 override 并 `daemon-reload`，**不重启正在保持采集流的进程**。失败或结果未知也先移除 override、保留 claim 和错误，不能重发。普通重启使用无参数模板；机器重启／设备断电不自动获得重新初始化许可，必须先诊断并由操作者确认冷启动。完整条件见 [R1 启动契约](../../packages/alia-embedded/docs/audio-and-voice.md#r1-system-controlled-capture)。
+
+停服顺序为 Server → 确认其退出 → Embedded。记录每端 exit status、子进程、原监听端口、数据库连接及 PCM／UART owner；监听关闭或服务 inactive 单独不足以证明清理完整。只有双端和同库写入者全部停止后才执行[一致备份与恢复](upgrade-recovery.md)。实际配对恢复、开机／普通重启／设备冷启动、升级恢复和 24 小时混合负载均须在下一轮生产部署中验证，本页模板静态检查不替代这些结果。
 
 ## 配置与启动
 
@@ -77,7 +146,7 @@ curl --fail --silent --show-error "$ALIA_URL/health"
 
 | 用例 | 已有入口 | 权限与结果边界 |
 | --- | --- | --- |
-| 渠道/设备发现与绑定 | `GET /api/v1/channels`，`GET /api/v1/device?channel_id=…`，`POST /api/v1/device/bind` | 使用明确的 Embedded channel，设备绑定要求实际配对/确认，发现不代表绑定完成。 |
+| 渠道/设备发现与绑定 | `GET /api/v1/channels`，`GET /api/v1/device?channel_id=…`，`POST /api/v1/device/bind` | 使用明确的 Embedded channel，人工核对发现结果及设备公钥 pin；发现不代表绑定完成。 |
 | 设备状态与设置 | `GET /api/v1/device/status?channel_id=…`，`GET/PATCH /api/v1/device/settings?channel_id=…` | 设备 owner 或当前管理员；缺少遥测保留 null，网络失败不伪造成已观测的离线数据。 |
 | 解绑与重连 | `POST /api/v1/device/unbind`，`POST /api/v1/channels/{id}/restart` | 重启渠道需管理员；解绑退休原 session，重新绑定使用新凭证/session，不复用旧权限。 |
 | 主动策略、shadow/回放 | 四个 Companion REST 操作 | 见 [Companion 操作](companion.md)；政策完整 CAS，503 必须核对原意图，默认 shadow。 |
@@ -101,7 +170,7 @@ curl --fail --silent --show-error "$ALIA_URL/health"
 
 `PATCH /api/v1/memories/privacy` 现要求管理员，提交同一全局 SQL 政策并支持相同 `If-Match`；普通登录用户仍可读取隐私状态。隐私 GET 与 audit 读取实际政策，不再返回旧内存投影。该权限收敛已由用户确认。
 
-绑定请求应沿设备实际发现结果填写 `channel_id`，保持 `require_confirmation=true`。终端操作不应绕过本地配对确认；这项软件接口检查仍不等于真实 Pi 的麦克风/声卡和执行器已经验收。
+绑定请求应沿设备实际发现结果填写 `channel_id`，保持 `require_confirmation=true`。该字段要求 Server 有待确认的发现候选，**不代表设备侧已实现物理按钮确认**；当前 `discovery.require_physical_confirm` 没有实际设备确认处理。首次绑定必须先在受控网络核对目标设备、公钥 pin 与 Server 身份，不能把配置布尔值当作防抢绑保证。请求 JSON 为 `{"channel_id":"实际渠道ID","require_confirmation":true}`；若 Server 使用 wildcard 监听且未配置 `server.public_endpoint`，还需给出 Pi 可达的 `server_endpoint`。成功后检查响应 `status="bound"`，再用受保护的 `/api/v1/device/status?channel_id=…` 和设备 settings 查询核对原 device ID 与绑定。已有绑定正常恢复时不发送 unbind/bind；身份不匹配先保留日志定位，不删除 key／SQLite 来重新配对。这项软件接口检查仍不等于真实 Pi 的麦克风／声卡和执行器已经验收。
 
 ## 诊断与恢复
 
@@ -109,4 +178,4 @@ ExplicitWait 只响应新的明确 Continue；临时避让可由新鲜 Backchann
 
 数据库或网络错误可能使写入完成状态未知。读取原政策、operation、Response、Delivery 或 Effect 核对，不换身份推测性重做。`cancel_requested` 不是设备已停声/机构已到位；最终还需原 native owner 与设备事实。
 
-本包验证使用独立临时配置、本地受控 Provider 和隔离测试数据库。实际安装、配对及 24 小时混合负载仍归 [R02—R06 checklist](../refactor/checklists/next-round.md)。Temporal/Rig/rmcp/Home Assistant 按具体用例和验证门槛接入，本包不新增这些依赖。
+本包验证使用独立临时配置、本地受控 Provider 和隔离测试数据库。实际安装、配对及 24 小时混合负载仍归 [R02—R06 checklist](../refactor/checklists/next-round.md)。Rig 模型／工具构建、rmcp 客户端和 Extism WASM 已接入，现行操作见 [MCP](mcp-tools.md) 与 [WASM](wasm-plugins.md)；具体外部服务、模型和硬件仍须各自验收。

@@ -2,7 +2,7 @@
 
 `alia-embedded` is the edge runtime for Raspberry Pi and local development. It
 owns local audio I/O, wake word detection, VAD evidence, scoped wake cues,
-binding, discovery, settings, Playback v3, signed BodyControl, plugin services,
+binding, discovery, settings, Playback v3, signed MotionControl, plugin services,
 and modular sensor providers. VoiceSession v2 is the only speech input path.
 
 ## Start Here

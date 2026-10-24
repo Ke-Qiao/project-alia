@@ -73,7 +73,7 @@ pub(super) async fn persist_text_interaction(
             ChatMessage {
                 role: "assistant".into(),
                 content: pending.response_text.clone(),
-                name: None,
+                user_id: None,
                 ..ChatMessage::default()
             },
         )
@@ -197,7 +197,7 @@ pub(super) async fn persist_interrupted_user_context_entry(
                 ChatMessage {
                     role: "user".into(),
                     content: context.query_text.clone(),
-                    name: Some(context.user_id_text.clone()),
+                    user_id: Some(context.user_id_text.clone()),
                     ..ChatMessage::default()
                 },
             )

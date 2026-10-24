@@ -20,7 +20,7 @@ async fn partial_initialization(cancel: bool) {
                 *body_db.lock().unwrap() = Some(f.db.clone());
                 if cancel {
                     let lock = f.db.begin().await.unwrap();
-                    lock.execute_unprepared("LOCK TABLE body_deliveries IN ACCESS EXCLUSIVE MODE")
+                    lock.execute_unprepared("LOCK TABLE motion_deliveries IN ACCESS EXCLUSIVE MODE")
                         .await
                         .unwrap();
                     owner.lock = Some(lock);
@@ -33,7 +33,7 @@ async fn partial_initialization(cancel: bool) {
                                 loop {
                                     let waiting: bool = f.db.query_one(sea_orm::Statement::from_string(
                                         sea_orm::DatabaseBackend::Postgres,
-                                        "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE relation='body_deliveries'::regclass AND NOT granted) AS waiting",
+                                        "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE relation='motion_deliveries'::regclass AND NOT granted) AS waiting",
                                     )).await.unwrap().unwrap().try_get("", "waiting").unwrap();
                                     if waiting { break; }
                                     tokio::time::sleep(Duration::from_millis(1)).await;
@@ -45,7 +45,7 @@ async fn partial_initialization(cancel: bool) {
                     assert!(owner.runtime.is_some());
                     panic!("injected cancellation at channel initialization SQL");
                 } else {
-                    f.sql("ALTER TABLE body_deliveries RENAME TO injected_missing_body_deliveries")
+                    f.sql("ALTER TABLE motion_deliveries RENAME TO injected_missing_motion_deliveries")
                         .await;
                     Runtime::initialize(&mut owner.runtime, f, 8).await;
                     panic!("broken channel SQL unexpectedly initialized");
@@ -82,7 +82,7 @@ async fn partial_initialization(cancel: bool) {
     assert!(message.contains(if cancel {
         "injected cancellation at channel initialization SQL"
     } else {
-        "relation \"body_deliveries\" does not exist"
+        "relation \"motion_deliveries\" does not exist"
     }));
     // The original body panic must not hide a failed cleanup assertion.
     assert!(cleaned.load(Ordering::SeqCst));

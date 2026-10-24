@@ -14,6 +14,9 @@ importers:
 
   packages/alia-frontend:
     dependencies:
+      '@babel/runtime':
+        specifier: 7.29.2
+        version: 7.29.2
       '@react-navigation/native':
         specifier: ^7.0.0
         version: 7.2.2(react-native@0.83.6(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)

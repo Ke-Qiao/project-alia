@@ -81,10 +81,7 @@ async fn disabled_memory_still_erases_and_can_be_hot_enabled_then_restarted() {
         let stop = state.cancel_token.clone();
         let _stop_on_drop = stop.clone().drop_guard();
         let serving = tokio::spawn(runtime.run());
-        let response = reqwest::Client::builder()
-            .timeout(Duration::from_secs(5))
-            .build()
-            .unwrap()
+        let response = skills::client()
             .patch(&url)
             .bearer_auth(&admin)
             .json(&json!({"core.policies.memory.enabled":true}))
@@ -219,10 +216,7 @@ async fn embedding_identity_changes_need_explicit_policy_commit_after_restart() 
         let stop = state.cancel_token.clone();
         let _stop_on_drop = stop.clone().drop_guard();
         let serving = tokio::spawn(runtime.run());
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(5))
-            .build()
-            .unwrap();
+        let client = skills::client();
 
         let credentials = client
             .patch(&url)
@@ -451,7 +445,7 @@ async fn policy_patch_commits_before_ram_and_requires_current_admin_and_version(
         let state = runtime.state().clone();
         let (_, admin) = delivery::account(&state, "admin").await;
         let (_, user) = delivery::account(&state, "user").await;
-        let client = reqwest::Client::builder().timeout(Duration::from_secs(5)).build().unwrap();
+        let client = skills::client();
         let url = format!("http://{}/api/v1/settings", runtime.http_addr());
         let stop = state.cancel_token.clone();
         let _stop_on_drop = stop.clone().drop_guard();
@@ -496,10 +490,7 @@ async fn independent_server_patch_preserves_other_instances_policy_changes() {
         let first_state = first.state().clone();
         let second_state = second.state().clone();
         let (_, admin) = delivery::account(&first_state, "admin").await;
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(5))
-            .build()
-            .unwrap();
+        let client = skills::client();
         let url_a = format!("http://{}/api/v1/settings", first.http_addr());
         let url_b = format!("http://{}/api/v1/settings", second.http_addr());
         let stop_a = first_state.cancel_token.clone();

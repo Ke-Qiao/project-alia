@@ -26,7 +26,7 @@ async fn explicit_rebuild_pins_page_policy_expiry_and_receipts_through_retries()
         let stop = state.cancel_token.clone();
         let serving = tokio::spawn(runtime.run());
         let result = AssertUnwindSafe(async {
-            let client = reqwest::Client::builder().timeout(Duration::from_secs(5)).build().unwrap();
+            let client = skills::client();
             for body in [json!({}),json!({"operation_id":Uuid::nil(),"limit":1}),json!({"operation_id":Uuid::new_v4(),"limit":33}),json!({"operation_id":Uuid::new_v4(),"limit":1,"owner_id":owner})] {
                 assert_eq!(client.post(&url).bearer_auth(&token).json(&body).send().await.unwrap().status(), 400);
             }

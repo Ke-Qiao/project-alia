@@ -16,6 +16,7 @@ pub(super) fn start_cpal_capture_runtime(
     config: &AudioConfig,
     bus: AudioBus,
     volume: AudioVolumeState,
+    error_tx: mpsc::Sender<()>,
 ) -> Result<CpalCaptureRuntime> {
     let host = cpal::default_host();
     let device = select_input_device(&host, &config.capture_device)?;
@@ -54,6 +55,7 @@ pub(super) fn start_cpal_capture_runtime(
     let err_fn = move |error| {
         failed.mark(AudioDiscontinuity::BackendError);
         warn!(%error, "cpal input stream error");
+        let _ = error_tx.send(());
     };
 
     let stream = match selected.sample_format() {

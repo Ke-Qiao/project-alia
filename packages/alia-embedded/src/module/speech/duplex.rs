@@ -26,18 +26,21 @@ use super::super::playback_session::{CaptureControlBarrier, PlaybackSession};
 use super::super::traits::{
     DirectResponseEngine, VoiceActivityEngine, VoiceActivityState, WakeWordEngine,
 };
+use super::control::{Command, RuntimeControl};
 use super::transport::{
     VoiceAuth, attach_voice_auth, pcm16_to_le_bytes, voice_auth, voice_connection,
 };
 use crate::binding::{BindingData, BindingManager};
-use crate::config::SpeechConfig;
+use crate::config::{SpeechConfig, SpeechTrigger};
 
 const SAMPLE_RATE: u32 = 16000;
 const MAX_FRAME_SAMPLES: usize = 1600;
 const AUTH_REFRESH: Duration = Duration::from_secs(120);
 
 pub(super) struct Runtime {
+    pub control: RuntimeControl,
     pub audio: broadcast::Receiver<AudioFrame>,
+    pub capture_stopped: Option<CancellationToken>,
     pub events: broadcast::Receiver<ModuleEvent>,
     pub event_bus: EventBus,
     pub wakeword: Arc<dyn WakeWordEngine>,
@@ -67,6 +70,15 @@ impl Runtime {
             let damage = tokio::select! {
                 biased;
                 _ = self.cancel.cancelled() => break,
+                _ = async {
+                    match &self.capture_stopped {
+                        Some(stopped) => stopped.cancelled().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    warn!("microphone capture stopped; ending voice pipeline");
+                    break;
+                }
                 result = async {
                     match session.as_mut() {
                         Some(session) => (&mut session.task).await,
@@ -75,20 +87,21 @@ impl Runtime {
                 } => {
                     // The handle was joined by select; do not poll it again.
                     if let Some(active) = session.take() {
-                        active.cancel.cancel();
-                        if let Err(error) = active.playback.retire_capture(&active.capture) { warn!(%error, "retiring completed capture failed"); }
-                        if let Err(error) = active.cue_task.await { warn!(%error, "joining local voice cue failed"); }
+                        if let Err(error) = finish_session(active, Some(result), &self.event_bus).await {
+                            warn!(%error, "retiring completed capture failed");
+                            self.control.controller.fail_closed();
+                        }
                     }
-                    match result {
-                        Ok(Ok(())) => info!("voice session ended; wake again to reconnect"),
-                        Ok(Err(error)) => warn!(%error, "voice session failed; wake again to reconnect"),
-                        Err(error) => {
-                            warn!(%error, "voice network task failed");
-                        },
-                    }
-                    self.event_bus.publish(ModuleEvent::SpeechEnd);
+                    if let Err(error) = self.control.controller.finish() { warn!(%error, "closing capture control failed"); }
                     Some("network session ended".to_string())
                 }
+                command = self.control.commands.recv() => match command {
+                    Some(command) => {
+                        self.control_command(command, &mut session, &mut pre_roll, &mut clock).await;
+                        None
+                    }
+                    None => break,
+                },
                 event = self.events.recv() => match event {
                     Ok(ModuleEvent::PlaybackStarted { source }) => {
                         debug!(%source, "playback started; continuous capture remains active");
@@ -113,7 +126,13 @@ impl Runtime {
             };
             if let Some(reason) = damage {
                 warn!(%reason, "ending damaged or closed voice session; fresh wake required");
-                end_session(&mut session, &self.event_bus).await;
+                if let Err(error) = end_session(&mut session, &self.event_bus).await {
+                    warn!(%error, "ending damaged voice session failed");
+                    self.control.controller.fail_closed();
+                }
+                if let Err(error) = self.control.controller.finish() {
+                    warn!(%error, "closing capture control failed");
+                }
                 pre_roll.clear();
                 clock = CaptureClock::default();
                 // Buffered audio from the failed session must not trigger its
@@ -129,7 +148,74 @@ impl Runtime {
                 }
             }
         }
-        end_session(&mut session, &self.event_bus).await;
+        if let Err(error) = end_session(&mut session, &self.event_bus).await {
+            warn!(%error, "voice session shutdown failed");
+        }
+    }
+
+    async fn control_command(
+        &mut self,
+        command: Command,
+        session: &mut Option<Session>,
+        pre_roll: &mut PreRoll,
+        clock: &mut CaptureClock,
+    ) {
+        if command.reply.is_closed() {
+            return;
+        }
+        if let Err(error) = self
+            .binding
+            .verify_grpc_auth(&command.token, alia_transport::EMBEDDED_CONTROL_SCOPE)
+            .await
+        {
+            let _ = command.reply.send(Err(error));
+            return;
+        }
+        let admission = self
+            .binding
+            .with_current_binding(&command.binding, || {
+                ensure!(
+                    !command.reply.is_closed(),
+                    "capture caller cancelled before admission"
+                );
+                ensure!(
+                    self.config.trigger == SpeechTrigger::System,
+                    "system capture requires speech.trigger = system"
+                );
+                self.control.controller.validate(&command.request)?;
+                if command.start {
+                    ensure!(session.is_none(), "capture session is already active");
+                    self.vad.reset()?;
+                    self.control.controller.begin()?;
+                    *session = Some(self.start_session(None, Some(command.binding.clone())));
+                    self.event_bus.publish(ModuleEvent::SpeechStart);
+                } else {
+                    ensure!(session.is_some(), "capture session is not active");
+                }
+                Ok(())
+            })
+            .await;
+        let result = match admission {
+            Err(error) => Err(error),
+            Ok(()) => {
+                // Drop pre-roll and already-published frames; an in-flight
+                // native block may still contain samples from before admission.
+                pre_roll.clear();
+                *clock = CaptureClock::default();
+                self.audio = self.audio.resubscribe();
+                if command.start {
+                    self.control.controller.inspect()
+                } else {
+                    let cleanup = end_session(session, &self.event_bus).await;
+                    let state = self.control.controller.finish();
+                    if cleanup.is_err() {
+                        self.control.controller.fail_closed();
+                    }
+                    cleanup.and(state)
+                }
+            }
+        };
+        let _ = command.reply.send(result);
     }
 
     fn accept_frame(
@@ -152,27 +238,32 @@ impl Runtime {
             };
             if let Some(active) = session.as_mut() {
                 active.enqueue(captured)?;
-            } else if let Some(wake) = self.wakeword.detect(pcm) {
-                self.event_bus.publish(ModuleEvent::WakeWordDetected {
-                    keyword: wake.keyword.clone(),
-                    timestamp_us: wake.timestamp_us,
-                });
+            } else if self.config.trigger == SpeechTrigger::Wakeword
+                && let Some(wake) = self.wakeword.detect(pcm)
+            {
+                self.event_bus
+                    .publish(ModuleEvent::WakeWordDetected(wake.clone()));
                 // Store the task before enqueueing so errors always cancel/join it.
-                *session = Some(self.start_session(wake.keyword));
+                self.control.controller.begin()?;
+                *session = Some(self.start_session(Some(wake.keyword), None));
                 let active = session.as_mut().expect("session was just stored");
                 self.event_bus.publish(ModuleEvent::SpeechStart);
                 for frame in pre_roll.drain() {
                     active.enqueue(frame)?;
                 }
                 active.enqueue(captured)?;
-            } else {
+            } else if self.config.trigger == SpeechTrigger::Wakeword {
                 pre_roll.push(captured);
             }
         }
         Ok(())
     }
 
-    fn start_session(&self, wake_keyword: String) -> Session {
+    fn start_session(
+        &self,
+        wake_keyword: Option<String>,
+        original: Option<BindingData>,
+    ) -> Session {
         let (tx, rx) = mpsc::channel(self.config.upload_queue_frames);
         let cancel = self.cancel.child_token();
         let binding = self.binding.clone();
@@ -195,7 +286,10 @@ impl Runtime {
         ));
         let task = tokio::spawn(async move {
             let exchange = async {
-                let original = binding.status().await;
+                let original = match original {
+                    Some(original) => original,
+                    None => binding.status().await,
+                };
                 let (endpoint, auth) = voice_connection(&original, &device_id, &keypair_path)?;
                 // Binding has no change subscription yet. Check immediately and
                 // every 250 ms without involving the real-time audio consumer.
@@ -280,23 +374,39 @@ impl Session {
     }
 }
 
-async fn end_session(session: &mut Option<Session>, events: &EventBus) {
+async fn end_session(session: &mut Option<Session>, events: &EventBus) -> Result<()> {
     if let Some(session) = session.take() {
-        if let Err(error) = session.playback.retire_capture(&session.capture) {
-            warn!(%error, "retiring local capture failed");
-        }
-        session.cancel.cancel();
-        drop(session.tx);
-        match session.task.await {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => warn!(%error, "voice session shutdown failed"),
-            Err(error) => warn!(%error, "voice session task join failed"),
-        }
-        if let Err(error) = session.cue_task.await {
-            warn!(%error, "joining local voice cue failed");
-        }
-        events.publish(ModuleEvent::SpeechEnd);
+        finish_session(session, None, events).await?;
     }
+    Ok(())
+}
+
+async fn finish_session(
+    session: Session,
+    joined: Option<std::result::Result<Result<()>, tokio::task::JoinError>>,
+    events: &EventBus,
+) -> Result<()> {
+    let retire = session.playback.retire_capture(&session.capture);
+    session.cancel.cancel();
+    drop(session.tx);
+    let network = match joined {
+        Some(joined) => joined,
+        None => session.task.await,
+    }
+    .context("joining voice session")
+    .map(|result| {
+        // A closed network stream is recoverable after successful cleanup.
+        if let Err(error) = result {
+            warn!(%error, "voice session ended; fresh trigger required");
+        }
+    });
+    let cue = session.cue_task.await.context("joining local voice cue");
+    let native = session
+        .playback
+        .wait_capture_retired(&session.capture)
+        .await;
+    events.publish(ModuleEvent::SpeechEnd);
+    retire.and(network).and(cue).and(native)
 }
 
 /// One bounded local cue per wake. The original authenticated Ready scope is
@@ -304,12 +414,15 @@ async fn end_session(session: &mut Option<Session>, events: &EventBus) {
 /// This worker is joined with its session and never blocks capture or network I/O.
 async fn play_ready_cue(
     ready: oneshot::Receiver<VoiceScope>,
-    wake_keyword: String,
+    wake_keyword: Option<String>,
     direct_response: Arc<dyn DirectResponseEngine>,
     playback: Arc<PlaybackSession>,
     event_bus: EventBus,
     cancel: CancellationToken,
 ) {
+    let Some(wake_keyword) = wake_keyword else {
+        return;
+    };
     let scope = tokio::select! {
         biased;
         _ = cancel.cancelled() => return,

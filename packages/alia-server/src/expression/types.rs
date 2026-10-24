@@ -453,7 +453,7 @@ pub struct ExpressionExecutionResult {
     /// Original command and raw device facts; local observation failure is kept
     /// separate and never stamped into the device's monotonic receipt stream.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub body: Option<BodyExecutionEvidence>,
+    pub motion: Option<MotionExecutionEvidence>,
     #[serde(default)]
     pub action_receipts: Vec<ExpressionActionReceipt>,
     #[serde(default)]
@@ -469,7 +469,7 @@ impl ExpressionExecutionResult {
             status: "skipped".to_string(),
             command_id: None,
             voice_scope: None,
-            body: None,
+            motion: None,
             action_receipts: vec![ExpressionActionReceipt {
                 action: "*".to_string(),
                 status: ExpressionActionStatus::Skipped,
@@ -486,13 +486,13 @@ impl ExpressionExecutionResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct BodyExecutionEvidence {
-    pub command: alia_core::body::BodyCommand,
-    pub progress: Option<alia_core::body::BodyProgress>,
+pub struct MotionExecutionEvidence {
+    pub command: alia_core::embodiment::motion::MotionCommand,
+    pub progress: Option<alia_core::embodiment::motion::MotionProgress>,
     pub unknown_reason: Option<String>,
 }
 
-impl BodyExecutionEvidence {
+impl MotionExecutionEvidence {
     pub fn validate(&self) -> anyhow::Result<()> {
         self.command.validate()?;
         if let Some(progress) = &self.progress {
@@ -509,42 +509,44 @@ impl BodyExecutionEvidence {
 }
 
 impl ExpressionExecutionResult {
-    /// The v1 body driver is open loop. Submitted and Cancelled can retire a
+    /// The v1 motion driver is open loop. Submitted and Cancelled can retire a
     /// software writer, but neither is evidence that a motor reached a position.
-    pub(crate) fn from_body(
-        body: BodyExecutionEvidence,
+    pub(crate) fn from_motion(
+        motion: MotionExecutionEvidence,
         actions: &[String],
         cancellation: bool,
     ) -> Self {
-        use alia_core::body::BodyEnd;
-        let progress = body.progress.as_ref();
+        use alia_core::embodiment::motion::MotionEnd;
+        let progress = motion.progress.as_ref();
         let end = progress.and_then(|progress| progress.end.as_ref());
-        let local_unknown = body.unknown_reason.is_some();
+        let local_unknown = motion.unknown_reason.is_some();
         let (status, terminal_action, reason) = if local_unknown {
             (
                 "unknown",
                 ExpressionActionStatus::Unknown,
-                body.unknown_reason.clone(),
+                motion.unknown_reason.clone(),
             )
         } else {
             match end {
-                Some(BodyEnd::Submitted) => ("submitted", ExpressionActionStatus::Submitted, None),
-                Some(BodyEnd::Cancelled { reason }) => (
+                Some(MotionEnd::Submitted) => {
+                    ("submitted", ExpressionActionStatus::Submitted, None)
+                }
+                Some(MotionEnd::Cancelled { reason }) => (
                     "cancelled",
                     ExpressionActionStatus::Cancelled,
                     Some(reason.clone()),
                 ),
-                Some(BodyEnd::Failed { reason }) => (
+                Some(MotionEnd::Failed { reason }) => (
                     "failed",
                     ExpressionActionStatus::Failed,
                     Some(reason.clone()),
                 ),
-                Some(BodyEnd::Rejected { reason }) => (
+                Some(MotionEnd::Rejected { reason }) => (
                     "rejected",
                     ExpressionActionStatus::Rejected,
                     Some(reason.clone()),
                 ),
-                Some(BodyEnd::Unknown { reason }) => (
+                Some(MotionEnd::Unknown { reason }) => (
                     "unknown",
                     ExpressionActionStatus::Unknown,
                     Some(reason.clone()),
@@ -556,7 +558,7 @@ impl ExpressionExecutionResult {
                 None => (
                     "unknown",
                     ExpressionActionStatus::Unknown,
-                    Some("body command admission has no acknowledgement".into()),
+                    Some("motion command admission has no acknowledgement".into()),
                 ),
             }
         };
@@ -586,9 +588,9 @@ impl ExpressionExecutionResult {
             .collect();
         Self {
             status: status.into(),
-            command_id: Some(body.command.source_command_id.clone()),
-            voice_scope: body.command.scope.voice(),
-            body: Some(body),
+            command_id: Some(motion.command.source_command_id.clone()),
+            voice_scope: motion.command.scope.voice(),
+            motion: Some(motion),
             action_receipts,
             skipped_actions: Vec::new(),
             safety_modifications: Vec::new(),
@@ -596,9 +598,9 @@ impl ExpressionExecutionResult {
     }
 
     pub(crate) fn writer_retired(&self) -> bool {
-        self.body
+        self.motion
             .as_ref()
-            .is_some_and(BodyExecutionEvidence::writer_retired)
+            .is_some_and(MotionExecutionEvidence::writer_retired)
     }
 }
 

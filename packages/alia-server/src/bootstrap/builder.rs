@@ -1,3 +1,4 @@
+use crate::providers::llm::LlmService;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,6 +19,8 @@ use crate::config::MemorySection;
 use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::expression::ExpressionRuntime;
+use crate::modules::embodiment::operations::{EmbodimentService, PhysicalAdapter};
+use crate::modules::embodiment::sensors::{SensorRegistry, SensorRegistryConfig};
 use crate::modules::interaction::{InteractionPolicies, InteractionServices, spawn_interaction};
 use crate::modules::interaction::{
     cache::CacheService,
@@ -30,13 +33,10 @@ use crate::modules::platform::insights::{InsightDependencies, InsightService};
 use crate::modules::platform::lifecycle::{
     ModuleHealth, ModuleLifecycle, RuntimeCleanup, ShutdownPhase, start_module, startup_step,
 };
-use crate::modules::platform::sensors::{SensorRegistry, SensorRegistryConfig};
 use crate::plugins::PluginStorageService;
 #[cfg(feature = "plugin-home-assistant")]
 use crate::plugins::home_assistant::HomeAssistantPlugin;
-use crate::providers::adapter::{
-    EmbeddingAdapter, LlmAdapter, SttAdapter, ToolRegistry, TtsAdapter,
-};
+use crate::providers::adapter::{EmbeddingAdapter, SttAdapter, ToolRegistry, TtsAdapter};
 use crate::registry::ArtifactRegistry;
 use crate::rules::EventRuleEngine;
 use crate::scheduler::AutomationScheduler;
@@ -61,13 +61,14 @@ pub struct ServerBuilder {
 
     // Channel adapters (multi-instance)
     channels: Vec<Box<dyn ChannelAdapter>>,
+    embodiment_adapters: Vec<Arc<dyn PhysicalAdapter>>,
 
     // Provider override slots (None = use config selection). Core domain
     // systems such as memory are built in below, not selected through slots.
-    minor_llm: Option<Box<dyn LlmAdapter>>,
-    major_llm: Option<Box<dyn LlmAdapter>>,
-    memory_capture_llm: Option<Box<dyn LlmAdapter>>,
-    sentence_expression_llm: Option<Box<dyn LlmAdapter>>,
+    minor_llm: Option<Box<LlmService>>,
+    major_llm: Option<Box<LlmService>>,
+    memory_capture_llm: Option<Box<LlmService>>,
+    sentence_expression_llm: Option<Box<LlmService>>,
     stt: Option<Box<dyn SttAdapter>>,
     tts: Option<Box<dyn TtsAdapter>>,
     embedding: Option<Box<dyn EmbeddingAdapter>>,
@@ -135,6 +136,7 @@ impl ServerBuilder {
             event_bus,
             cancel_token,
             channels: Vec::new(),
+            embodiment_adapters: Vec::new(),
             minor_llm: None,
             major_llm: None,
             memory_capture_llm: None,
@@ -158,27 +160,27 @@ impl ServerBuilder {
         builder
     }
 
-    pub fn with_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
+    pub fn with_llm(mut self, llm: LlmService) -> Self {
         self.major_llm = Some(Box::new(llm));
         self
     }
 
-    pub fn with_minor_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
+    pub fn with_minor_llm(mut self, llm: LlmService) -> Self {
         self.minor_llm = Some(Box::new(llm));
         self
     }
 
-    pub fn with_major_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
+    pub fn with_major_llm(mut self, llm: LlmService) -> Self {
         self.major_llm = Some(Box::new(llm));
         self
     }
 
-    pub fn with_memory_capture_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
+    pub fn with_memory_capture_llm(mut self, llm: LlmService) -> Self {
         self.memory_capture_llm = Some(Box::new(llm));
         self
     }
 
-    pub fn with_sentence_expression_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
+    pub fn with_sentence_expression_llm(mut self, llm: LlmService) -> Self {
         self.sentence_expression_llm = Some(Box::new(llm));
         self
     }
@@ -205,6 +207,13 @@ impl ServerBuilder {
 
     pub fn with_channel(mut self, channel: impl ChannelAdapter + 'static) -> Self {
         self.channels.push(Box::new(channel));
+        self
+    }
+
+    /// Bind trusted, principal-scoped physical capabilities before tool admission.
+    /// No transport or hardware adapter is installed by default.
+    pub fn with_embodiment_adapter(mut self, adapter: Arc<dyn PhysicalAdapter>) -> Self {
+        self.embodiment_adapters.push(adapter);
         self
     }
 
@@ -369,6 +378,16 @@ impl ServerBuilder {
                     entry.insert(factory::create_llm(&self.config, profile)?);
                 }
             }
+        }
+        let default_profile = &self.config.llm.roles.default;
+        if default_profile != &minor_profile
+            && default_profile != &major_profile
+            && !pending_llms.contains_key(default_profile)
+        {
+            pending_llms.insert(
+                default_profile.clone(),
+                factory::create_llm(&self.config, default_profile)?,
+            );
         }
         let stt = match self.stt {
             Some(module) => module,
@@ -553,11 +572,15 @@ impl ServerBuilder {
             &self.cancel_token,
         )
         .await?;
-        let default_llm = if self.config.llm.roles.default == self.config.llm.roles.minor {
-            minor_llm.clone()
-        } else {
-            major_llm.clone()
-        };
+        let default_llm = initialize_default_llm(
+            &self.config.llm.roles.default,
+            [(&minor_profile, &minor_llm), (&major_profile, &major_llm)],
+            &mut pending_llms,
+            &mut initialized_llms,
+            &cleanup,
+            &self.cancel_token,
+        )
+        .await?;
         let stt = cleanup
             .initialize(stt, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
@@ -586,16 +609,27 @@ impl ServerBuilder {
         let cache_arc = cleanup
             .initialize(cache, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
+        let embodiment = EmbodimentService::new(db.clone());
+        let embodiment_owner = embodiment.clone();
+        cleanup.add("embodiment", ShutdownPhase::Delivery, move || {
+            let owner = embodiment_owner.clone();
+            async move { owner.shutdown().await }
+        });
+        for adapter in self.embodiment_adapters {
+            embodiment.register_adapter(adapter)?;
+        }
         let tools = BuiltinToolRegistry::with_runtime(
             db.clone(),
-            self.event_bus.clone(),
             artifact_registry.clone(),
             Some(memory_arc.clone()),
             Some(scheduler.clone()),
         )
         .with_sensors(sensor_registry.clone());
+        for entry in embodiment.entries() {
+            tools.register_executor(entry);
+        }
         #[cfg(feature = "channel-embedded")]
-        tools.register_executor(Arc::new(EmbeddedVolumeTool::new(channel_registry.clone())));
+        tools.register_executor(EmbeddedVolumeTool::new(channel_registry.clone()).entry()?);
         let tools = Box::new(tools);
         let raw_tools = cleanup
             .initialize(tools, &self.cancel_token, ShutdownPhase::Resources)
@@ -628,6 +662,47 @@ impl ServerBuilder {
         let tools_arc: Arc<dyn ToolRegistry> = Arc::new(
             crate::modules::execution::ExecutionToolRegistry::new(execution.clone()),
         );
+        let wasm_plugins = self
+            .config
+            .plugins
+            .wasm_dir
+            .as_ref()
+            .map(|path| {
+                crate::plugins::wasm::WasmPlugins::open(
+                    self.config.resolve_path(path),
+                    tools_arc.clone(),
+                    expression_runtime.clone(),
+                )
+            })
+            .transpose()?;
+        if let Some(manager) = &wasm_plugins {
+            let owner = manager.clone();
+            cleanup.add("wasm_admission", ShutdownPhase::Ingress, move || {
+                let owner = owner.clone();
+                async move {
+                    owner.close();
+                    Ok(())
+                }
+            });
+            let owner = manager.clone();
+            cleanup.add("wasm_packages", ShutdownPhase::Resources, move || {
+                let owner = owner.clone();
+                async move { owner.shutdown().await }
+            });
+            startup_step(
+                &self.cancel_token,
+                "restoring WASM packages",
+                manager.restore(),
+            )
+            .await?;
+        }
+        let mcp = crate::tools::mcp::McpManager::new(tools_arc.clone(), &self.config.plugins.mcp)?;
+        let mcp_owner = mcp.clone();
+        cleanup.add("mcp", ShutdownPhase::Resources, move || {
+            let owner = mcp_owner.clone();
+            async move { owner.shutdown().await }
+        });
+        mcp.start_configured().await?;
         let delivery = crate::modules::delivery::DeliveryService::new(
             crate::modules::delivery::repository::DeliveryRepository::new(db.clone()),
             &self.cancel_token,
@@ -861,7 +936,10 @@ impl ServerBuilder {
 
         let (voice_input, voice_input_rx) = crate::modules::interaction::voice_input::channel();
         let state = AppState {
+            wasm_plugins,
+            mcp,
             runtime_tasks: wiring.tasks.clone(),
+            embodiment,
             execution,
             delivery,
             voice_input,
@@ -938,6 +1016,13 @@ impl ServerBuilder {
             &state.cancel_token,
             "starting delivery supervision",
             state.delivery.start(),
+        )
+        .await?;
+
+        startup_step(
+            &state.cancel_token,
+            "starting embodiment observation",
+            state.embodiment.start(),
         )
         .await?;
 
@@ -1025,15 +1110,31 @@ async fn rollback_startup(cleanup: &RuntimeCleanup, error: anyhow::Error) -> any
     }
 }
 
-// A configured profile has one lifecycle owner; explicit overrides stay independent.
-async fn initialize_llm_role(
-    custom: Option<Box<dyn LlmAdapter>>,
-    profile: Option<&str>,
-    pending: &mut HashMap<String, Box<dyn LlmAdapter>>,
-    initialized: &mut HashMap<String, Arc<dyn LlmAdapter>>,
+async fn initialize_default_llm(
+    profile: &str,
+    routing_roles: [(&str, &Arc<LlmService>); 2],
+    pending: &mut HashMap<String, Box<LlmService>>,
+    initialized: &mut HashMap<String, Arc<LlmService>>,
     cleanup: &RuntimeCleanup,
     cancel: &CancellationToken,
-) -> anyhow::Result<Option<Arc<dyn LlmAdapter>>> {
+) -> anyhow::Result<Arc<LlmService>> {
+    if let Some((_, module)) = routing_roles.iter().find(|(id, _)| *id == profile) {
+        return Ok((*module).clone());
+    }
+    initialize_llm_role(None, Some(profile), pending, initialized, cleanup, cancel)
+        .await?
+        .context("default LLM profile is required")
+}
+
+// A configured profile has one lifecycle owner; explicit overrides stay independent.
+async fn initialize_llm_role(
+    custom: Option<Box<LlmService>>,
+    profile: Option<&str>,
+    pending: &mut HashMap<String, Box<LlmService>>,
+    initialized: &mut HashMap<String, Arc<LlmService>>,
+    cleanup: &RuntimeCleanup,
+    cancel: &CancellationToken,
+) -> anyhow::Result<Option<Arc<LlmService>>> {
     if let Some(module) = custom {
         return cleanup
             .initialize(module, cancel, ShutdownPhase::Resources)

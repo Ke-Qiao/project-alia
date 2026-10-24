@@ -6,8 +6,21 @@ use alia_server::config::{
 };
 
 #[test]
+fn retired_expression_process_configuration_is_rejected() {
+    let error = toml::from_str::<alia_server::config::ResourcesSection>(
+        "external_expression_plugins_dir = 'plugins'",
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("unknown field `external_expression_plugins_dir`")
+    );
+}
+
+#[test]
 fn approved_animation_catalog_is_local_empty_by_default_and_validated_on_load() {
-    use alia_core::body::{BodyAnimationAsset, body_animation_sha256};
+    use alia_core::embodiment::motion::{MotionAnimationAsset, motion_animation_sha256};
     use alia_server::config::ChannelConfig;
     struct TemporaryConfig(std::path::PathBuf);
     impl Drop for TemporaryConfig {
@@ -28,10 +41,10 @@ fn approved_animation_catalog_is_local_empty_by_default_and_validated_on_load() 
         matches!(&config.channels[0], ChannelConfig::Embedded { approved_animations, .. } if approved_animations.is_empty())
     );
     let content = b"frames\n0 0 0\n";
-    let asset = BodyAnimationAsset {
+    let asset = MotionAnimationAsset {
         file: "reviewed.anim".into(),
         version: 1,
-        sha256: body_animation_sha256(content),
+        sha256: motion_animation_sha256(content),
         bytes: content.len() as u32,
     };
     let approved = toml::Value::try_from(&asset).unwrap();

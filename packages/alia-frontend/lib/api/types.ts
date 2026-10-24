@@ -135,7 +135,32 @@ export type ToolResult = {
   call_id: string;
   success: boolean;
   output: JsonValue;
+  // Opaque typed content is untrusted; clients must not dereference resource URIs.
+  presentation?: JsonValue[] | null;
   display?: string | null;
+};
+
+export type EffectRecord = {
+  effect_id: string;
+  key: { user_id: string; request_id: string; invocation_key: string };
+  model_call_id: string;
+  tool_name: string;
+  arguments: JsonValue;
+  intent_digest: string;
+  status: 'proposed' | 'approved' | 'dispatched' | 'succeeded' | 'failed' | 'unknown' | 'cancelled';
+  requires_confirmation: boolean;
+  completion?:
+    | { status: 'succeeded'; receipt: ToolResult }
+    | { status: 'failed'; evidence: JsonValue }
+    | { status: 'unknown'; reason: string }
+    | null;
+};
+
+export type ExecuteToolRequest = {
+  request_id: string;
+  tool_name: string;
+  arguments: Record<string, JsonValue>;
+  call_id?: string;
 };
 
 export type MemoryInfo = {

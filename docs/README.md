@@ -8,15 +8,19 @@ below when trying to understand the active architecture.
 
 - [Architecture overview](architecture/overview.md) explains the system shape,
   packages, shared crates, and the main runtime boundaries.
+- [Embodiment](architecture/embodiment.md) describes physical observations,
+  bounded Motion, persistent operations, and the boundary with Expression.
 - [Voice pipeline](architecture/voice-pipeline.md) follows a wake word turn from
   embedded capture through server STT, LLM, TTS, and playback.
 - [Configuration](architecture/configuration.md) explains how static config,
   runtime settings, and package-local configuration docs fit together.
 - [Protocols](architecture/protocols.md) summarizes REST, WebSocket, and gRPC
   responsibilities.
+- [Motion contract](architecture/motion-contract.md) defines short physical
+  actions, signed device evidence, calibration and coordinated upgrade requirements.
 - [Plugin contract](architecture/plugin-contract.md) defines extension types,
   trust, management, content/instance identity and lifecycle targets, including
-  future installation and isolated execution of unreviewed third-party code.
+  installation and isolated execution of unreviewed WASM plugins.
 
 ## Package Docs
 
@@ -41,17 +45,27 @@ below when trying to understand the active architecture.
 
 - [Local development](operations/local-development.md) gives a short path for
   running the server, embedded node, and frontend on a development machine.
+- [WASM plugins](operations/wasm-plugins.md) covers Rust guest builds, exact-pin grants,
+  private Appraisal approval, resource budgets, and Server / Embedded lifecycle.
+- [MCP tools](operations/mcp-tools.md) covers service configuration, credentials,
+  catalog changes, administration, execution receipts, and transport limits.
+- [Software verification](operations/software-release.md) records the current
+  regression results and the separate model and hardware acceptance boundaries.
 - [Model services](operations/model-services.md) lists the external model
   services currently expected by the runtime.
+- [Hardware and deployment](operations/hardware-deployment-readiness.md) records
+  the Pi/R1 evidence, board firmware requirements, and remaining hardware inputs.
 
 ## Tracking
 
+- [Project TODO](todo.md) is the current entry point for completed software work,
+  delivery checks, open investigations, and explicitly deferred work.
+- [Upgrade and recovery](operations/upgrade-recovery.md) covers coordinated
+  Server / Embedded upgrades, state backups, and failure recovery.
 - [Refactor plan](refactor/plan.md) records the agreed scope and proposed stages
   for the server / Raspberry Pi 5 rebuild. It is a plan, not implemented behavior.
 - [Deferred work](refactor/deferred.md) records postponed frontend and general
-  embedded support, with conditions for resuming them in later rounds.
-- [Server TODO](todo.md) tracks known server-side implementation gaps and
-  follow-up work.
+  embedded support and historical decisions, with conditions for resuming them.
 
 ## Documentation Scope
 

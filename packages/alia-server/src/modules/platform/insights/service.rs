@@ -11,8 +11,9 @@ use crate::modules::memory::MemoryService;
 use crate::modules::memory::maintenance::{self, MemoryMaintenanceUser};
 use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    EmbeddingAdapter, LlmAdapter, ScheduleConfig, ScheduledTask, SchedulerBackend,
+    EmbeddingAdapter, ScheduleConfig, ScheduledTask, SchedulerBackend,
 };
+use crate::providers::llm::LlmService;
 use crate::providers::llm::response::join_model_labels;
 use crate::scheduler::ConditionRegistry;
 use async_trait::async_trait;
@@ -71,7 +72,7 @@ pub struct InsightService {
     disabled: bool,
     config: Arc<Mutex<Option<InsightsSection>>>,
     db: Mutex<Option<DatabaseConnection>>,
-    llm: Mutex<Option<Arc<dyn LlmAdapter>>>,
+    llm: Mutex<Option<Arc<LlmService>>>,
     memory: Mutex<Option<Arc<MemoryService>>>,
     cache_review: Mutex<CacheReviewRuntime>,
     event_bus: Mutex<Option<EventBus>>,
@@ -94,7 +95,7 @@ pub struct InsightDependencies {
     pub db: DatabaseConnection,
     pub event_bus: EventBus,
     pub cancel_token: CancellationToken,
-    pub llm: Option<Arc<dyn LlmAdapter>>,
+    pub llm: Option<Arc<LlmService>>,
     pub memory: Option<Arc<MemoryService>>,
     pub cache: Option<Arc<dyn crate::modules::interaction::cache::CacheStore>>,
     pub embedding: Option<Arc<dyn EmbeddingAdapter>>,
@@ -171,7 +172,7 @@ impl InsightService {
     async fn execute_phase(
         db: &DatabaseConnection,
         event_bus: &EventBus,
-        llm: Option<Arc<dyn LlmAdapter>>,
+        llm: Option<Arc<LlmService>>,
         memory: Option<Arc<MemoryService>>,
         cache_review: CacheReviewRuntime,
         user: MemoryMaintenanceUser,
@@ -278,7 +279,7 @@ impl InsightService {
     /// Run a specific insights phase.
     async fn run_phase(
         db: &DatabaseConnection,
-        llm: Option<Arc<dyn LlmAdapter>>,
+        llm: Option<Arc<LlmService>>,
         memory: Option<Arc<MemoryService>>,
         cache_review: CacheReviewRuntime,
         phase: &InsightPhase,
@@ -391,7 +392,7 @@ impl InsightService {
     async fn event_listener_loop(
         db: DatabaseConnection,
         event_bus: EventBus,
-        llm: Option<Arc<dyn LlmAdapter>>,
+        llm: Option<Arc<LlmService>>,
         memory: Option<Arc<MemoryService>>,
         cache_review: CacheReviewRuntime,
         cancel_token: CancellationToken,
@@ -441,7 +442,7 @@ impl InsightService {
     async fn handle_event(
         db: &DatabaseConnection,
         event_bus: &EventBus,
-        llm: Option<Arc<dyn LlmAdapter>>,
+        llm: Option<Arc<LlmService>>,
         memory: Option<Arc<MemoryService>>,
         cache_review: CacheReviewRuntime,
         event: &ServerEvent,
@@ -648,7 +649,7 @@ impl InsightService {
     async fn idle_check_loop(
         db: DatabaseConnection,
         event_bus: EventBus,
-        llm: Option<Arc<dyn LlmAdapter>>,
+        llm: Option<Arc<LlmService>>,
         memory: Option<Arc<MemoryService>>,
         cache_review: CacheReviewRuntime,
         cancel_token: CancellationToken,

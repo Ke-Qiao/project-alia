@@ -10,11 +10,11 @@ use crate::channels::embedded::{
 };
 use crate::config::{ChannelConfig, LlmProfileKind, LlmProviderProfileRef, ServerConfig};
 use crate::event::EventBus;
+use crate::modules::embodiment::sensors::SensorRegistry;
 use crate::modules::interaction::conversation::ConversationStore;
-use crate::modules::platform::sensors::SensorRegistry;
-use crate::providers::adapter::{EmbeddingAdapter, LlmAdapter, SttAdapter, TtsAdapter};
+use crate::providers::adapter::{EmbeddingAdapter, SttAdapter, TtsAdapter};
 use crate::providers::embedding::NoopEmbedding;
-use crate::providers::llm::{NoopLlm, NoopStt, NoopTts};
+use crate::providers::llm::{LlmService, NoopStt, NoopTts};
 
 pub fn create_turn_detector(
     config: &crate::config::EasyTurnSection,
@@ -34,78 +34,25 @@ pub fn create_turn_detector(
 
 #[cfg(feature = "embed-openai")]
 use crate::providers::embedding::OpenAiEmbedding;
-#[cfg(feature = "llm-anthropic")]
-use crate::providers::llm::AnthropicLlm;
-#[cfg(feature = "llm-gemini")]
-use crate::providers::llm::GeminiLlm;
-#[cfg(feature = "llm-openai")]
-use crate::providers::llm::OpenAiLlm;
 #[cfg(feature = "stt-whisper")]
 use crate::providers::stt::WhisperCppStt;
 #[cfg(feature = "tts-sovits")]
 use crate::providers::tts::GptSovitsTts;
 
-pub fn create_llm(config: &ServerConfig, profile_id: &str) -> anyhow::Result<Box<dyn LlmAdapter>> {
+pub fn create_llm(config: &ServerConfig, profile_id: &str) -> anyhow::Result<Box<LlmService>> {
     if profile_id == "noop" {
-        tracing::info!(profile = profile_id, "creating LLM adapter (noop)");
-        return Ok(Box::new(NoopLlm));
+        return Ok(Box::new(LlmService::noop()));
     }
     let profile = config.profiles.llm_profile(profile_id)?;
-    if profile.kind != LlmProfileKind::Chat {
-        anyhow::bail!("LLM profile '{profile_id}' is not a chat profile");
-    }
-    let provider = config.llm_provider_profile(&profile.provider)?;
-    match provider {
-        LlmProviderProfileRef::OpenAi(_provider) => {
-            #[cfg(feature = "llm-openai")]
-            {
-                tracing::info!(
-                    profile = profile_id,
-                    provider = %profile.provider,
-                    "creating LLM adapter (OpenAI)"
-                );
-                Ok(Box::new(OpenAiLlm::new(profile_id, profile, _provider)?))
-            }
-            #[cfg(not(feature = "llm-openai"))]
-            {
-                anyhow::bail!("profile '{profile_id}' requires feature 'llm-openai'")
-            }
-        }
-        LlmProviderProfileRef::Anthropic(_provider) => {
-            #[cfg(feature = "llm-anthropic")]
-            {
-                tracing::info!(
-                    profile = profile_id,
-                    provider = %profile.provider,
-                    "creating LLM adapter (Anthropic)"
-                );
-                Ok(Box::new(AnthropicLlm::new(profile_id, profile, _provider)?))
-            }
-            #[cfg(not(feature = "llm-anthropic"))]
-            {
-                anyhow::bail!("profile '{profile_id}' requires feature 'llm-anthropic'")
-            }
-        }
-        LlmProviderProfileRef::Gemini(_provider) => {
-            #[cfg(feature = "llm-gemini")]
-            {
-                tracing::info!(
-                    profile = profile_id,
-                    provider = %profile.provider,
-                    "creating LLM adapter (Gemini)"
-                );
-                Ok(Box::new(GeminiLlm::new(profile_id, profile, _provider)?))
-            }
-            #[cfg(not(feature = "llm-gemini"))]
-            {
-                anyhow::bail!("profile '{profile_id}' requires feature 'llm-gemini'")
-            }
-        }
-        LlmProviderProfileRef::Noop => {
-            tracing::info!(profile = profile_id, "creating LLM adapter (noop)");
-            Ok(Box::new(NoopLlm))
-        }
-    }
+    anyhow::ensure!(
+        profile.kind == LlmProfileKind::Chat,
+        "LLM profile '{profile_id}' is not a chat profile"
+    );
+    Ok(Box::new(LlmService::from_profile(
+        profile_id,
+        profile,
+        config.llm_provider_profile(&profile.provider)?,
+    )?))
 }
 
 pub fn create_stt(_config: &ServerConfig, name: &str) -> anyhow::Result<Box<dyn SttAdapter>> {

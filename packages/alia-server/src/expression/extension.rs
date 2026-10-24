@@ -1,13 +1,15 @@
 use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
 
 use super::abi::{
     ExpressionPluginRequest, ExpressionPluginResponse, ExternalExpressionPlugin,
-    external_draft_to_appraisal,
+    ensure_supported_expression_plugin_abi, external_draft_to_appraisal,
 };
 use super::affect::AppraisalEvent;
 use super::appraisal::{AppraisalContext, AppraisalEnginePlugin};
@@ -60,6 +62,7 @@ pub struct ExpressionExtensionSummary {
 
 #[derive(Default)]
 pub struct ExpressionExtensionRegistry {
+    stopping: AtomicBool,
     external_plugins: RwLock<BTreeMap<String, Arc<dyn ExternalExpressionPlugin>>>,
     appraisal_engines: RwLock<BTreeMap<String, Arc<dyn AppraisalEnginePlugin>>>,
     planners: RwLock<BTreeMap<String, Arc<dyn ExpressionPlannerPlugin>>>,
@@ -76,16 +79,40 @@ impl fmt::Debug for ExpressionExtensionRegistry {
 }
 
 impl ExpressionExtensionRegistry {
+    pub(crate) async fn shutdown(&self) -> anyhow::Result<()> {
+        self.stopping.store(true, Ordering::SeqCst);
+        let mut errors = Vec::new();
+        let plugins = values(&self.external_plugins);
+        let results =
+            futures::future::join_all(plugins.iter().map(|plugin| plugin.shutdown())).await;
+        for (plugin, result) in plugins.iter().zip(results) {
+            if let Err(error) = result {
+                errors.push(format!("{}: {error:#}", plugin.name()));
+            }
+        }
+        anyhow::ensure!(
+            errors.is_empty(),
+            "expression shutdown failed: {}",
+            errors.join("; ")
+        );
+        Ok(())
+    }
+
     pub fn register_external_plugin(
         &self,
         plugin: Arc<dyn ExternalExpressionPlugin>,
     ) -> anyhow::Result<()> {
         let manifest = plugin.manifest();
+        ensure_supported_expression_plugin_abi(manifest.abi_version)?;
         let name = normalized_name(&manifest.name)?;
         let mut plugins = self
             .external_plugins
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        anyhow::ensure!(
+            !self.stopping.load(Ordering::SeqCst),
+            "expression runtime is stopping"
+        );
         if plugins.contains_key(&name) {
             anyhow::bail!("external expression plugin '{name}' is already registered");
         }
@@ -93,12 +120,29 @@ impl ExpressionExtensionRegistry {
         Ok(())
     }
 
-    pub fn unregister_external_plugin(&self, name: &str) -> bool {
+    pub async fn unregister_external_plugin(&self, name: &str) -> anyhow::Result<bool> {
+        let plugin = self
+            .external_plugins
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(name)
+            .cloned();
+        let Some(plugin) = plugin else {
+            return Ok(false);
+        };
+        plugin.shutdown().await?;
         let mut plugins = self
             .external_plugins
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        plugins.remove(name).is_some()
+        if plugins
+            .get(name)
+            .is_some_and(|current| Arc::ptr_eq(current, &plugin))
+        {
+            plugins.remove(name);
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     pub fn register_appraisal_engine(
@@ -228,8 +272,8 @@ impl ExpressionExtensionRegistry {
                 "external appraisal engine is not approved by persistent policy"
             );
             anyhow::ensure!(
-                plugin.manifest().cancel_on_timeout && !plugin.manifest().trace_stderr,
-                "private appraisal requires supervised cancellation and no raw stderr trace"
+                plugin.private_input_isolated(),
+                "private appraisal requires an enabled isolated deployment"
             );
             let result = call_external_plugin(
                 &plugin,
@@ -276,7 +320,7 @@ impl ExpressionExtensionRegistry {
             let response = call_external_plugin(
                 &plugin,
                 ExpressionPluginRequest::PlanIntent {
-                    input: input.clone(),
+                    input: input.into(),
                     affect: affect.clone(),
                     intent: intent.clone(),
                 },
@@ -324,7 +368,7 @@ impl ExpressionExtensionRegistry {
             let response = call_external_plugin(
                 &plugin,
                 ExpressionPluginRequest::TransformPlan {
-                    input: ctx.input.clone(),
+                    input: ctx.input.into(),
                     affect: ctx.affect.clone(),
                     stance: ctx.stance.clone(),
                     plan: plan.clone(),
@@ -372,7 +416,7 @@ impl ExpressionExtensionRegistry {
             let response = call_external_plugin(
                 &plugin,
                 ExpressionPluginRequest::ApplySafetyPolicy {
-                    input: ctx.input.clone(),
+                    input: ctx.input.into(),
                     affect: ctx.affect.clone(),
                     stance: ctx.stance.clone(),
                     plan: plan.clone(),
@@ -428,7 +472,7 @@ fn values<T: ?Sized>(lock: &RwLock<BTreeMap<String, Arc<T>>>) -> Vec<Arc<T>> {
         .collect()
 }
 
-async fn call_external_plugin(
+pub(super) async fn call_external_plugin(
     plugin: &Arc<dyn ExternalExpressionPlugin>,
     request: ExpressionPluginRequest,
     external_timeout: Duration,
@@ -438,13 +482,20 @@ async fn call_external_plugin(
         .request_timeout_ms
         .map(|millis| Duration::from_millis(millis.max(1)))
         .unwrap_or(external_timeout);
-    match timeout(timeout_duration, plugin.call(request)).await {
+    let cancel = CancellationToken::new();
+    let call = plugin.call(request, cancel.clone());
+    tokio::pin!(call);
+    match timeout(timeout_duration, &mut call).await {
         Ok(response) => response,
-        Err(_) => anyhow::bail!(
-            "external expression plugin '{}' timed out after {}ms",
-            plugin.name(),
-            timeout_duration.as_millis()
-        ),
+        Err(_) => {
+            cancel.cancel();
+            // The deployment retains its worker; shutdown joins it independently.
+            anyhow::bail!(
+                "external expression plugin '{}' timed out after {}ms; cleanup remains pending",
+                plugin.name(),
+                timeout_duration.as_millis(),
+            )
+        }
     }
 }
 

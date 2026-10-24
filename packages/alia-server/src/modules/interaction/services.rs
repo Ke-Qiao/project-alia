@@ -1,21 +1,22 @@
 use crate::expression::ExpressionRuntime;
+use crate::providers::llm::LlmService;
 use crate::{
     modules::interaction::{
         cache::CacheStore, conversation::ConversationStore, persona::PersonaService,
         routing::RouterService, skills::SkillRegistry,
     },
-    providers::adapter::{EmbeddingAdapter, LlmAdapter, ToolRegistry, TtsAdapter},
+    providers::adapter::{EmbeddingAdapter, ToolRegistry, TtsAdapter},
 };
 use std::sync::Arc;
 
 /// Services used by interaction use cases, assembled explicitly by bootstrap.
 /// No infrastructure registry, scheduler, STT, or lifecycle ownership is exposed here.
 pub struct InteractionServices {
-    pub llm: Arc<dyn LlmAdapter>,
-    pub minor_llm: Arc<dyn LlmAdapter>,
-    pub major_llm: Arc<dyn LlmAdapter>,
-    pub memory_capture_llm: Option<Arc<dyn LlmAdapter>>,
-    pub sentence_expression_llm: Option<Arc<dyn LlmAdapter>>,
+    pub llm: Arc<LlmService>,
+    pub minor_llm: Arc<LlmService>,
+    pub major_llm: Arc<LlmService>,
+    pub memory_capture_llm: Option<Arc<LlmService>>,
+    pub sentence_expression_llm: Option<Arc<LlmService>>,
     pub tts: Arc<dyn TtsAdapter>,
     pub embedding: Arc<dyn EmbeddingAdapter>,
     pub conversation: Arc<dyn ConversationStore>,

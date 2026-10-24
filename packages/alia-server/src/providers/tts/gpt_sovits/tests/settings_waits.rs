@@ -42,6 +42,12 @@ fn isolated_budget_case(name: &str, case: impl Future<Output = ()>) {
     }
 }
 
+// These admission-only fixtures never send HTTP. Skip ambient proxy discovery:
+// on macOS it scans the executable's Cargo deps directory during client setup.
+fn local_client() -> Client {
+    Client::builder().no_proxy().build().unwrap()
+}
+
 async fn reserve_global_capacity() -> Vec<AudioReservation> {
     let mut held = Vec::new();
     for _ in 0..MAX_GLOBAL_ENCODED_BYTES / MAX_RESPONSE_ENCODED_BYTES {
@@ -62,7 +68,7 @@ fn weight_setup_deadline_includes_audio_capacity_admission() {
         ),
         async {
             let held = reserve_global_capacity().await;
-            let client = Client::new();
+            let client = local_client();
             let mut operation = Box::pin(tokio::task::unconstrained(set_remote_weights(
                 &client,
                 "http://127.0.0.1:9/tts",
@@ -101,7 +107,8 @@ fn cancelling_weight_setup_keeps_local_settings_and_releases_queued_capacity() {
         ),
         async {
             let held = reserve_global_capacity().await;
-            let tts = GptSovitsTts::new(
+            let tts = GptSovitsTts::with_client(
+                local_client(),
                 &GptSovitsProviderSection::default(),
                 "default",
                 &BTreeMap::new(),
@@ -129,6 +136,18 @@ fn cancelling_weight_setup_keeps_local_settings_and_releases_queued_capacity() {
                 Some("new-local.ckpt")
             );
             drop(operation);
+            assert!(matches!(
+                tts.config.read().await.weight_state,
+                WeightState::Unconfirmed { .. }
+            ));
+            assert!(
+                tts.synthesize_request(
+                    &TtsRequest::plain("must not reach an unconfirmed model"),
+                    ResponseAudioBudget::for_standalone_request(uuid::Uuid::new_v4()).unwrap(),
+                )
+                .await
+                .is_err()
+            );
             assert_eq!(
                 tts.config.read().await.endpoint,
                 "http://127.0.0.1:9/tts",

@@ -250,13 +250,13 @@ async fn voice_chat(
     let messages = vec![crate::providers::adapter::ChatMessage {
         role: "user".into(),
         content: input_text.clone(),
-        name: None,
+        user_id: None,
         ..crate::providers::adapter::ChatMessage::default()
     }];
     let response_text = state
         .modules
         .llm
-        .chat(&messages)
+        .text(&messages)
         .await
         .map_err(|e| AppError::AiService(format!("LLM failed: {e}")))?;
 

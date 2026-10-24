@@ -53,10 +53,19 @@ pub fn check_config(path: &Path) -> Result<Value> {
         "not_checked": ["module_instantiation", "model_loading", "device_enumeration_and_permissions", "database_or_network", "server_catalog_agreement", "physical_calibration", "aec_and_acoustics"],
         "build_features": {
             "sherpa_onnx": cfg!(feature = "sherpa-onnx"),
+            "silero": cfg!(feature = "sherpa-onnx"),
             "vision_opencv": cfg!(feature = "vision-opencv"),
         },
         "configured_modules": config.modules,
+        "r1_control": {
+            "selected": config.modules.wakeword == "r1",
+            "serial_path": config.r1.serial_path,
+            "baud_rate": 115200,
+            "target_supported": cfg!(target_os = "linux"),
+            "device_opened": false,
+        },
         "speech_channel_id": config.speech.channel_id,
+        "speech_trigger": config.speech.trigger,
         "configured_audio": {
             "capture_backend": config.audio.capture_backend,
             "capture_device": config.audio.capture_device,

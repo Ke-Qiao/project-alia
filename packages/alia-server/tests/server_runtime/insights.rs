@@ -7,7 +7,7 @@ use alia_server::{
         memory::{MemoryListOpts, MemoryNode},
         platform::insights::{InsightPhase, InsightTask},
     },
-    providers::adapter::{ChatMessage, LlmAdapter},
+    providers::adapter::ChatMessage,
 };
 use sea_orm::{DatabaseBackend, Statement};
 
@@ -42,23 +42,21 @@ impl ModuleLifecycle for ControlledLlm {
         "insights-test"
     }
 }
-#[async_trait]
-impl LlmAdapter for ControlledLlm {
-    async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
-        self.requests.lock().unwrap().push(messages.to_vec());
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        self.entered.add_permits(1);
-        if let Some(release) = &self.release {
-            release.acquire().await.unwrap().forget();
-        }
-        Ok(self.response.lock().unwrap().clone())
-    }
-    async fn chat_stream(
-        &self,
-        _: &[ChatMessage],
-    ) -> anyhow::Result<std::pin::Pin<Box<dyn futures::Stream<Item = anyhow::Result<String>> + Send>>>
-    {
-        anyhow::bail!("this fixture only supports the Insights non-streaming contract")
+impl ControlledLlm {
+    fn service(&self) -> LlmService {
+        let fixture = self.clone();
+        test_text("ControlledLlm", move |messages| {
+            let fixture = fixture.clone();
+            async move {
+                fixture.requests.lock().unwrap().push(messages.to_vec());
+                fixture.calls.fetch_add(1, Ordering::SeqCst);
+                fixture.entered.add_permits(1);
+                if let Some(release) = &fixture.release {
+                    release.acquire().await.unwrap().forget();
+                }
+                Ok(fixture.response.lock().unwrap().clone())
+            }
+        })
     }
 }
 
@@ -141,7 +139,7 @@ async fn extraction_uses_current_source_epoch_without_comparing_server_and_datab
         *llm.response.lock().unwrap() = serde_json::json!({
             "memories": [{"content": "Current source preference", "confidence": 0.9}]
         }).to_string();
-        let runtime = f.builder().with_major_llm(llm.clone()).build().await.unwrap();
+        let runtime = f.builder().with_major_llm(llm.service()).build().await.unwrap();
         let state = runtime.state().clone();
         let owner = user(&state).await;
         let foreign_owner = user(&state).await;
@@ -198,7 +196,7 @@ async fn stale_snapshot_reaches_trigger_as_error_and_persists_failure_log() {
         let llm = ControlledLlm::new(true);
         let runtime = f
             .builder()
-            .with_major_llm(llm.clone())
+            .with_major_llm(llm.service())
             .build()
             .await
             .unwrap();
@@ -254,7 +252,7 @@ async fn log_insert_failure_is_error_even_when_memory_batch_already_committed() 
     with_fixture(|mut f| async move {
         enable_insights(&mut f);
         let llm = ControlledLlm::new(false);
-        let runtime = f.builder().with_major_llm(llm.clone()).build().await.unwrap();
+        let runtime = f.builder().with_major_llm(llm.service()).build().await.unwrap();
         let state = runtime.state().clone();
         let owner = user(&state).await;
         let id = seed(&state, owner).await;
@@ -286,7 +284,7 @@ async fn disabled_cached_user_is_rejected_by_trigger_and_schedule_without_llm() 
     with_fixture(|mut f| async move {
         enable_insights(&mut f);
         let llm = ControlledLlm::new(false);
-        let runtime = f.builder().with_major_llm(llm.clone()).build().await.unwrap();
+        let runtime = f.builder().with_major_llm(llm.service()).build().await.unwrap();
         let state = runtime.state().clone();
         let owner = user(&state).await;
         let id = seed(&state, owner).await;
@@ -336,7 +334,7 @@ async fn cancelled_trigger_releases_count_and_waiter_rechecks_account_after_capa
         let llm = ControlledLlm::new(true);
         let runtime = f
             .builder()
-            .with_major_llm(llm.clone())
+            .with_major_llm(llm.service())
             .build()
             .await
             .unwrap();

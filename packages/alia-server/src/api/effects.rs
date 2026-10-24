@@ -101,6 +101,8 @@ impl IntoResponse for ExecutionApiError {
 #[serde(deny_unknown_fields)]
 #[into_params(parameter_in = Query)]
 pub struct ListQuery {
+    /// Recover an original request even when its tool is no longer installed.
+    pub request_id: Option<Uuid>,
     /// Exclusive effect_id cursor from the last record of the previous page.
     pub before: Option<Uuid>,
     /// Page size, clamped to 100. Default: 25.
@@ -138,7 +140,7 @@ pub async fn list(
     Ok(Json(
         state
             .execution
-            .list(auth.id, query.before, query.limit)
+            .list(auth.id, query.before, query.limit, query.request_id)
             .await?,
     ))
 }

@@ -24,7 +24,7 @@ impl ResponseCommitter {
     ) -> anyhow::Result<Uuid> {
         use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
         anyhow::ensure!(
-            message.role == "assistant" && message.name.is_none(),
+            message.role == "assistant" && message.user_id.is_none(),
             "canonical response history must be an assistant message"
         );
         let db = &self.db;

@@ -1,7 +1,6 @@
 //! Actual HTTP, lifecycle and PostgreSQL shadow work; no fabricated authority.
 use super::*;
 use alia_server::modules::companion::types::{CompanionMode, CompanionPolicy};
-use alia_server::providers::adapter::{ChatMessage, LlmAdapter};
 use sea_orm::{DatabaseBackend, Statement};
 use serde_json::{Value, json};
 
@@ -13,27 +12,21 @@ impl ModuleLifecycle for ForbiddenInference {
         "companion-no-inference"
     }
 }
-#[async_trait]
-impl LlmAdapter for ForbiddenInference {
-    async fn chat(&self, _: &[ChatMessage]) -> anyhow::Result<String> {
-        self.0.fetch_add(1, Ordering::SeqCst);
-        anyhow::bail!("shadow must never call inference")
-    }
-    async fn chat_stream(
-        &self,
-        _: &[ChatMessage],
-    ) -> anyhow::Result<std::pin::Pin<Box<dyn futures::Stream<Item = anyhow::Result<String>> + Send>>>
-    {
-        self.0.fetch_add(1, Ordering::SeqCst);
-        anyhow::bail!("shadow must never call streaming inference")
+impl ForbiddenInference {
+    fn service(&self) -> LlmService {
+        let fixture = self.clone();
+        test_text("ForbiddenInference", move |_messages| {
+            let fixture = fixture.clone();
+            async move {
+                fixture.0.fetch_add(1, Ordering::SeqCst);
+                anyhow::bail!("shadow must never call inference")
+            }
+        })
     }
 }
 
 fn client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-        .unwrap()
+    skills::client()
 }
 
 #[tokio::test]
@@ -184,7 +177,7 @@ async fn companion_shadow_http_has_durable_retry_and_erasure_without_side_effect
     with_fixture(|mut f| async move {
         f.config.policies.memory.enabled = true;
         let calls = Arc::new(AtomicUsize::new(0));
-        let runtime = f.builder().with_llm(ForbiddenInference(calls.clone())).build().await.unwrap();
+        let runtime = f.builder().with_llm(ForbiddenInference(calls.clone()).service()).build().await.unwrap();
         let state = runtime.state().clone();
         let (owner, token) = delivery::account(&state, "user").await;
         let (_, other_token) = delivery::account(&state, "user").await;
@@ -276,7 +269,7 @@ async fn wait_for_scan(
 async fn companion_runtime_discovers_canonical_sources_and_joins_worker() {
     with_fixture(|f| async move {
         let calls = Arc::new(AtomicUsize::new(0));
-        let runtime = f.builder().with_llm(ForbiddenInference(calls.clone())).build().await.unwrap();
+        let runtime = f.builder().with_llm(ForbiddenInference(calls.clone()).service()).build().await.unwrap();
         let state = runtime.state().clone();
         let (owner, _) = delivery::account(&state, "user").await;
         let original = relationship_api::generation(&state, owner, "thank you").await;
@@ -288,7 +281,7 @@ async fn companion_runtime_discovers_canonical_sources_and_joins_worker() {
         assert!(state.modules.companion.start().await.is_err());
         state.modules.companion.stop().await.unwrap();
 
-        let restarted = f.builder().with_llm(ForbiddenInference(calls.clone())).build().await.unwrap();
+        let restarted = f.builder().with_llm(ForbiddenInference(calls.clone()).service()).build().await.unwrap();
         let state = restarted.state().clone();
         let result = AssertUnwindSafe(async {
             let new_source = relationship_api::generation(&state, owner, "thank you again").await;

@@ -12,6 +12,7 @@
     "clean": "rm -rf .expo node_modules"
   },
   "dependencies": {
+    "@babel/runtime": "7.29.2",
     "@react-navigation/native": "^7.0.0",
     "@rn-primitives/accordion": "^1.4.0",
     "@rn-primitives/alert-dialog": "^1.4.0",

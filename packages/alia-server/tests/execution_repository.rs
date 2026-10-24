@@ -868,7 +868,13 @@ async fn queries_and_owner_mutations_do_not_cross_user_boundaries() {
                 .unwrap()
                 .is_none()
         );
-        assert!(repository.list(bob, None, 10).await.unwrap().is_empty());
+        assert!(
+            repository
+                .list(bob, None, 10, None)
+                .await
+                .unwrap()
+                .is_empty()
+        );
         assert!(
             repository
                 .approve(
@@ -884,7 +890,7 @@ async fn queries_and_owner_mutations_do_not_cross_user_boundaries() {
                 .is_err()
         );
         assert!(repository.cancel(bob, record.effect_id).await.is_err());
-        let own = repository.list(alice, None, 10).await.unwrap();
+        let own = repository.list(alice, None, 10, None).await.unwrap();
         assert_eq!(own.len(), 1);
         assert_eq!(own[0].effect_id, record.effect_id);
         assert_eq!(own[0].status, EffectStatus::Proposed);
@@ -918,7 +924,11 @@ async fn concurrent_proposals_cannot_exceed_per_user_confirmation_capacity() {
             MAX_PROPOSED_PER_USER as i64
         );
         assert_eq!(database.count("execution_outbox").await, 0);
-        let existing = repository.list(user, None, 1).await.unwrap().remove(0);
+        let existing = repository
+            .list(user, None, 1, None)
+            .await
+            .unwrap()
+            .remove(0);
         repository.cancel(user, existing.effect_id).await.unwrap();
         assert!(repository.propose(effect(user)).await.is_ok());
     })

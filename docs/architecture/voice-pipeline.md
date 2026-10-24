@@ -1,7 +1,7 @@
 # Voice Pipeline
 
 The only device voice path is continuous VoiceSession v2 with Playback v3 and
-Body v1. The former utterance pipeline, AudioStream / ServerAudioIngress RPCs,
+Motion v1. The former utterance pipeline, AudioStream / ServerAudioIngress RPCs,
 local edge STT decision path and Expression RPC have been removed.
 
 ## Current flow
@@ -19,7 +19,7 @@ local edge STT decision path and Expression RPC have been removed.
    contracts. Effects retain their execution ledger and cancellation ownership.
 6. Delivery reserves a canonical Response and exact media identities before
    sending output. Embedded playback requires the registered binding; actions
-   require the typed Body contract. CLI text uses its owned text writer.
+   require the typed Motion contract. CLI text uses its owned text writer.
 7. Native progress records actual submission boundaries. Dispatch, model return
    and elapsed audio duration never prove physical presentation or human receipt.
 
@@ -56,9 +56,10 @@ A failed TTS or delivery attempt does not invoke an unscoped device sound RPC.
 Interrupted output is not persisted as a completed assistant reply.
 
 The former `end_continuous_dialogue` tool has been removed. Playback Fence closes
-output, not the microphone session. A future authenticated command to close an
-input session must be designed and verified explicitly; current session shutdown
-uses its transport and local lifecycle ownership.
+output, not the microphone session. Authenticated CaptureControl.Stop now closes
+an explicitly system-triggered session by its device boot and local generation,
+joining its workers and observing native retirement. Mapping a spoken tool to
+that operation remains future work. Board initialization is independent of Start/Stop.
 
 ## Scope and evidence
 

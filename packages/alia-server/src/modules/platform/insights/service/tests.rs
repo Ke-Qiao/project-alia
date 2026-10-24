@@ -6,34 +6,24 @@ mod deadline_tests {
     use crate::modules::interaction::cache::{
         CacheCas, CacheReview, CacheStore, CacheWork, CachedResponse,
     };
-    use crate::providers::adapter::{ChatMessage, EmbeddingAdapter};
+    use crate::providers::adapter::EmbeddingAdapter;
 
     struct FixedMemoryLlm {
         response: String,
         calls: AtomicU32,
     }
 
-    #[async_trait]
-    impl ModuleLifecycle for FixedMemoryLlm {
-        fn name(&self) -> &'static str {
-            "fixed_insights_memory_llm"
-        }
-    }
-
-    #[async_trait]
-    impl LlmAdapter for FixedMemoryLlm {
-        async fn chat(&self, _messages: &[ChatMessage]) -> anyhow::Result<String> {
-            self.calls.fetch_add(1, Ordering::SeqCst);
-            Ok(self.response.clone())
-        }
-
-        async fn chat_stream(
-            &self,
-            _messages: &[ChatMessage],
-        ) -> anyhow::Result<
-            std::pin::Pin<Box<dyn futures::Stream<Item = anyhow::Result<String>> + Send>>,
-        > {
-            anyhow::bail!("insights memory tests require the non-streaming call path")
+    impl FixedMemoryLlm {
+        fn service(self: &Arc<Self>) -> Arc<LlmService> {
+            let fixture = self.clone();
+            Arc::new(LlmService::test_text(
+                "fixed_insights_memory_llm",
+                move |_| {
+                    fixture.calls.fetch_add(1, Ordering::SeqCst);
+                    let response = fixture.response.clone();
+                    async move { Ok(response) }
+                },
+            ))
         }
     }
     fn insight_user() -> MemoryMaintenanceUser {
@@ -201,7 +191,7 @@ mod deadline_tests {
                 &worker_semaphore,
                 InsightService::run_phase(
                     &DatabaseConnection::Disconnected,
-                    Some(worker_llm),
+                    Some(worker_llm.service()),
                     None,
                     worker_runtime,
                     &InsightPhase::Consolidation,
@@ -227,7 +217,7 @@ mod deadline_tests {
             &semaphore,
             InsightService::run_phase(
                 &DatabaseConnection::Disconnected,
-                Some(llm.clone()),
+                Some(llm.service()),
                 None,
                 runtime,
                 &InsightPhase::Consolidation,

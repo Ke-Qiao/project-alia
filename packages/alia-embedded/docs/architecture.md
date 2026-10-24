@@ -13,7 +13,7 @@ and hardware slots with `noop`. Hardware adapters remain Pi-first.
 - let the server own turn decisions, recognized input, and response generation
 - admit network playback and local cues under the original boot/session/generation
 - mix conversation and local cues in the native output backend
-- expose scoped playback, signed BodyControl, settings, binding, plugin, and sensor services
+- expose scoped playback, signed MotionControl, settings, binding, plugin, and sensor services
 - own local motion, optional face tracking, discovery, and SQLite device state
 
 There is one voice path. Local utterance endpointing, local STT, transcript-based
@@ -28,8 +28,8 @@ implementations fail initialization; `noop` explicitly disables a slot.
 
 | Slot | Typical implementation | Purpose |
 | --- | --- | --- |
-| `wakeword` | `sherpa_onnx` | Wake a fresh voice session. |
-| `vad` | `sherpa_onnx` | Activity evidence, without deciding turn completion. |
+| `wakeword` | `sherpa_onnx`, Linux `r1` | Wake a fresh voice session from local KWS or a bounded R1 UART notification consumed with capture PCM. |
+| `vad` | `silero` | Bounded streaming activity evidence, without deciding turn completion. |
 | `direct_response` | `keyword` | Resolve an optional wake cue from configured assets. |
 | `audio_capture` | `cpal`, with Linux ALSA backend support | Microphone input. |
 | `audio_playback` | `cpal`, with Linux ALSA backend support | Scoped native output and receipts. |
@@ -72,7 +72,9 @@ samples. Current CPAL/ALSA boundaries report native submission; they do not prov
 physical speaker presentation or silence. Hardware AEC, measured acoustic duplex
 quality, and general embedded-platform adaptation remain separate work.
 
-The old continuous-dialogue end tool has no replacement yet. A future explicit
-input-session close contract must carry authenticated session ownership and
-acknowledged capture closure. Playback Fence controls output admission and must
-not be treated as proof that microphone upload stopped.
+The old continuous-dialogue end tool has no replacement yet. CaptureControl now
+provides authenticated system Start/Stop with device boot and local generation
+checks, explicit capture-task closure and native retirement observation. The
+spoken tool is not wired to it. Playback Fence controls output admission and
+must not be treated as proof that microphone upload stopped. Explicit one-shot
+R1 cold-boot initialization is separate from this session contract.

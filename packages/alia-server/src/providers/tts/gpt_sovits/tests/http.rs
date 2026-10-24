@@ -19,7 +19,7 @@ use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
-async fn remote_weights_wait_for_init_and_setup_failure_is_nonfatal() {
+async fn remote_weights_require_both_acknowledgements_and_retry_after_partial_failure() {
     use axum::{
         extract::{Path, Query},
         http::StatusCode,
@@ -57,6 +57,8 @@ async fn remote_weights_wait_for_init_and_setup_failure_is_nonfatal() {
                 .is_err()
         );
 
+        let reject = Arc::new(std::sync::atomic::AtomicBool::new(reject_sovits));
+        let remote_reject = reject.clone();
         let calls = Arc::new(Mutex::new(Vec::new()));
         let recorded = calls.clone();
         let router = Router::new().route(
@@ -64,8 +66,13 @@ async fn remote_weights_wait_for_init_and_setup_failure_is_nonfatal() {
             get(
                 move |Path(path): Path<String>, Query(query): Query<BTreeMap<String, String>>| {
                     let recorded = recorded.clone();
+                    let remote_reject = remote_reject.clone();
                     async move {
-                        let reject = reject_sovits && path == "set_sovits_weights";
+                        if path == "tts" {
+                            return StatusCode::BAD_REQUEST;
+                        }
+                        let reject =
+                            remote_reject.load(Ordering::SeqCst) && path == "set_sovits_weights";
                         recorded
                             .lock()
                             .await
@@ -87,10 +94,11 @@ async fn remote_weights_wait_for_init_and_setup_failure_is_nonfatal() {
                 .await
                 .unwrap();
         });
-        tokio::time::timeout(Duration::from_secs(5), tts.init())
+        assert!(tts.synthesize_request(&request(), budget()).await.is_err());
+        let initialized = tokio::time::timeout(Duration::from_secs(5), tts.init())
             .await
-            .unwrap()
             .unwrap();
+        assert_eq!(initialized.is_err(), reject_sovits);
         assert_eq!(
             *calls.lock().await,
             vec![
@@ -101,12 +109,74 @@ async fn remote_weights_wait_for_init_and_setup_failure_is_nonfatal() {
                 ),
             ]
         );
+        if reject_sovits {
+            assert_eq!(
+                tts.config.read().await.weight_state,
+                WeightState::Unconfirmed {
+                    gpt_acknowledged: true,
+                    sovits_acknowledged: false,
+                }
+            );
+            assert!(matches!(
+                tts.health_check().await,
+                ModuleHealth::Unhealthy(_)
+            ));
+            assert!(tts.synthesize_request(&request(), budget()).await.is_err());
+            assert!(
+                tts.synthesize_stream_request(&request(), budget())
+                    .await
+                    .is_err()
+            );
+            reject.store(false, Ordering::SeqCst);
+            tts.apply_settings(&BTreeMap::from([(
+                "core.profiles.voice.default.provider_specific.sovits_weights_path".into(),
+                serde_json::json!("mock-sovits.pth"),
+            )]))
+            .await
+            .unwrap();
+            assert_eq!(
+                calls.lock().await.len(),
+                4,
+                "retry must set both desired weights"
+            );
+        }
+        assert_eq!(
+            tts.config.read().await.weight_state,
+            WeightState::Acknowledged
+        );
+        assert!(matches!(tts.health_check().await, ModuleHealth::Healthy));
         stop.cancel();
         tokio::time::timeout(Duration::from_secs(3), server)
             .await
             .unwrap()
             .unwrap();
     }
+}
+
+#[tokio::test]
+async fn settings_wait_for_the_original_audio_stream_to_release_weights() {
+    let peer = Peer::new(|| Response::new(chunks(Bytes::from_static(b"audio"), 1))).await;
+    let input = peer
+        .tts
+        .synthesize_stream_request(&request(), budget())
+        .await
+        .unwrap();
+    let updates = BTreeMap::from([(
+        "core.providers.gpt_sovits.endpoint".into(),
+        serde_json::json!("http://127.0.0.1:9/tts"),
+    )]);
+    let mut update = Box::pin(peer.tts.apply_settings(&updates));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), &mut update)
+            .await
+            .is_err()
+    );
+    drop(input);
+    tokio::time::timeout(Duration::from_secs(2), update)
+        .await
+        .unwrap()
+        .unwrap();
+    peer.close().await;
 }
 
 struct Peer {
@@ -531,4 +601,90 @@ fn pitch_does_not_rewrite_an_unproven_fixed_offset_or_accept_partial_header() {
     assert_eq!(pitch.push(&source[..12]).unwrap(), (12, None));
     assert!(pitch.finish().is_err());
     assert!(pitch.push(&source[12..]).is_err());
+}
+
+#[tokio::test]
+async fn health_and_synthesis_preserve_unknown_state_after_cancelled_weight_switch() {
+    use axum::{http::StatusCode, routing::get};
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/tts", listener.local_addr().unwrap());
+    let reached_sovits = Arc::new(Notify::new());
+    let entered = reached_sovits.clone();
+    let release_sovits = Arc::new(Notify::new());
+    let release = release_sovits.clone();
+    let router = Router::new()
+        .route("/tts", get(|| async { StatusCode::BAD_REQUEST }))
+        .route("/set_gpt_weights", get(|| async { StatusCode::OK }))
+        .route(
+            "/set_sovits_weights",
+            get(move || {
+                let entered = entered.clone();
+                let release = release.clone();
+                async move {
+                    entered.notify_one();
+                    release.notified().await;
+                    StatusCode::OK
+                }
+            }),
+        );
+    let stop = CancellationToken::new();
+    let shutdown = stop.clone();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(shutdown.cancelled_owned())
+            .await
+            .unwrap();
+    });
+    let provider = GptSovitsProviderSection {
+        endpoint,
+        ..Default::default()
+    };
+    let tts = GptSovitsTts::new(&provider, "test", &BTreeMap::new(), &BTreeMap::new());
+    let updates = BTreeMap::from([
+        (
+            "core.profiles.voice.default.provider_specific.gpt_weights_path".into(),
+            serde_json::json!("new.ckpt"),
+        ),
+        (
+            "core.profiles.voice.default.provider_specific.sovits_weights_path".into(),
+            serde_json::json!("new.pth"),
+        ),
+    ]);
+    {
+        let switch = tts.apply_settings(&updates);
+        tokio::pin!(switch);
+        tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::select! {
+                _ = reached_sovits.notified() => {},
+                result = &mut switch => panic!("switch should wait for second acknowledgement: {result:?}"),
+            }
+        }).await.unwrap();
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_millis(100), tts.health_check()).await.unwrap(),
+            ModuleHealth::Degraded(message) if message.contains("in progress")
+        ));
+    }
+    assert_eq!(
+        tts.config.read().await.weight_state,
+        WeightState::Unconfirmed {
+            gpt_acknowledged: true,
+            sovits_acknowledged: false
+        }
+    );
+    assert!(matches!(
+        tts.health_check().await,
+        ModuleHealth::Unhealthy(_)
+    ));
+    assert!(tts.synthesize_request(&request(), budget()).await.is_err());
+    assert!(
+        tts.synthesize_stream_request(&request(), budget())
+            .await
+            .is_err()
+    );
+    release_sovits.notify_one();
+    stop.cancel();
+    tokio::time::timeout(Duration::from_secs(3), server)
+        .await
+        .unwrap()
+        .unwrap();
 }

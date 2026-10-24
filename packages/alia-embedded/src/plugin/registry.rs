@@ -3,15 +3,24 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 
-use anyhow::{Context, Result, bail};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{ChildStdin, Command};
-use tokio::sync::{Mutex, RwLock, broadcast};
+use anyhow::{Context, Result, ensure};
+use tokio::process::Command;
+use tokio::sync::{RwLock, broadcast, mpsc};
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use crate::module::traits::DiscoveryMetadata;
+use super::assets;
+use super::manifest::{PluginCapabilities, PluginManifest, PluginRuntime, PluginType};
+use alia_plugin_runtime::Deployment;
 
-use super::manifest::{PluginCapabilities, PluginManifest};
+mod process;
+mod wasm;
+use crate::module::traits::DiscoveryMetadata;
+use process::ProcessOwner;
+use wasm::WasmOwner;
+
+const MAX_COMMANDS: usize = 1024;
+const MAX_MESSAGE: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PluginState {
@@ -23,13 +32,36 @@ pub enum PluginState {
     Failed,
 }
 
-pub struct PluginEntry {
-    pub manifest: PluginManifest,
-    pub state: PluginState,
-    pub dir: PathBuf,
-    pub pid: Option<u32>,
-    pub stdin: Option<Arc<Mutex<ChildStdin>>>,
-    pub runtime_capabilities: Vec<String>,
+struct Run {
+    instance_id: String,
+    commands: mpsc::Sender<Vec<u8>>,
+    stop: CancellationToken,
+    task: Option<tokio::task::JoinHandle<()>>,
+    cleanup_error: Option<String>,
+}
+
+struct PluginEntry {
+    manifest: PluginManifest,
+    state: PluginState,
+    dir: PathBuf,
+    asset_sha256: String,
+    run: Option<Run>,
+    runtime_capabilities: Vec<String>,
+    commands: HashMap<String, CommandRecord>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CommandReceipt {
+    pub instance_id: String,
+    pub command_id: String,
+    pub state: String,
+    pub result_json: Vec<u8>,
+}
+
+struct CommandRecord {
+    action: String,
+    payload: serde_json::Value,
+    receipt: CommandReceipt,
 }
 
 pub struct PluginRegistry {
@@ -47,6 +79,8 @@ pub struct PluginDiscoverySummary {
 #[derive(Debug, Clone)]
 pub struct PluginEventRecord {
     pub plugin_name: String,
+    pub instance_id: String,
+    pub command_id: String,
     pub event_type: String,
     pub payload_json: Vec<u8>,
     pub timestamp_us: u64,
@@ -62,327 +96,396 @@ impl PluginRegistry {
         }
     }
 
-    /// Scan the plugins directory and load all manifests.
     pub async fn scan(&self) -> Result<()> {
         if !self.plugins_dir.exists() {
             return Ok(());
         }
-
-        let mut entries = tokio::fs::read_dir(&self.plugins_dir).await?;
         let mut plugins = self.plugins.write().await;
-
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            if !path.is_dir() {
+        for entry in std::fs::read_dir(&self.plugins_dir)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') || plugins.contains_key(&name) {
                 continue;
             }
-
-            let manifest_path = path.join("manifest.toml");
-            if !manifest_path.exists() {
-                continue;
-            }
-
-            match PluginManifest::load(&manifest_path) {
-                Ok(manifest) => {
-                    let name = manifest.plugin.name.clone();
-                    info!(name = %name, "discovered plugin");
+            let checked = (|| -> Result<_> {
+                assets::validate_name(&name)?;
+                let (manifest, asset) = assets::verify(&entry.path(), None)?;
+                ensure!(
+                    manifest.plugin.name == name,
+                    "plugin directory and manifest name differ"
+                );
+                Ok((manifest, asset))
+            })();
+            match checked {
+                Ok((manifest, asset)) => {
                     plugins.insert(
                         name,
                         PluginEntry {
                             manifest,
                             state: PluginState::Installed,
-                            dir: path,
-                            pid: None,
-                            stdin: None,
+                            dir: entry.path(),
+                            asset_sha256: asset.sha256,
+                            run: None,
                             runtime_capabilities: Vec::new(),
+                            commands: HashMap::new(),
                         },
                     );
                 }
-                Err(e) => {
-                    warn!(
-                        path = %manifest_path.display(),
-                        error = %e,
-                        "failed to load plugin manifest"
-                    );
+                Err(error) => {
+                    warn!(%name, %error, "plugin asset is not verified; leaving it inactive")
                 }
             }
         }
-
         Ok(())
     }
 
-    /// Install a plugin from a zip archive.
-    ///
-    /// Validates zip structure (must contain `manifest.toml` and entry script)
-    /// and guards against path traversal attacks.
-    pub async fn install(&self, name: &str, zip_data: &[u8]) -> Result<()> {
-        let plugin_dir = self.plugins_dir.join(name);
-
-        // Create plugin directory
-        tokio::fs::create_dir_all(&plugin_dir).await?;
-
-        // Extract zip in a blocking task (zip I/O is sync)
-        let plugin_dir_clone = plugin_dir.clone();
-        let zip_data = zip_data.to_vec();
-        let manifest = tokio::task::spawn_blocking(move || -> Result<PluginManifest> {
-            let cursor = std::io::Cursor::new(&zip_data);
-            let mut archive = zip::ZipArchive::new(cursor)?;
-
-            let canonical_base = plugin_dir_clone
-                .canonicalize()
-                .unwrap_or(plugin_dir_clone.clone());
-
-            for i in 0..archive.len() {
-                let mut file = archive.by_index(i)?;
-                let raw_name = file.enclosed_name().context("invalid zip entry name")?;
-
-                let out_path = plugin_dir_clone.join(&raw_name);
-
-                // Path traversal check: ensure extracted path stays within plugin_dir
-                // We must check the path components, not just canonicalize (which requires the file to exist)
-                let normalized = out_path.components().fold(PathBuf::new(), |mut acc, comp| {
-                    match comp {
-                        std::path::Component::ParentDir => {
-                            acc.pop();
-                        }
-                        std::path::Component::Normal(c) => acc.push(c),
-                        std::path::Component::RootDir => acc.push("/"),
-                        _ => {}
-                    }
-                    acc
-                });
-                if !normalized.starts_with(&canonical_base) {
-                    bail!(
-                        "path traversal detected in zip entry: {}",
-                        raw_name.display()
-                    );
-                }
-
-                if file.is_dir() {
-                    std::fs::create_dir_all(&out_path)?;
-                } else {
-                    if let Some(parent) = out_path.parent() {
-                        std::fs::create_dir_all(parent)?;
-                    }
-                    let mut outfile = std::fs::File::create(&out_path)?;
-                    std::io::copy(&mut file, &mut outfile)?;
-                }
-            }
-
-            // Parse manifest
-            let manifest_path = plugin_dir_clone.join("manifest.toml");
-            let manifest = PluginManifest::load(&manifest_path)
-                .context("plugin zip must contain a valid manifest.toml")?;
-
-            // Verify entry script exists
-            let entry_path = plugin_dir_clone.join(&manifest.plugin.entry);
-            if !entry_path.exists() {
-                bail!(
-                    "entry script '{}' not found in plugin archive",
-                    manifest.plugin.entry
-                );
-            }
-
-            Ok(manifest)
+    pub async fn install(&self, name: &str, version: &str, zip_data: &[u8]) -> Result<String> {
+        assets::validate_name(name)?;
+        ensure!(
+            zip_data.len() <= assets::MAX_ARCHIVE,
+            "plugin archive exceeds 16 MiB"
+        );
+        let mut plugins = self.plugins.write().await;
+        std::fs::create_dir_all(&self.plugins_dir)?;
+        let root = self.plugins_dir.canonicalize()?;
+        let destination = root.join(name);
+        ensure!(
+            !plugins.contains_key(name)
+                && std::fs::symlink_metadata(&destination)
+                    .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound),
+            "plugin already installed; stop and uninstall before replacing its asset"
+        );
+        let (owned_name, owned_version, bytes) =
+            (name.to_owned(), version.to_owned(), zip_data.to_vec());
+        let prepare_root = root.clone();
+        // Cancellation leaves only this operation's TempDir; the worker never publishes.
+        let (stage, manifest, asset) = tokio::task::spawn_blocking(move || {
+            assets::prepare(&prepare_root, &owned_name, &owned_version, &bytes)
         })
         .await??;
-
-        // Register the plugin
-        let mut plugins = self.plugins.write().await;
+        std::fs::rename(stage.path(), &destination).context("publishing plugin asset")?;
+        let digest = asset.sha256;
         plugins.insert(
-            name.to_string(),
+            name.to_owned(),
             PluginEntry {
                 manifest,
                 state: PluginState::Installed,
-                dir: plugin_dir,
-                pid: None,
-                stdin: None,
+                dir: destination,
+                asset_sha256: digest.clone(),
+                run: None,
                 runtime_capabilities: Vec::new(),
+                commands: HashMap::new(),
             },
         );
-
-        info!(name, "plugin installed");
-        Ok(())
+        sync_directories(&root).context("plugin asset was published, but durability is unknown; inspect installed identity before retrying")?;
+        info!(name, asset_sha256 = %digest, "plugin installed without activation");
+        Ok(digest)
     }
 
-    /// Uninstall a plugin, removing its directory.
     pub async fn uninstall(&self, name: &str) -> Result<()> {
         let mut plugins = self.plugins.write().await;
         let entry = plugins
             .get(name)
             .with_context(|| format!("plugin not found: {name}"))?;
-
-        if entry.state == PluginState::Running {
-            bail!("cannot uninstall running plugin: {name}");
-        }
-
-        let dir = entry.dir.clone();
+        ensure!(
+            entry.run.is_none(),
+            "cannot uninstall plugin before its process and pipes finish cleanup"
+        );
+        std::fs::remove_dir_all(&entry.dir)?;
         plugins.remove(name);
-        drop(plugins);
-
-        tokio::fs::remove_dir_all(&dir).await?;
-        info!(name, "plugin uninstalled");
+        std::fs::File::open(&self.plugins_dir)?
+            .sync_all()
+            .context("plugin was removed, but directory durability is unknown")?;
         Ok(())
     }
 
-    pub async fn start(&self, name: &str) -> Result<()> {
-        let (manifest, dir) = {
-            let mut plugins = self.plugins.write().await;
-            let entry = plugins
-                .get_mut(name)
-                .with_context(|| format!("plugin not found: {name}"))?;
-
-            if matches!(entry.state, PluginState::Running | PluginState::Starting) {
-                bail!("plugin already running: {name}");
-            }
-
-            entry.state = PluginState::Starting;
-            entry.pid = None;
-            entry.stdin = None;
-            (entry.manifest.clone(), entry.dir.clone())
-        };
-
-        let (command, args) = plugin_command(&dir, &manifest);
-        let mut child = Command::new(&command);
-        child
-            .args(&args)
-            .current_dir(&dir)
+    pub async fn start(
+        &self,
+        name: &str,
+        expected_asset_sha256: &str,
+        allow_trusted_native: bool,
+    ) -> Result<()> {
+        let mut plugins = self.plugins.write().await;
+        let entry = plugins
+            .get_mut(name)
+            .with_context(|| format!("plugin not found: {name}"))?;
+        ensure!(
+            entry.run.is_none(),
+            "plugin already has a running or cleaning-up instance"
+        );
+        ensure!(
+            entry.asset_sha256 == expected_asset_sha256,
+            "plugin asset changed; review the installed digest before activation"
+        );
+        let (manifest, _) = assets::verify(&entry.dir, Some(&entry.asset_sha256))?;
+        let instance_id = uuid::Uuid::new_v4().to_string();
+        if manifest.plugin.runtime == PluginRuntime::Wasm {
+            ensure!(
+                manifest.plugin.plugin_type == PluginType::Processor,
+                "WASM packages currently support processors only"
+            );
+            ensure!(
+                !manifest.plugin.capabilities.gpio
+                    && !manifest.plugin.capabilities.network
+                    && !manifest.plugin.capabilities.usb
+                    && manifest.plugin.capabilities.expression_actions.is_empty()
+                    && manifest.plugin.capabilities.expression_state.is_empty()
+                    && manifest.plugin.events.publishes.is_empty()
+                    && manifest.plugin.events.subscribes.is_empty(),
+                "WASM processors cannot request native device or network authority"
+            );
+            let deployment = Deployment::new(
+                std::fs::read(entry.dir.join(&manifest.plugin.entry))?,
+                manifest.plugin.wasm_limits.clone(),
+                &serde_json::to_value(&manifest)?,
+            )?;
+            deployment.require_export("alia_processor")?;
+            deployment.enable(deployment.implementation_pin())?;
+            let (commands, receiver) = mpsc::channel(16);
+            let stop = CancellationToken::new();
+            entry.state = PluginState::Running;
+            entry.runtime_capabilities.clear();
+            entry.run = Some(Run {
+                instance_id: instance_id.clone(),
+                commands,
+                stop: stop.clone(),
+                task: None,
+                cleanup_error: None,
+            });
+            let owner = WasmOwner {
+                plugins: self.plugins.clone(),
+                events: self.event_tx.clone(),
+                name: name.to_owned(),
+                instance: instance_id.clone(),
+                stop,
+                deployment,
+            };
+            entry.run.as_mut().expect("run installed").task =
+                Some(tokio::spawn(owner.run(receiver)));
+            emit(
+                &self.event_tx,
+                name,
+                &instance_id,
+                "",
+                "lifecycle",
+                serde_json::json!({"state":"running","runtime":"wasm"}),
+            );
+            return Ok(());
+        }
+        ensure!(
+            allow_trusted_native,
+            "trusted native device execution requires explicit operator authorization"
+        );
+        ensure!(
+            manifest.plugin.plugin_type != PluginType::Processor,
+            "processor plugins must use WASM"
+        );
+        ensure!(
+            cfg!(unix),
+            "trusted native process ownership is supported on Unix only"
+        );
+        let (command, args) = plugin_command(&entry.dir, &manifest);
+        let mut command_builder = Command::new(&command);
+        command_builder
+            .args(args)
+            .current_dir(&entry.dir)
+            .env("ALIA_PLUGIN_INSTANCE_ID", &instance_id)
+            .env("ALIA_PLUGIN_ASSET_SHA256", &entry.asset_sha256)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-
-        let mut child = child
-            .spawn()
-            .with_context(|| format!("spawning plugin '{}' with {}", name, command.display()))?;
-
-        let pid = child.id().unwrap_or_default();
-        let stdin = child
-            .stdin
-            .take()
-            .map(|handle| Arc::new(Mutex::new(handle)));
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
-
-        {
-            let mut plugins = self.plugins.write().await;
-            let entry = plugins
-                .get_mut(name)
-                .with_context(|| format!("plugin not found after spawn: {name}"))?;
-            entry.state = PluginState::Running;
-            entry.pid = Some(pid);
-            entry.stdin = stdin.clone();
-        }
-
-        self.emit_event(
+        #[cfg(unix)]
+        command_builder.process_group(0);
+        entry.state = PluginState::Starting;
+        let mut child = match command_builder.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                entry.state = PluginState::Failed;
+                return Err(error).context("spawning plugin");
+            }
+        };
+        let stdin = child.stdin.take().context("plugin stdin missing")?;
+        let stdout = child.stdout.take().context("plugin stdout missing")?;
+        let stderr = child.stderr.take().context("plugin stderr missing")?;
+        let (commands, receiver) = mpsc::channel(16);
+        let stop = CancellationToken::new();
+        entry.runtime_capabilities.clear();
+        entry.run = Some(Run {
+            instance_id: instance_id.clone(),
+            commands,
+            stop: stop.clone(),
+            task: None,
+            cleanup_error: None,
+        });
+        let owner = ProcessOwner {
+            plugins: self.plugins.clone(),
+            events: self.event_tx.clone(),
+            name: name.to_owned(),
+            instance: instance_id.clone(),
+            stop,
+            ready: CancellationToken::new(),
+        };
+        let task = tokio::spawn(owner.run(child, stdin, stdout, stderr, receiver));
+        entry.run.as_mut().expect("run was installed").task = Some(task);
+        emit(
+            &self.event_tx,
             name,
+            &instance_id,
+            "",
             "lifecycle",
-            serde_json::json!({ "state": "running", "pid": pid }),
+            serde_json::json!({"state":"starting"}),
         );
-
-        self.spawn_output_task(name.to_string(), "stdout", stdout);
-        self.spawn_output_task(name.to_string(), "stderr", stderr);
-        self.spawn_wait_task(name.to_string(), child);
-
-        info!(name, pid, "plugin started");
         Ok(())
     }
 
     pub async fn stop(&self, name: &str) -> Result<()> {
-        let pid = {
-            let mut plugins = self.plugins.write().await;
-            let entry = plugins
-                .get_mut(name)
-                .with_context(|| format!("plugin not found: {name}"))?;
-
-            if !matches!(entry.state, PluginState::Running | PluginState::Starting) {
-                bail!("plugin is not running: {name}");
-            }
-
-            entry.state = PluginState::Stopping;
-            entry.stdin = None;
-            entry.pid
-        };
-
-        if let Some(pid) = pid {
-            unsafe {
-                libc::kill(pid as i32, libc::SIGTERM);
-            }
-        }
-
-        self.emit_event(
-            name,
-            "lifecycle",
-            serde_json::json!({ "state": "stopping" }),
+        let mut plugins = self.plugins.write().await;
+        let entry = plugins
+            .get_mut(name)
+            .with_context(|| format!("plugin not found: {name}"))?;
+        let run = entry
+            .run
+            .as_ref()
+            .context("plugin has no active instance")?;
+        entry.state = PluginState::Stopping;
+        ensure!(
+            !run.task.as_ref().is_some_and(|task| task.is_finished()),
+            "plugin owner exited without confirmed cleanup"
         );
-        info!(name, pid, "plugin stop requested");
+        ensure!(
+            run.cleanup_error.is_none(),
+            "plugin cleanup pending: {}",
+            run.cleanup_error.as_deref().unwrap_or_default()
+        );
+        run.stop.cancel();
+        emit(
+            &self.event_tx,
+            name,
+            &run.instance_id,
+            "",
+            "lifecycle",
+            serde_json::json!({"state":"stopping"}),
+        );
         Ok(())
     }
 
     pub async fn send_command(
         &self,
         name: &str,
+        instance_id: &str,
         command_id: &str,
         action: &str,
         payload_json: &[u8],
-    ) -> Result<()> {
-        let stdin = {
-            let plugins = self.plugins.read().await;
-            let entry = plugins
-                .get(name)
-                .with_context(|| format!("plugin not found: {name}"))?;
-            if entry.state != PluginState::Running {
-                bail!("plugin is not running: {name}");
-            }
-            entry
-                .stdin
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("plugin stdin unavailable: {name}"))?
-        };
-
+    ) -> Result<CommandReceipt> {
+        ensure!(
+            !instance_id.is_empty()
+                && instance_id.len() <= 128
+                && !command_id.is_empty()
+                && command_id.len() <= 256,
+            "instance_id and stable command_id are required"
+        );
+        ensure!(
+            !action.is_empty() && action.len() <= 256 && payload_json.len() <= MAX_MESSAGE,
+            "invalid or oversized plugin command"
+        );
         let payload = if payload_json.is_empty() {
-            serde_json::Value::Object(serde_json::Map::new())
+            serde_json::json!({})
         } else {
-            serde_json::from_slice(payload_json).context("parsing plugin command payload")?
+            serde_json::from_slice(payload_json).context("invalid command payload")?
         };
-
-        let envelope = serde_json::json!({
-            "command_id": command_id,
-            "action": action,
-            "payload": payload,
-        });
-
-        let mut stdin = stdin.lock().await;
-        stdin
-            .write_all(serde_json::to_string(&envelope)?.as_bytes())
-            .await?;
-        stdin.write_all(b"\n").await?;
-        stdin.flush().await?;
-
-        Ok(())
+        let mut plugins = self.plugins.write().await;
+        let entry = plugins
+            .get_mut(name)
+            .with_context(|| format!("plugin not found: {name}"))?;
+        if let Some(previous) = entry.commands.get(command_id) {
+            ensure!(
+                previous.receipt.instance_id == instance_id
+                    && previous.action == action
+                    && previous.payload == payload,
+                "command ID already belongs to another instance or payload"
+            );
+            return Ok(previous.receipt.clone());
+        }
+        ensure!(entry.state == PluginState::Running, "plugin is not running");
+        let run = entry.run.as_ref().context("plugin owner missing")?;
+        ensure!(
+            run.instance_id == instance_id,
+            "plugin instance changed; old commands must not be replayed"
+        );
+        ensure!(
+            entry.commands.len() < MAX_COMMANDS,
+            "plugin command ledger is full; no new commands admitted"
+        );
+        let mut envelope = serde_json::to_vec(
+            &serde_json::json!({"instance_id":instance_id,"command_id":command_id,"action":action,"payload":payload}),
+        )?;
+        ensure!(
+            envelope.len() < MAX_MESSAGE,
+            "command envelope exceeds budget"
+        );
+        envelope.push(b'\n');
+        let receipt = CommandReceipt {
+            instance_id: instance_id.to_owned(),
+            command_id: command_id.to_owned(),
+            state: "unknown".into(),
+            result_json: Vec::new(),
+        };
+        run.commands
+            .try_send(envelope)
+            .context("plugin command queue unavailable")?;
+        entry.commands.insert(
+            command_id.to_owned(),
+            CommandRecord {
+                action: action.to_owned(),
+                payload,
+                receipt: receipt.clone(),
+            },
+        );
+        Ok(receipt)
     }
 
     pub fn subscribe_events(&self) -> broadcast::Receiver<PluginEventRecord> {
         self.event_tx.subscribe()
     }
 
-    /// List all installed plugins.
     pub async fn list(&self) -> Vec<PluginSnapshot> {
-        let plugins = self.plugins.read().await;
-        plugins
+        self.plugins
+            .read()
+            .await
             .values()
-            .map(|e| {
-                let mut capabilities = plugin_capability_strings(&e.manifest.plugin.capabilities);
-                capabilities.extend(e.runtime_capabilities.clone());
+            .map(|entry| {
+                let mut capabilities =
+                    plugin_capability_strings(&entry.manifest.plugin.capabilities);
+                capabilities.extend(entry.runtime_capabilities.clone());
                 capabilities.sort();
                 capabilities.dedup();
                 PluginSnapshot {
-                    name: e.manifest.plugin.name.clone(),
-                    version: e.manifest.plugin.version.clone(),
-                    plugin_type: e.manifest.plugin.plugin_type.to_string(),
-                    state: e.state,
-                    description: e.manifest.plugin.description.clone().unwrap_or_default(),
+                    name: entry.manifest.plugin.name.clone(),
+                    version: entry.manifest.plugin.version.clone(),
+                    plugin_type: entry.manifest.plugin.plugin_type.to_string(),
+                    state: if entry
+                        .run
+                        .as_ref()
+                        .is_some_and(|run| run.task.as_ref().is_some_and(|task| task.is_finished()))
+                    {
+                        PluginState::Stopping
+                    } else {
+                        entry.state
+                    },
+                    description: entry
+                        .manifest
+                        .plugin
+                        .description
+                        .clone()
+                        .unwrap_or_default(),
                     capabilities,
+                    asset_sha256: entry.asset_sha256.clone(),
+                    instance_id: entry
+                        .run
+                        .as_ref()
+                        .map(|run| run.instance_id.clone())
+                        .unwrap_or_default(),
                 }
             })
             .collect()
@@ -458,129 +561,6 @@ impl PluginRegistry {
         metadata.capabilities.sort();
         metadata.capabilities.dedup();
     }
-
-    /// Get mutable access to a plugin entry for state updates.
-    pub async fn get_mut(
-        &self,
-        name: &str,
-    ) -> Option<tokio::sync::RwLockWriteGuard<'_, HashMap<String, PluginEntry>>> {
-        let plugins = self.plugins.write().await;
-        if plugins.contains_key(name) {
-            Some(plugins)
-        } else {
-            None
-        }
-    }
-
-    fn emit_event(&self, plugin_name: &str, event_type: &str, payload: serde_json::Value) {
-        let payload_json = serde_json::to_vec(&payload).unwrap_or_else(|_| b"{}".to_vec());
-        let _ = self.event_tx.send(PluginEventRecord {
-            plugin_name: plugin_name.to_string(),
-            event_type: event_type.to_string(),
-            payload_json,
-            timestamp_us: timestamp_us(),
-        });
-    }
-
-    fn spawn_output_task(
-        &self,
-        plugin_name: String,
-        stream_name: &'static str,
-        stream: Option<impl tokio::io::AsyncRead + Unpin + Send + 'static>,
-    ) {
-        let Some(stream) = stream else {
-            return;
-        };
-        let event_tx = self.event_tx.clone();
-        let plugins = Arc::clone(&self.plugins);
-
-        tokio::spawn(async move {
-            let reader = BufReader::new(stream);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                let (event_type, payload_json) =
-                    match serde_json::from_str::<serde_json::Value>(&line) {
-                        Ok(value) => {
-                            let event_type = value
-                                .get("event_type")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or(stream_name)
-                                .to_string();
-                            let payload = value.get("payload").cloned().unwrap_or(value);
-                            (
-                                event_type,
-                                serde_json::to_vec(&payload).unwrap_or_else(|_| b"{}".to_vec()),
-                            )
-                        }
-                        Err(_) => (
-                            stream_name.to_string(),
-                            serde_json::to_vec(&serde_json::json!({ "line": line }))
-                                .unwrap_or_else(|_| b"{}".to_vec()),
-                        ),
-                    };
-
-                if event_type == "expression_state" {
-                    let runtime_capabilities = runtime_expression_capabilities(&payload_json);
-                    if !runtime_capabilities.is_empty() {
-                        let mut plugins = plugins.write().await;
-                        if let Some(entry) = plugins.get_mut(&plugin_name) {
-                            entry.runtime_capabilities = runtime_capabilities;
-                        }
-                    }
-                }
-
-                let _ = event_tx.send(PluginEventRecord {
-                    plugin_name: plugin_name.clone(),
-                    event_type,
-                    payload_json,
-                    timestamp_us: timestamp_us(),
-                });
-            }
-        });
-    }
-
-    fn spawn_wait_task(&self, plugin_name: String, mut child: tokio::process::Child) {
-        let plugins = Arc::clone(&self.plugins);
-        let event_tx = self.event_tx.clone();
-        tokio::spawn(async move {
-            let status = child.wait().await;
-            let (next_state, exit_code) = match status {
-                Ok(status) if status.success() => (PluginState::Stopped, status.code()),
-                Ok(status) => (PluginState::Failed, status.code()),
-                Err(_) => (PluginState::Failed, None),
-            };
-
-            let mut map = plugins.write().await;
-            if let Some(entry) = map.get_mut(&plugin_name) {
-                entry.state = next_state;
-                entry.pid = None;
-                entry.stdin = None;
-            }
-            drop(map);
-
-            let state_name = match next_state {
-                PluginState::Stopped => "stopped",
-                PluginState::Failed => "failed",
-                PluginState::Installed => "installed",
-                PluginState::Starting => "starting",
-                PluginState::Running => "running",
-                PluginState::Stopping => "stopping",
-            };
-
-            let payload_json = serde_json::to_vec(&serde_json::json!({
-                "state": state_name,
-                "exit_code": exit_code,
-            }))
-            .unwrap_or_else(|_| b"{}".to_vec());
-
-            let _ = event_tx.send(PluginEventRecord {
-                plugin_name,
-                event_type: "lifecycle".to_string(),
-                payload_json,
-                timestamp_us: timestamp_us(),
-            });
-        });
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -591,6 +571,33 @@ pub struct PluginSnapshot {
     pub state: PluginState,
     pub description: String,
     pub capabilities: Vec<String>,
+    pub asset_sha256: String,
+    pub instance_id: String,
+}
+
+fn emit(
+    tx: &broadcast::Sender<PluginEventRecord>,
+    name: &str,
+    instance: &str,
+    command: &str,
+    event: &str,
+    payload: serde_json::Value,
+) {
+    let _ = tx.send(PluginEventRecord {
+        plugin_name: name.to_owned(),
+        instance_id: instance.to_owned(),
+        command_id: command.to_owned(),
+        event_type: event.to_owned(),
+        payload_json: serde_json::to_vec(&payload).expect("JSON value serializes"),
+        timestamp_us: timestamp_us(),
+    });
+}
+
+fn sync_directories(path: &std::path::Path) -> std::io::Result<()> {
+    for directory in path.ancestors() {
+        std::fs::File::open(directory)?.sync_all()?;
+    }
+    Ok(())
 }
 
 fn plugin_capability_strings(capabilities: &PluginCapabilities) -> Vec<String> {
@@ -675,12 +682,8 @@ fn runtime_expression_capabilities(payload_json: &[u8]) -> Vec<String> {
 }
 
 fn plugin_command(dir: &std::path::Path, manifest: &PluginManifest) -> (PathBuf, Vec<String>) {
-    let entry = dir.join(&manifest.plugin.entry);
-    match entry.extension().and_then(|ext| ext.to_str()) {
-        Some("py") => (PathBuf::from("python3"), vec![entry.display().to_string()]),
-        Some("sh") => (PathBuf::from("sh"), vec![entry.display().to_string()]),
-        _ => (entry, Vec::new()),
-    }
+    // Native drivers must be executable assets. No extension-based interpreter dispatch.
+    (dir.join(&manifest.plugin.entry), Vec::new())
 }
 
 fn timestamp_us() -> u64 {
@@ -689,3 +692,6 @@ fn timestamp_us() -> u64 {
         .unwrap_or_default()
         .as_micros() as u64
 }
+
+#[cfg(test)]
+mod tests;

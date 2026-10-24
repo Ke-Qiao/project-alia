@@ -9,7 +9,8 @@ use crate::modules::memory::{
     MemoryWriteOrigin,
 };
 use crate::modules::platform::lifecycle::ModuleLifecycle;
-use crate::providers::adapter::{ChatMessage, LlmAdapter};
+use crate::providers::adapter::ChatMessage;
+use crate::providers::llm::LlmService;
 use crate::providers::llm::response::{join_model_labels, parse_llm_json_object};
 use chrono::{DateTime, Utc};
 use sea_orm::{
@@ -138,7 +139,7 @@ async fn validate_insight_read_policy(
 pub(crate) async fn extract_memories_from_recent_conversation(
     db: &DatabaseConnection,
     memory: Option<Arc<MemoryService>>,
-    llm: Option<Arc<dyn LlmAdapter>>,
+    llm: Option<Arc<LlmService>>,
     user: &MemoryMaintenanceUser,
     message_limit: u64,
     config: &InsightsSection,
@@ -198,7 +199,7 @@ pub(crate) async fn extract_memories_from_recent_conversation(
     let transcript = transcript_for_prompt(&messages);
     memory.validate_write_context(&context).await?;
     let response = llm
-        .chat(&[
+        .text(&[
             ChatMessage::new("system", config.memory_extraction_prompt.clone()),
             ChatMessage::new(
                 "user",
@@ -228,7 +229,7 @@ pub(crate) async fn extract_memories_from_recent_conversation(
 pub(crate) async fn consolidate_memories(
     db: &DatabaseConnection,
     memory: Option<Arc<MemoryService>>,
-    llm: Option<Arc<dyn LlmAdapter>>,
+    llm: Option<Arc<LlmService>>,
     user: &MemoryMaintenanceUser,
     limit: u32,
     config: &InsightsSection,
@@ -291,7 +292,7 @@ pub(crate) async fn consolidate_memories(
     let memories = captured.memories().to_vec();
     memory.validate_write_context(&context).await?;
     let response = llm
-        .chat(&[
+        .text(&[
             ChatMessage::new("system", config.memory_consolidation_prompt.clone()),
             ChatMessage::new(
                 "user",
@@ -418,7 +419,7 @@ async fn apply_consolidation_response(
 pub(crate) async fn reflect_on_user_context(
     db: &DatabaseConnection,
     memory: Option<Arc<MemoryService>>,
-    llm: Option<Arc<dyn LlmAdapter>>,
+    llm: Option<Arc<LlmService>>,
     user: &MemoryMaintenanceUser,
     memory_limit: u32,
     config: &InsightsSection,
@@ -484,7 +485,7 @@ pub(crate) async fn reflect_on_user_context(
     let memories = captured.memories().to_vec();
     memory.validate_write_context(&context).await?;
     let response = llm
-        .chat(&[
+        .text(&[
             ChatMessage::new("system", config.reflection_prompt.clone()),
             ChatMessage::new(
                 "user",
@@ -517,7 +518,7 @@ pub(crate) async fn reflect_on_user_context(
 pub(crate) async fn detect_habits_from_context(
     db: &DatabaseConnection,
     memory: Option<Arc<MemoryService>>,
-    llm: Option<Arc<dyn LlmAdapter>>,
+    llm: Option<Arc<LlmService>>,
     user: &MemoryMaintenanceUser,
     memory_limit: u32,
     config: &InsightsSection,
@@ -584,7 +585,7 @@ pub(crate) async fn detect_habits_from_context(
     let memories = captured.memories().to_vec();
     memory.validate_write_context(&context).await?;
     let response = llm
-        .chat(&[
+        .text(&[
             ChatMessage::new("system", config.habit_detection_prompt.clone()),
             ChatMessage::new(
                 "user",
@@ -696,7 +697,7 @@ async fn load_recent_messages(
         messages.push(ChatMessage {
             role: "user".into(),
             content: row.try_get("", "content")?,
-            name: row.try_get("", "user_id")?,
+            user_id: row.try_get("", "user_id")?,
             ..Default::default()
         });
     }
@@ -739,7 +740,7 @@ fn transcript_for_prompt(messages: &[ChatMessage]) -> String {
     let mut output = String::new();
     for message in messages {
         let role = message.role.trim();
-        let name = message.name.as_deref().unwrap_or_default().trim();
+        let name = message.user_id.as_deref().unwrap_or_default().trim();
         let content = message.content.trim();
         if content.is_empty() {
             continue;

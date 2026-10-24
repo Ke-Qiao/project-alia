@@ -105,7 +105,8 @@ impl EmbeddedNode {
 
     async fn run_services(&mut self) -> Result<()> {
         use alia_proto::binding::device_binding_server::DeviceBindingServer;
-        use alia_proto::body::body_control_server::BodyControlServer;
+        use alia_proto::capture::capture_control_server::CaptureControlServer;
+        use alia_proto::motion::motion_control_server::MotionControlServer;
         use alia_proto::playback::playback_server::PlaybackServer;
         use alia_proto::plugin::plugin_manager_server::PluginManagerServer;
         use alia_proto::sensor::embedded_sensor_server::EmbeddedSensorServer;
@@ -122,6 +123,12 @@ impl EmbeddedNode {
         ))
         .max_decoding_message_size(64 * 1024)
         .max_encoding_message_size(64 * 1024);
+        let capture_svc = CaptureControlServer::new(crate::grpc::CaptureService::new(
+            self.registry.speech_pipeline.capture_control(),
+            self.binding_manager.clone(),
+        ))
+        .max_decoding_message_size(4096)
+        .max_encoding_message_size(4096);
         let device_public_key =
             identity::load_device_public_key(&self.config.identity.keypair_path)
                 .context("loading device public key")?;
@@ -154,16 +161,16 @@ impl EmbeddedNode {
             self.registry.sensors.clone(),
             self.binding_manager.clone(),
         ));
-        let body_key = identity::load_device_keypair(&self.config.identity.keypair_path)?;
-        let body_svc = BodyControlServer::new(crate::grpc::EmbeddedBodyService::new(
+        let motion_key = identity::load_device_keypair(&self.config.identity.keypair_path)?;
+        let motion_svc = MotionControlServer::new(crate::grpc::EmbeddedMotionService::new(
             self.binding_manager.clone(),
             self.registry.motion.clone(),
             self.registry.playback_session.clone(),
             self.config.identity.device_id.clone(),
-            body_key.signing_key().clone(),
+            motion_key.signing_key().clone(),
         ))
-        .max_decoding_message_size(alia_core::body::MAX_BODY_PAYLOAD_BYTES + 1024)
-        .max_encoding_message_size(alia_core::body::MAX_BODY_PAYLOAD_BYTES + 1024);
+        .max_decoding_message_size(alia_core::embodiment::motion::MAX_MOTION_PAYLOAD_BYTES + 1024)
+        .max_encoding_message_size(alia_core::embodiment::motion::MAX_MOTION_PAYLOAD_BYTES + 1024);
 
         let addr = self.local_addr();
         let listener = self
@@ -183,7 +190,8 @@ impl EmbeddedNode {
             .add_service(settings_svc)
             .add_service(sensor_svc)
             .add_service(playback_svc)
-            .add_service(body_svc)
+            .add_service(capture_svc)
+            .add_service(motion_svc)
             .serve_with_incoming_shutdown(incoming, async move {
                 cancel.cancelled().await;
             })
@@ -208,6 +216,7 @@ impl Drop for EmbeddedNode {
 pub struct EmbeddedBuilder {
     config: Arc<EmbeddedConfig>,
     cancel_token: CancellationToken,
+    r1_cold_boot: Option<uuid::Uuid>,
 
     // Module slot overrides (None = use factory default from config)
     wakeword: Option<Box<dyn WakeWordEngine>>,
@@ -227,6 +236,7 @@ impl EmbeddedBuilder {
         Ok(Self {
             config: Arc::new(config),
             cancel_token: CancellationToken::new(),
+            r1_cold_boot: None,
             wakeword: None,
             vad: None,
             direct_response: None,
@@ -240,6 +250,39 @@ impl EmbeddedBuilder {
     pub fn with_cancel_token(mut self, token: CancellationToken) -> Self {
         self.cancel_token = token;
         self
+    }
+
+    /// The caller must have confirmed a real board power cycle for this ID.
+    /// A process restart never creates an initialization request implicitly.
+    pub fn with_r1_initialization(mut self, cold_boot_id: uuid::Uuid) -> Result<Self> {
+        anyhow::ensure!(!cold_boot_id.is_nil(), "R1 cold boot ID must be non-nil");
+        self.r1_cold_boot = Some(cold_boot_id);
+        Ok(self)
+    }
+
+    fn validate_r1_initialization(&self) -> Result<()> {
+        use crate::config::{AudioBackend, SpeechTrigger};
+        anyhow::ensure!(
+            cfg!(target_os = "linux"),
+            "R1 initialization requires Linux"
+        );
+        self.config.r1.validate()?;
+        anyhow::ensure!(
+            self.config.speech.trigger == SpeechTrigger::System
+                && self.config.modules.wakeword == "noop"
+                && self.wakeword.is_none(),
+            "R1 initialization requires speech.trigger='system' and the noop wakeword slot"
+        );
+        anyhow::ensure!(
+            self.config.modules.audio_capture == "cpal"
+                && self.audio_capture.is_none()
+                && self.config.audio.capture_backend == AudioBackend::Alsa
+                && self.config.audio.capture_device.starts_with("hw:")
+                && self.config.audio.capture_sample_rate == 16000
+                && self.config.audio.capture_channels == 1,
+            "R1 initialization requires explicit native ALSA hw capture at 16 kHz mono"
+        );
+        Ok(())
     }
 
     pub fn with_wakeword(mut self, engine: impl WakeWordEngine + 'static) -> Self {
@@ -313,6 +356,9 @@ impl EmbeddedBuilder {
     }
 
     async fn build_owned(self, cleanup: Arc<ModuleCleanup>) -> Result<EmbeddedNode> {
+        if self.r1_cold_boot.is_some() {
+            self.validate_r1_initialization()?;
+        }
         let device_boot_id = uuid::Uuid::new_v4();
         anyhow::ensure!(
             !self.cancel_token.is_cancelled(),
@@ -463,7 +509,7 @@ impl EmbeddedBuilder {
                 tracing::error!(%error, "playback binding revocation failed; native quiescence is unknown");
             }
             if let Err(error) = motion_revocation.revoke_control("device binding changed") {
-                tracing::error!(%error, "body binding revocation failed; control state is unknown");
+                tracing::error!(%error, "motion binding revocation failed; control state is unknown");
             }
         }))?;
         cleanup.add(playback_session.clone());
@@ -502,7 +548,7 @@ impl EmbeddedBuilder {
             cleanup,
         };
         info!("starting embedded modules");
-        registry.start(&ctx).await?;
+        registry.start(&ctx, self.r1_cold_boot).await?;
         let mut metadata = binding_manager.status().await.discovery_metadata();
         metadata.attributes.insert(
             "provisioning_mode".to_string(),

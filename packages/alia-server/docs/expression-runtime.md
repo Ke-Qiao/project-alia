@@ -1,7 +1,7 @@
-# Expression runtime and Body delivery
+# Expression runtime and Motion delivery
 
 Expression planning turns an authorized response into speech style and bounded
-motion intent. Context owns personal evidence and policy authority; Body owns
+motion intent. Context owns personal evidence and policy authority; Motion owns
 actuator command identity and execution facts. This document describes the
 current contracts. It does not enable hardware or change deployment policy.
 
@@ -18,7 +18,7 @@ original source and immutable privacy / relationship epochs
   -> validated affect / relationship projection
   -> plan_with_context
   -> canonical Response
-  -> bounded Body delivery
+  -> bounded Motion delivery
 ```
 
 `observe_context_user`, `observe_context_recall`, `observe_committed_response`
@@ -53,26 +53,54 @@ Rust integrations can register:
 - `ExpressionSafetyPolicyPlugin`: clamps or removes planned actions and records
   the reasons for its changes.
 
-External expression plugins use the JSON stdin/stdout ABI defined in
-`src/expression/abi.rs`. Current capabilities are `appraisal_engine`,
-`intent_planner`, `plan_transformer` and `safety_policy`. Appraisal responses
-contain event drafts, never replacement affect snapshots. Canonical external
-appraisal additionally requires implementation approval, supervised cancellation
-and disabled raw stderr tracing. A loaded manifest alone does not satisfy those
-gates; a dispatcher without a provenance pin cannot contribute private drafts.
+External expression plugins use **domain ABI 3** over JSON bytes passed to the
+`alia_expression` WASM export. The shared package ABI is 1. The Rust Extism host
+loads raw WASM through the package manager; the JSON stdin/stdout runner and its
+Python example have been removed. Capabilities remain `appraisal_engine`,
+`intent_planner`, `plan_transformer` and `safety_policy`. Installation validates
+capability fields and the required export signature before publishing an entry.
+Appraisal responses contain event drafts, never replacement affect snapshots.
 
-The current JSON process adapter is a trusted-host integration, not an
-unreviewed-code sandbox. Output bounds, exact process cleanup, data-minimized
-inputs and content identity require the separate implementation work listed in
-the [plugin contract](../../../docs/architecture/plugin-contract.md). Environment
-clearing and a manifest capability do not establish those guarantees. Future
-isolated plugins still submit drafts and cannot replace final core policy.
+A package starts disabled. Administrative activation requires its exact
+`implementation_pin`, which binds WASM bytes, deployment metadata, limits,
+runtime ABI and the host executable. Tool and expression entries share that
+Deployment. Revocation closes admission and cancels its owned calls; an old
+entry cannot become live again when the same package is enabled later. Upgrade
+publishes an inactive generation. Restart restores a persisted grant only when
+its pin still matches the current host and package.
 
-The mutable affect reducer interface, `reduce_affect` request, snapshot response
-and source-free observation APIs have been removed. Unknown capability fields
-are rejected instead of silently retaining a second extension contract.
+Private Appraisal additionally requires the package name and exact pin in the
+persisted Context/Appraisal policy's `approved_interpreters`. Registration or
+ordinary execution activation does not grant private input. Interpretation
+checks approval and isolation before invoking the guest and rechecks its pin
+before accepting drafts. Revocation, a package upgrade, or a changed host binary
+invalidates this path until reviewed again. The current isolated WASM path
+supports this approval; there is no script-hash substitute for dependency identity.
 
-## Body command ownership
+The `input` object in planning, transform and safety requests contains response
+text, dialogue act, content tone, constraints, voice output and hardware control;
+the request also carries the domain affect/intent/plan values needed for that
+operation. Appraisal receives only current user text and timestamp. Full memory
+context, user/channel identifiers and internal device state are not serialized.
+Expression ABI 1/2 and old command/environment configuration are rejected.
+
+Each invocation uses a fresh Engine, Store and Plugin with no WASI, custom host
+functions, outbound HTTP or inherited environment. Input/output sizes, memory,
+tables, initialization fuel, execution fuel and the business deadline are bounded.
+Guest errors are capped before the SDK copies them, and guest tracing is disabled.
+The host owns the blocking worker after a timeout: the response reports cleanup
+pending while revocation, unregister and shutdown wait for actual cleanup.
+Compilation is owned but not fuel-interruptible, and linear-memory limits are
+not a whole-process RSS limit. The Rust host/PDK path adds no Python or Bun service;
+existing system audio and native inference dependencies still apply.
+
+The mutable affect reducer, `reduce_affect`, snapshot response and source-free
+observation APIs remain removed. Unknown capability fields are rejected and the
+final built-in safety checks always apply. Package/API examples, migration from
+old configuration, exact-pin approval and operational limits are documented in
+[WASM plugin operations](../../../docs/operations/wasm-plugins.md).
+
+## Motion command ownership
 
 `ExpressionOrchestrator` belongs to one runtime instance. It serializes phases
 per channel and owner, preserves the original response/plan/scope, coalesces
@@ -81,14 +109,14 @@ Execution requires a nonempty canonical Response ID. Missing authority returns
 a local `skipped` result without contacting an actuator adapter.
 
 The Embedded channel's `execute_expression`, `observe_expression` and
-`cancel_expression` actions are internal adapters to signed BodyControl. They are
+`cancel_expression` actions are internal adapters to signed MotionControl. They are
 not a separate device RPC protocol. The old `alia.expression.EmbeddedExpression`
 service, its JSON execute/cancel methods and its protobuf have been removed.
 
-Body delivery requires:
+Motion delivery requires:
 
 1. A configured trusted device ID and public-key pin matching the connected
-   device, a durable Body delivery store, and open local admission.
+   device, a durable Motion delivery store, and open local admission.
 2. Revalidation of the original Response and Context/source authority before
    durable claim and before dispatch.
 3. A signed device control lease identified by device boot, server instance and
@@ -97,7 +125,7 @@ Body delivery requires:
    contains its owner, plan, immutable source correlation, scope and actions.
 
 Public device status and `online` are reachability information, not output
-permission. The device checks current binding, bearer scope and signed Body
+permission. The device checks current binding, bearer scope and signed Motion
 payloads. Admission occurs under the binding lock; binding changes revoke old
 output authority. Preparation is bounded and followed by another authorization
 check before writer admission.
@@ -110,16 +138,16 @@ center or disable command. The old soft-start and shutdown-reset settings are
 rejected. Channel limits, angle validation and speed limits between submitted
 software targets remain; the initial physical position is unknown. Animation preparation
 uses a bounded read to verify and parse the same asset bytes, then validates the
-frame shape and complete expanded plan before native output. Body signing
+frame shape and complete expanded plan before native output. Motion signing
 version 2 binds the animation filename, approved version, SHA-256 and byte count
 alongside its parameters. Both ends require matching local approved catalogs;
 the catalog is empty by default. See the [motion asset contract](../../alia-embedded/docs/motion-assets.md).
 
 ## Evidence and recovery
 
-Body results distinguish `accepted`, `started`, `submitted`, `cancelled`,
+Motion results distinguish `accepted`, `started`, `submitted`, `cancelled`,
 `failed`, `unknown` and `rejected`. Local negotiation/admission may return
-`skipped`. Every device-derived result must carry the original Body command and
+`skipped`. Every device-derived result must carry the original Motion command and
 validated progress; the orchestrator checks owner, plan, source ID, scope and
 action receipts against that evidence.
 
@@ -129,10 +157,10 @@ have no position feedback, so `position_confirmed_actions` stays unknown.
 Partial and uncertain native writes retain their observed prefixes and channels.
 
 There is no `completion_acknowledged` Boolean or `executed_actions` compatibility
-path. Writer retirement requires the original Body progress to have a terminal
+path. Writer retirement requires the original Motion progress to have a terminal
 state and `writer_quiescent`. A terminal `unknown` can establish writer
 quiescence while leaving the physical outcome unknown; neither fact substitutes
-for the other. A result with no Body evidence cannot retire a writer.
+for the other. A result with no Motion evidence cannot retire a writer.
 
 Intent and dispatch facts are persisted before Submit. After crossing the
 possible-admission boundary, the owner observes or cancels the original command
@@ -169,8 +197,8 @@ does not reopen the old appraisal table or invent provenance for old records.
 - [x] Remove mutable reducer and source-free appraisal compatibility APIs.
 - [x] Remove legacy trace reconstruction and completion Boolean fallbacks.
 - [x] Require canonical Response identity before expression dispatch.
-- [x] Preserve Body Unknown, original ownership, calibrated limits and one writer.
-- [x] Update regression fixtures to use BodyProgress and explicit native boundaries.
+- [x] Preserve Motion Unknown, original ownership, calibrated limits and one writer.
+- [x] Update regression fixtures to use MotionProgress and explicit native boundaries.
 - Coordinated workspace results are recorded in the [cleanup checklist](../../../docs/refactor/checklists/cleanup-2026-10-06.md).
 - [ ] Validate control-board restart, safe physical poses and measured feedback on
   explicitly identified hardware in a later authorized hardware phase.

@@ -66,17 +66,23 @@ impl PluginManagerTrait for PluginManagerService {
     ) -> Result<Response<InstallPluginResponse>, Status> {
         require_auth(&self.binding, &request).await?;
         let req = request.into_inner();
-        match self.registry.install(&req.name, &req.zip_data).await {
-            Ok(()) => {
+        match self
+            .registry
+            .install(&req.name, &req.version, &req.zip_data)
+            .await
+        {
+            Ok(asset_sha256) => {
                 self.refresh_discovery_metadata().await;
                 Ok(Response::new(InstallPluginResponse {
                     success: true,
                     message: "installed".to_string(),
+                    asset_sha256,
                 }))
             }
             Err(e) => Ok(Response::new(InstallPluginResponse {
                 success: false,
                 message: e.to_string(),
+                asset_sha256: String::new(),
             })),
         }
     }
@@ -117,6 +123,8 @@ impl PluginManagerTrait for PluginManagerService {
                 state: plugin_state_to_proto(s.state) as i32,
                 description: s.description,
                 capabilities: s.capabilities,
+                asset_sha256: s.asset_sha256,
+                instance_id: s.instance_id,
             })
             .collect();
 
@@ -129,12 +137,21 @@ impl PluginManagerTrait for PluginManagerService {
     ) -> Result<Response<StartPluginResponse>, Status> {
         require_auth(&self.binding, &request).await?;
         let req = request.into_inner();
-        match self.registry.start(&req.name).await {
+        match self
+            .registry
+            .start(
+                &req.name,
+                &req.expected_asset_sha256,
+                req.allow_trusted_native,
+            )
+            .await
+        {
             Ok(()) => {
                 self.refresh_discovery_metadata().await;
                 Ok(Response::new(StartPluginResponse {
                     success: true,
-                    message: "started".to_string(),
+                    message: "activation admitted; current state is reported by ListPlugins"
+                        .to_string(),
                 }))
             }
             Err(e) => Ok(Response::new(StartPluginResponse {
@@ -175,19 +192,28 @@ impl PluginManagerTrait for PluginManagerService {
             .registry
             .send_command(
                 &req.plugin_name,
+                &req.instance_id,
                 &req.command_id,
                 &req.action,
                 &req.payload_json,
             )
             .await
         {
-            Ok(()) => Ok(Response::new(PluginCommandResponse {
-                success: true,
-                message: "sent".to_string(),
+            Ok(receipt) => Ok(Response::new(PluginCommandResponse {
+                success: receipt.state == "completed",
+                message: receipt.state.clone(),
+                state: receipt.state,
+                instance_id: receipt.instance_id,
+                command_id: receipt.command_id,
+                result_json: receipt.result_json,
             })),
             Err(e) => Ok(Response::new(PluginCommandResponse {
                 success: false,
                 message: e.to_string(),
+                state: "rejected".into(),
+                instance_id: req.instance_id,
+                command_id: req.command_id,
+                result_json: Vec::new(),
             })),
         }
     }
@@ -206,7 +232,18 @@ impl PluginManagerTrait for PluginManagerService {
         let (tx, stream_rx) = tokio::sync::mpsc::channel(128);
 
         tokio::spawn(async move {
-            while let Ok(event) = rx.recv().await {
+            loop {
+                let event = tokio::select! {
+                    _ = tx.closed() => break,
+                    event = rx.recv() => match event {
+                        Ok(event) => event,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                            let _ = tx.send(Err(Status::data_loss(format!("plugin event stream lost {skipped} events; query the original command identities")))).await;
+                            break;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                };
                 if !plugin_filter.is_empty() && !plugin_filter.contains(&event.plugin_name) {
                     continue;
                 }
@@ -219,6 +256,8 @@ impl PluginManagerTrait for PluginManagerService {
                     event_type: event.event_type,
                     payload_json: event.payload_json,
                     timestamp_us: event.timestamp_us,
+                    instance_id: event.instance_id,
+                    command_id: event.command_id,
                 };
 
                 if tx.send(Ok(message)).await.is_err() {

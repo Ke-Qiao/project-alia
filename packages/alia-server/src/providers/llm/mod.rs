@@ -1,84 +1,13 @@
-//! LLM adapters for AI chat completion.
-//!
-//! Available implementations:
-//! - `OpenAiLlm`: OpenAI GPT models (gpt-4o, gpt-4-turbo, etc.)
-//! - `AnthropicLlm`: Anthropic Messages API models
-//! - `GeminiLlm`: Google Gemini API models
-//! - `NoopLlm`: No-op placeholder
-
-#[cfg(feature = "llm-anthropic")]
-pub mod anthropic;
-#[cfg(any(
-    feature = "llm-openai",
-    feature = "llm-anthropic",
-    feature = "llm-gemini"
-))]
-pub mod errors;
-#[cfg(feature = "llm-gemini")]
-pub mod gemini;
-#[cfg(feature = "llm-openai")]
-pub mod openai;
-pub mod streaming;
-
-#[cfg(all(
-    test,
-    any(
-        feature = "llm-openai",
-        feature = "llm-anthropic",
-        feature = "llm-gemini"
-    )
-))]
-mod test_support;
-
-#[cfg(feature = "llm-anthropic")]
-pub use anthropic::AnthropicLlm;
-#[cfg(feature = "llm-gemini")]
-pub use gemini::GeminiLlm;
-#[cfg(feature = "llm-openai")]
-pub use openai::OpenAiLlm;
-
-use std::pin::Pin;
-
-use async_trait::async_trait;
-use futures::Stream;
-use futures::stream;
+//! Rig-backed model profiles and no-op audio providers.
+mod service;
+pub use service::{LlmService, TextStream};
+pub(crate) use service::{MODEL_TIMEOUT, text_request, validate_response};
 
 use crate::modules::platform::lifecycle::ModuleLifecycle;
-use crate::providers::adapter::{
-    AudioEncoding, ChatMessage, LlmAdapter, LlmCapabilities, SttAdapter, TranscribeChunk,
-    TtsAdapter,
-};
-
-// ========== Noop LLM ==========
-
-pub struct NoopLlm;
-
-#[async_trait]
-impl ModuleLifecycle for NoopLlm {
-    fn name(&self) -> &'static str {
-        "noop_llm"
-    }
-}
-
-#[async_trait]
-impl LlmAdapter for NoopLlm {
-    async fn llm_capabilities(&self) -> LlmCapabilities {
-        LlmCapabilities::minimal(self.name())
-    }
-
-    async fn chat(&self, _messages: &[ChatMessage]) -> anyhow::Result<String> {
-        Ok("LLM module not configured".into())
-    }
-
-    async fn chat_stream(
-        &self,
-        _messages: &[ChatMessage],
-    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
-        Ok(Box::pin(stream::once(async {
-            Ok("LLM module not configured".into())
-        })))
-    }
-}
+use crate::providers::adapter::{AudioEncoding, SttAdapter, TranscribeChunk, TtsAdapter};
+use async_trait::async_trait;
+use futures::{Stream, stream};
+use std::pin::Pin;
 
 // ========== Noop STT ==========
 

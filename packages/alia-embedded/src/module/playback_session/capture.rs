@@ -94,13 +94,13 @@ impl PlaybackSession {
             return Ok(false);
         }
         let mut retired = state.take().expect("matching capture owner checked");
-        let body = self
+        let motion = self
             .output_fence
             .as_ref()
             .map_or(Ok(()), |sink| sink.close_voice(&retired.scope));
         let audio = self.retire(&mut retired, "voice capture owner closed");
-        self.remember_retirement_error(retired.scope, "body", &body);
-        body.and(audio)?;
+        self.remember_retirement_error(retired.scope, "motion", &motion);
+        motion.and(audio)?;
         Ok(true)
     }
     pub fn retire_capture(&self, capture: &CaptureControlBarrier) -> Result<()> {
@@ -115,5 +115,36 @@ impl PlaybackSession {
             self.retire(active, "capture owner closed")?;
         }
         Ok(())
+    }
+
+    /// Call after the capture worker is joined. Original owner handles survive
+    /// scope replacement; this observes native submission, not acoustic silence.
+    pub async fn wait_capture_retired(&self, capture: &CaptureControlBarrier) -> Result<()> {
+        let retired: Vec<_> = self
+            .retired
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .iter()
+            .filter(|owner| {
+                owner
+                    .capture
+                    .as_ref()
+                    .is_some_and(|original| original.same_owner(capture))
+            })
+            .cloned()
+            .collect();
+        tokio::time::timeout(std::time::Duration::from_millis(1500), async {
+            for owner in retired {
+                if let Some(error) = &owner.stop_error {
+                    anyhow::bail!("original capture output retirement failed: {error}");
+                }
+                while !owner.quiescent() {
+                    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+                }
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("original capture output writes did not settle"))?
     }
 }

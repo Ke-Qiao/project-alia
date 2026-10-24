@@ -49,6 +49,28 @@ fn snapshot(root: &Path) -> Vec<(std::ffi::OsString, Vec<u8>, bool)> {
 }
 
 #[test]
+fn explicit_r1_initialization_does_not_run_the_environment_kws_diagnostic() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut command = guarded_command(dir.path());
+    let before = snapshot(dir.path());
+    let result = command
+        .env(
+            "ALIA_EMBEDDED_CHECK_KWS_WAV",
+            dir.path().join("missing.wav"),
+        )
+        .args([
+            "--initialize-r1",
+            "guard.toml",
+            "d4d09a58-9548-48b5-a6f2-ef35af3b91d2",
+        ])
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("ensuring device keypair"));
+    assert_eq!(snapshot(dir.path()), before);
+}
+
+#[test]
 fn check_precedes_runtime_and_kws_and_preserves_files_and_key_permissions() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();

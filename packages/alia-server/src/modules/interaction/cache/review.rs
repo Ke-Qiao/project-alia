@@ -1,7 +1,8 @@
 //! Review pending cache responses under their original authority and revision.
 
 use super::{CACHE_METADATA_SCHEMA, CacheCas, CacheReview, CacheStore, CacheWork, CachedResponse};
-use crate::providers::adapter::{ChatMessage, EmbeddingAdapter, LlmAdapter};
+use crate::providers::adapter::{ChatMessage, EmbeddingAdapter};
+use crate::providers::llm::LlmService;
 use crate::providers::llm::response::parse_llm_json_object;
 use chrono::Utc;
 use serde::Deserialize;
@@ -43,7 +44,7 @@ struct CacheReviewDecision {
 
 pub(crate) async fn review_pending_cache_entries(
     runtime: &CacheReviewRuntime,
-    llm: Option<Arc<dyn LlmAdapter>>,
+    llm: Option<Arc<LlmService>>,
     user_id: Uuid,
     limit: usize,
 ) -> anyhow::Result<CacheReviewStats> {
@@ -158,7 +159,7 @@ pub(crate) async fn review_pending_cache_entries(
 }
 
 async fn review_cache_entry_with_llm(
-    llm: &dyn LlmAdapter,
+    llm: &LlmService,
     entry: &PendingCacheEntry,
 ) -> anyhow::Result<CacheReviewDecision> {
     let messages = vec![
@@ -177,7 +178,7 @@ async fn review_cache_entry_with_llm(
         ),
     ];
 
-    let raw = llm.chat(&messages).await?;
+    let raw = llm.text(&messages).await?;
     parse_cache_review_decision(&raw)
 }
 

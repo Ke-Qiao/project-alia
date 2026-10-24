@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use crate::channels::adapter::ChannelAction;
 use crate::channels::registry::ChannelRegistry;
-use crate::providers::adapter::{ToolContext, ToolDefinition, ToolExecutor, ToolResult};
+use crate::providers::adapter::{ToolContext, ToolEntry, ToolResult};
 
 pub struct EmbeddedVolumeTool {
     channels: Arc<ChannelRegistry>,
@@ -16,43 +14,18 @@ impl EmbeddedVolumeTool {
     }
 }
 
-#[async_trait]
-impl ToolExecutor for EmbeddedVolumeTool {
-    fn implementation_revision(&self) -> Option<String> {
-        Some("alia.builtin.EmbeddedVolumeTool".into())
-    }
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "embedded_volume_control".to_string(),
-            description: "Get or set microphone capture volume and speaker playback volume for an alia-embedded channel. Use this when the user asks to make the Pi mic/speaker louder, quieter, or adjust voice/audio volume.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "operation": {
-                        "type": "string",
-                        "enum": ["get", "set"],
-                        "description": "Use 'get' to read current volume or 'set' to update it."
-                    },
-                    "channel_id": {
-                        "type": "string",
-                        "description": "Embedded channel id. Optional when the current conversation is already on an embedded channel or only one embedded channel is connected."
-                    },
-                    "capture_volume": {
-                        "type": "number",
-                        "minimum": 0,
-                        "maximum": 8,
-                        "description": "Microphone gain. 1.0 keeps the original level; values above 1.0 amplify."
-                    },
-                    "playback_volume": {
-                        "type": "number",
-                        "minimum": 0,
-                        "maximum": 8,
-                        "description": "Speaker gain. 1.0 keeps the original level; values above 1.0 amplify."
-                    }
-                },
-                "required": ["operation"]
-            }),
-            routing_hints: vec![
+impl EmbeddedVolumeTool {
+    pub fn entry(self) -> anyhow::Result<Arc<ToolEntry>> {
+        let revision = "alia.builtin.EmbeddedVolumeTool";
+        ToolEntry::from_tool(
+            self,
+            "component:embedded".to_string(),
+            revision,
+            false,
+            None,
+        )
+        .map(|entry| {
+            entry.with_routing_hints(vec![
                 "pi".to_string(),
                 "raspberry".to_string(),
                 "mic".to_string(),
@@ -100,56 +73,38 @@ impl ToolExecutor for EmbeddedVolumeTool {
                 "放大".to_string(),
                 "小声".to_string(),
                 "小聲".to_string(),
-            ],
-            source: "component:embedded".to_string(),
-            require_confirmation: false,
-            required_role: None,
-        }
+            ])
+        })
     }
 
-    async fn execute(
+    pub async fn execute(
         &self,
-        arguments: serde_json::Value,
+        arguments: EmbeddedVolumeToolArgs,
         ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
-        let operation = arguments
-            .get("operation")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_else(|| {
-                if arguments.get("capture_volume").is_some()
-                    || arguments.get("playback_volume").is_some()
-                {
-                    "set"
-                } else {
-                    "get"
-                }
-            });
-        let channel = resolve_embedded_channel(&self.channels, &arguments, ctx).await?;
-
+        let operation = arguments.operation;
+        let channel =
+            resolve_embedded_channel(&self.channels, arguments.channel_id.as_deref(), ctx).await?;
         let action = match operation {
-            "get" => ChannelAction {
-                name: "get_volume".to_string(),
+            VolumeOperation::Get => ChannelAction {
+                name: "get_volume".into(),
                 params: serde_json::json!({}),
             },
-            "set" => {
-                if arguments.get("capture_volume").is_none()
-                    && arguments.get("playback_volume").is_none()
-                {
-                    anyhow::bail!("set operation requires capture_volume or playback_volume");
-                }
+            VolumeOperation::Set => {
+                anyhow::ensure!(
+                    arguments.capture_volume.is_some() || arguments.playback_volume.is_some(),
+                    "set operation requires capture_volume or playback_volume"
+                );
                 ChannelAction {
-                    name: "set_volume".to_string(),
-                    params: serde_json::json!({
-                        "capture_volume": arguments.get("capture_volume").cloned(),
-                        "playback_volume": arguments.get("playback_volume").cloned(),
-                    }),
+                    name: "set_volume".into(),
+                    params: serde_json::json!({"capture_volume":arguments.capture_volume,"playback_volume":arguments.playback_volume}),
                 }
             }
-            other => anyhow::bail!("unsupported embedded volume operation '{other}'"),
         };
 
         let output = channel.execute_action(action).await?;
         Ok(ToolResult {
+            presentation: None,
             call_id: String::new(),
             success: true,
             display: Some(display_volume_result(operation, &output)),
@@ -158,14 +113,52 @@ impl ToolExecutor for EmbeddedVolumeTool {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EmbeddedVolumeToolArgs {
+    pub operation: VolumeOperation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+    #[schemars(range(min = 0, max = 8))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capture_volume: Option<f64>,
+    #[schemars(range(min = 0, max = 8))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub playback_volume: Option<f64>,
+}
+
+impl rig_core::tool::Tool for EmbeddedVolumeTool {
+    const NAME: &'static str = "embedded_volume_control";
+    type Args = EmbeddedVolumeToolArgs;
+    type Output = rig_core::tool::ToolOutput;
+    type Error = rig_core::tool::ToolExecutionError;
+    fn description(&self) -> String {
+        "Get or set microphone capture volume and speaker playback volume for an alia-embedded channel. Use this when the user asks to make the Pi mic/speaker louder, quieter, or adjust voice/audio volume.".to_string()
+    }
+    fn parameters(&self) -> serde_json::Value {
+        crate::tools::entry::parameters::<Self::Args>()
+    }
+    async fn call(
+        &self,
+        context: &mut rig_core::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
+        let invocation = context
+            .require::<ToolContext>()
+            .map_err(crate::tools::entry::tool_error)?;
+        self.execute(args, &invocation)
+            .await
+            .map_err(crate::tools::entry::tool_error)?
+            .publish(context)
+    }
+}
+
 async fn resolve_embedded_channel(
     channels: &ChannelRegistry,
-    arguments: &serde_json::Value,
+    channel_id: Option<&str>,
     ctx: &ToolContext,
 ) -> anyhow::Result<Arc<dyn crate::channels::adapter::ChannelAdapter>> {
-    if let Some(channel_id) = arguments
-        .get("channel_id")
-        .and_then(serde_json::Value::as_str)
+    if let Some(channel_id) = channel_id
         .filter(|value| !value.trim().is_empty())
         .or(ctx.channel_id.as_deref())
     {
@@ -193,7 +186,7 @@ async fn resolve_embedded_channel(
     }
 }
 
-fn display_volume_result(operation: &str, output: &serde_json::Value) -> String {
+fn display_volume_result(operation: VolumeOperation, output: &serde_json::Value) -> String {
     let capture = output
         .get("capture_volume")
         .and_then(serde_json::Value::as_f64)
@@ -203,7 +196,16 @@ fn display_volume_result(operation: &str, output: &serde_json::Value) -> String 
         .and_then(serde_json::Value::as_f64)
         .unwrap_or_default();
     match operation {
-        "set" => format!("Updated embedded volume: mic {capture:.2}, speaker {playback:.2}"),
+        VolumeOperation::Set => {
+            format!("Updated embedded volume: mic {capture:.2}, speaker {playback:.2}")
+        }
         _ => format!("Embedded volume: mic {capture:.2}, speaker {playback:.2}"),
     }
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum VolumeOperation {
+    Get,
+    Set,
 }

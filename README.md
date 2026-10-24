@@ -8,7 +8,7 @@ graph LR
     Server <-->|"gRPC (HTTP/2)<br/>port 50051"| Embedded["alia-embedded<br/>(Tonic, RPi)"]
     Server --- DB[("PostgreSQL<br/>(SeaORM)")]
     Server -.-|"CLI REPL<br/>(rustyline)"| CLI["alia> prompt"]
-    Embedded --- IO["Native audio mixer<br/>Body safety + sensors"]
+    Embedded --- IO["Native audio mixer<br/>Motion safety + sensors"]
     Server --- Turn["Easy-Turn service"]
 ```
 
@@ -17,7 +17,7 @@ graph LR
 | Package | Description |
 |---------|-------------|
 | [alia-server](packages/alia-server/) | Central server — API, AI pipeline, WebSocket, channel adapters, module orchestration |
-| [alia-embedded](packages/alia-embedded/) | Raspberry Pi edge node — capture/VAD, wake cues, native mixer, Body safety, sensors, gRPC |
+| [alia-embedded](packages/alia-embedded/) | Raspberry Pi edge node — capture/VAD, wake cues, native mixer, Motion safety, sensors, gRPC |
 | [alia-frontend](packages/alia-frontend/) | Cross-platform consumer app (React Native / Expo) |
 
 ### Shared Crates
@@ -25,7 +25,7 @@ graph LR
 | Crate | Description |
 |-------|-------------|
 | [proto](crates/proto/) | Shared Protobuf definitions and generated code |
-| [alia-core](crates/alia-core/) | Shared identity, delivery, output-control and Body contracts |
+| [alia-core](crates/alia-core/) | Shared identity, delivery, output-control and Motion contracts |
 | [transport](crates/transport/) | Shared transport/auth helpers for server and embedded communication |
 
 ## Prerequisites
@@ -33,6 +33,8 @@ graph LR
 - [mise](https://mise.jdx.dev/) (manages Node, pnpm, Rust versions automatically)
 - Docker (for PostgreSQL)
 - `protoc` (Protocol Buffers compiler)
+
+Rust is pinned to 1.96.0 in `mise.toml` and `rust-toolchain.toml`. Software verification also builds the Rust PDK example for `wasm32-unknown-unknown`; install that target with `rustup target add wasm32-unknown-unknown --toolchain 1.96.0` when using a standalone toolchain.
 
 ## Quick Start
 
@@ -76,6 +78,7 @@ pnpm dev:backend
 mise run dev-server     # cargo run -p alia-server
 mise run dev-frontend   # pnpm dev (in alia-frontend)
 mise run check          # cargo check --workspace
+bash scripts/verify-software.sh test  # isolated PostgreSQL + WASM fixtures + full software regression
 mise run db             # docker compose up -d postgres
 ```
 
@@ -146,7 +149,8 @@ Build with only specific features:
 cargo build -p alia-server --no-default-features --features "llm-openai,stt-whisper"
 ```
 
-Embedded uses `sherpa-onnx` by default for KWS and VAD; `vision-opencv` is optional.
+Embedded's default `sherpa-onnx` feature supplies Sherpa KWS and the ONNX Runtime
+used by the Rust `silero` VAD; `vision-opencv` is optional.
 Its native mixer and scoped output contracts are always compiled.
 
 ## License

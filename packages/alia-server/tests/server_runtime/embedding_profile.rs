@@ -146,7 +146,7 @@ async fn cache_disabled_http_profile_switch_is_atomic_and_immediately_projects_m
                 let next_id = next_profile.id().unwrap();
                 assert_ne!(next_id, original_profile.id().unwrap());
                 assert_eq!(descriptor_count(&state.db, &next_id).await, 0);
-                let client = reqwest::Client::builder().timeout(Duration::from_secs(5)).build().unwrap();
+                let client = skills::client();
 
                 state.db.execute_unprepared(
                     "CREATE FUNCTION reject_profile_policy_update() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected embedding policy failure'; END; $$; CREATE TRIGGER reject_profile_policy_update BEFORE UPDATE ON context_policy FOR EACH ROW EXECUTE FUNCTION reject_profile_policy_update()"

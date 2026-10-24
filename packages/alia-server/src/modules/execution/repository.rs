@@ -439,18 +439,23 @@ impl ExecutionRepository {
         owner: Uuid,
         before: Option<Uuid>,
         limit: u32,
+        request: Option<Uuid>,
     ) -> ExecutionResult<Vec<EffectRecord>> {
-        let limit = (limit.clamp(1, 100) as i64).into();
-        if let Some(before) = before {
-            load_many(&self.db, "WHERE e.user_id=$1 AND (e.created_at,e.effect_id)<(SELECT p.created_at,p.effect_id FROM execution_effects p WHERE p.effect_id=$2 AND p.user_id=$1) ORDER BY e.created_at DESC,e.effect_id DESC LIMIT $3", vec![owner.into(), before.into(), limit]).await
-        } else {
-            load_many(
-                &self.db,
-                "WHERE e.user_id=$1 ORDER BY e.created_at DESC,e.effect_id DESC LIMIT $2",
-                vec![owner.into(), limit],
-            )
-            .await
-        }
+        load_many(
+            &self.db,
+            "WHERE e.user_id=$1 AND ($2::uuid IS NULL OR e.request_id=$2) \
+             AND ($3::uuid IS NULL OR (e.created_at,e.effect_id)<(SELECT p.created_at,p.effect_id \
+             FROM execution_effects p WHERE p.effect_id=$3 AND p.user_id=$1 \
+             AND ($2::uuid IS NULL OR p.request_id=$2))) \
+             ORDER BY e.created_at DESC,e.effect_id DESC LIMIT $4",
+            vec![
+                owner.into(),
+                request.into(),
+                before.into(),
+                i64::from(limit.clamp(1, 100)).into(),
+            ],
+        )
+        .await
     }
 }
 

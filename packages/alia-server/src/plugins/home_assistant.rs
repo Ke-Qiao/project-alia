@@ -14,9 +14,7 @@ use crate::plugins::{
     PluginStorageRetention, PluginStorageScopeKind, PluginStorageService, PluginToolContext,
     StorageScope,
 };
-use crate::providers::adapter::{
-    ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult,
-};
+use crate::providers::adapter::{ToolContext, ToolEntry, ToolRegistry, ToolResult};
 
 const PLUGIN_NAME: &str = "home_assistant";
 const LIST_LIGHTS_TOOL: &str = "home_assistant_list_lights";
@@ -132,13 +130,13 @@ impl CompiledToolPlugin for HomeAssistantPlugin {
         ctx.tools
             .register_tool_executor(
                 PLUGIN_NAME,
-                Arc::new(HomeAssistantListLightsTool::new(client.clone())),
+                HomeAssistantListLightsTool::new(client.clone()).entry()?,
             )
             .await?;
         ctx.tools
             .register_tool_executor(
                 PLUGIN_NAME,
-                Arc::new(HomeAssistantLightControlTool::new(client)),
+                HomeAssistantLightControlTool::new(client).entry()?,
             )
             .await?;
         Ok(())
@@ -436,26 +434,11 @@ impl HomeAssistantListLightsTool {
     }
 }
 
-#[async_trait]
-impl ToolExecutor for HomeAssistantListLightsTool {
-    fn implementation_revision(&self) -> Option<String> {
-        Some(self.client.execution_revision())
-    }
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: LIST_LIGHTS_TOOL.to_string(),
-            description: "List Home Assistant light entities and cache them in plugin storage."
-                .to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "refresh_cache": {
-                        "type": "boolean",
-                        "description": "When true, bypass the cached light list and refresh from Home Assistant."
-                    }
-                }
-            }),
-            routing_hints: vec![
+impl HomeAssistantListLightsTool {
+    pub fn entry(self) -> anyhow::Result<Arc<ToolEntry>> {
+        let revision = self.client.execution_revision();
+        ToolEntry::from_tool(self, PLUGIN_NAME.to_string(), revision, false, None).map(|entry| {
+            entry.with_routing_hints(vec![
                 "home assistant".to_string(),
                 "lights".to_string(),
                 "list lights".to_string(),
@@ -466,24 +449,19 @@ impl ToolExecutor for HomeAssistantListLightsTool {
                 "列出灯".to_string(),
                 "有哪些灯".to_string(),
                 "家居".to_string(),
-            ],
-            source: PLUGIN_NAME.to_string(),
-            require_confirmation: false,
-            required_role: None,
-        }
+            ])
+        })
     }
 
-    async fn execute(
+    pub async fn execute(
         &self,
-        arguments: serde_json::Value,
+        arguments: HomeAssistantListLightsToolArgs,
         _ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
-        let refresh_cache = arguments
-            .get("refresh_cache")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
+        let refresh_cache = arguments.refresh_cache.unwrap_or(false);
         match self.client.lights(refresh_cache).await {
             Ok(cached) => Ok(ToolResult {
+                presentation: None,
                 call_id: String::new(),
                 success: true,
                 output: serde_json::json!({
@@ -503,6 +481,39 @@ impl ToolExecutor for HomeAssistantListLightsTool {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HomeAssistantListLightsToolArgs {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_cache: Option<bool>,
+}
+
+impl rig_core::tool::Tool for HomeAssistantListLightsTool {
+    const NAME: &'static str = LIST_LIGHTS_TOOL;
+    type Args = HomeAssistantListLightsToolArgs;
+    type Output = rig_core::tool::ToolOutput;
+    type Error = rig_core::tool::ToolExecutionError;
+    fn description(&self) -> String {
+        "List Home Assistant light entities and cache them in plugin storage.".to_string()
+    }
+    fn parameters(&self) -> serde_json::Value {
+        crate::tools::entry::parameters::<Self::Args>()
+    }
+    async fn call(
+        &self,
+        context: &mut rig_core::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
+        let invocation = context
+            .require::<ToolContext>()
+            .map_err(crate::tools::entry::tool_error)?;
+        self.execute(args, &invocation)
+            .await
+            .map_err(crate::tools::entry::tool_error)?
+            .publish(context)
+    }
+}
+
 struct HomeAssistantLightControlTool {
     client: Arc<HomeAssistantClient>,
 }
@@ -513,40 +524,11 @@ impl HomeAssistantLightControlTool {
     }
 }
 
-#[async_trait]
-impl ToolExecutor for HomeAssistantLightControlTool {
-    fn implementation_revision(&self) -> Option<String> {
-        Some(self.client.execution_revision())
-    }
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: CONTROL_LIGHT_TOOL.to_string(),
-            description: "Turn a Home Assistant light on or off by entity_id or friendly name."
-                .to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "state": {
-                        "type": "string",
-                        "enum": ["on", "off"],
-                        "description": "Target light state."
-                    },
-                    "entity_id": {
-                        "type": "string",
-                        "description": "Exact Home Assistant light entity id, for example light.living_room."
-                    },
-                    "name": {
-                        "type": "string",
-                        "description": "Friendly light name when entity_id is unknown, for example Living Room Lamp."
-                    },
-                    "refresh_cache": {
-                        "type": "boolean",
-                        "description": "When true, refresh Home Assistant light entities before matching."
-                    }
-                },
-                "required": ["state"]
-            }),
-            routing_hints: vec![
+impl HomeAssistantLightControlTool {
+    pub fn entry(self) -> anyhow::Result<Arc<ToolEntry>> {
+        let revision = self.client.execution_revision();
+        ToolEntry::from_tool(self, PLUGIN_NAME.to_string(), revision, false, None).map(|entry| {
+            entry.with_routing_hints(vec![
                 "home assistant".to_string(),
                 "light".to_string(),
                 "lights".to_string(),
@@ -562,37 +544,29 @@ impl ToolExecutor for HomeAssistantLightControlTool {
                 "关闭灯".to_string(),
                 "照明".to_string(),
                 "家居".to_string(),
-            ],
-            source: PLUGIN_NAME.to_string(),
-            require_confirmation: false,
-            required_role: None,
-        }
+            ])
+        })
     }
 
-    async fn execute(
+    pub async fn execute(
         &self,
-        arguments: serde_json::Value,
+        arguments: HomeAssistantLightControlToolArgs,
         _ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
-        let state = match LightTargetState::from_arguments(&arguments) {
-            Ok(state) => state,
-            Err(error) => return Ok(tool_error("invalid_light_state", error)),
-        };
-        let refresh_cache = arguments
-            .get("refresh_cache")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
+        let state = arguments.state;
+        let refresh_cache = arguments.refresh_cache.unwrap_or(false);
+        let target = arguments.entity_id.as_deref().or(arguments.name.as_deref());
 
         let cached = match self.client.lights(refresh_cache).await {
             Ok(cached) => cached,
             Err(error) => return Ok(tool_error("home_assistant_list_failed", error)),
         };
 
-        let light = match resolve_light(&cached.lights, &arguments) {
+        let light = match resolve_light(&cached.lights, target) {
             Ok(light) => light,
             Err(LightResolveError::NotFound(_)) if cached.from_cache => {
                 match self.client.lights(true).await {
-                    Ok(refreshed) => match resolve_light(&refreshed.lights, &arguments) {
+                    Ok(refreshed) => match resolve_light(&refreshed.lights, target) {
                         Ok(light) => light,
                         Err(error) => return Ok(resolve_error_result(error, refreshed.lights)),
                     },
@@ -607,6 +581,7 @@ impl ToolExecutor for HomeAssistantLightControlTool {
         }
 
         Ok(ToolResult {
+            presentation: None,
             call_id: String::new(),
             success: true,
             output: serde_json::json!({
@@ -619,27 +594,52 @@ impl ToolExecutor for HomeAssistantLightControlTool {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum LightTargetState {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HomeAssistantLightControlToolArgs {
+    pub state: LightTargetState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_cache: Option<bool>,
+}
+
+impl rig_core::tool::Tool for HomeAssistantLightControlTool {
+    const NAME: &'static str = CONTROL_LIGHT_TOOL;
+    type Args = HomeAssistantLightControlToolArgs;
+    type Output = rig_core::tool::ToolOutput;
+    type Error = rig_core::tool::ToolExecutionError;
+    fn description(&self) -> String {
+        "Turn a Home Assistant light on or off by entity_id or friendly name.".to_string()
+    }
+    fn parameters(&self) -> serde_json::Value {
+        crate::tools::entry::parameters::<Self::Args>()
+    }
+    async fn call(
+        &self,
+        context: &mut rig_core::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
+        let invocation = context
+            .require::<ToolContext>()
+            .map_err(crate::tools::entry::tool_error)?;
+        self.execute(args, &invocation)
+            .await
+            .map_err(crate::tools::entry::tool_error)?
+            .publish(context)
+    }
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum LightTargetState {
     On,
     Off,
 }
 
 impl LightTargetState {
-    fn from_arguments(arguments: &serde_json::Value) -> anyhow::Result<Self> {
-        match arguments
-            .get("state")
-            .and_then(serde_json::Value::as_str)
-            .map(|state| state.trim().to_ascii_lowercase())
-            .as_deref()
-        {
-            Some("on") | Some("turn_on") | Some("open") => Ok(Self::On),
-            Some("off") | Some("turn_off") | Some("close") => Ok(Self::Off),
-            Some(other) => anyhow::bail!("unsupported light state '{other}'; use 'on' or 'off'"),
-            None => anyhow::bail!("state is required"),
-        }
-    }
-
     fn as_str(self) -> &'static str {
         match self {
             Self::On => "on",
@@ -662,16 +662,8 @@ enum LightResolveError {
     Ambiguous(Vec<HaLight>),
 }
 
-fn resolve_light(
-    lights: &[HaLight],
-    arguments: &serde_json::Value,
-) -> Result<HaLight, LightResolveError> {
-    let target = arguments
-        .get("entity_id")
-        .and_then(serde_json::Value::as_str)
-        .or_else(|| arguments.get("name").and_then(serde_json::Value::as_str))
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
+fn resolve_light(lights: &[HaLight], target: Option<&str>) -> Result<HaLight, LightResolveError> {
+    let target = target.map(str::trim).filter(|value| !value.is_empty());
 
     let Some(target) = target else {
         return match lights {
@@ -729,6 +721,7 @@ impl HaLight {
 fn resolve_error_result(error: LightResolveError, lights: Vec<HaLight>) -> ToolResult {
     match error {
         LightResolveError::MissingTarget => ToolResult {
+            presentation: None,
             call_id: String::new(),
             success: false,
             output: serde_json::json!({
@@ -738,6 +731,7 @@ fn resolve_error_result(error: LightResolveError, lights: Vec<HaLight>) -> ToolR
             display: Some("Provide a Home Assistant light entity_id or name".to_string()),
         },
         LightResolveError::NotFound(target) => ToolResult {
+            presentation: None,
             call_id: String::new(),
             success: false,
             output: serde_json::json!({
@@ -748,6 +742,7 @@ fn resolve_error_result(error: LightResolveError, lights: Vec<HaLight>) -> ToolR
             display: Some(format!("No Home Assistant light matched '{target}'")),
         },
         LightResolveError::Ambiguous(matches) => ToolResult {
+            presentation: None,
             call_id: String::new(),
             success: false,
             output: serde_json::json!({
@@ -761,6 +756,7 @@ fn resolve_error_result(error: LightResolveError, lights: Vec<HaLight>) -> ToolR
 
 fn tool_error(code: &str, error: anyhow::Error) -> ToolResult {
     ToolResult {
+        presentation: None,
         call_id: String::new(),
         success: false,
         output: serde_json::json!({
@@ -820,11 +816,10 @@ mod tests {
             light("light.bedroom", "Bedroom"),
         ];
 
-        let by_entity =
-            resolve_light(&lights, &serde_json::json!({"entity_id": "light.bedroom"})).unwrap();
+        let by_entity = resolve_light(&lights, Some("light.bedroom")).unwrap();
         assert_eq!(by_entity.entity_id, "light.bedroom");
 
-        let by_name = resolve_light(&lights, &serde_json::json!({"name": "living room"})).unwrap();
+        let by_name = resolve_light(&lights, Some("living room")).unwrap();
         assert_eq!(by_name.entity_id, "light.living_room_lamp");
     }
 
@@ -835,8 +830,7 @@ mod tests {
             light("light.living_room_strip", "Living Room Strip"),
         ];
 
-        let error =
-            resolve_light(&lights, &serde_json::json!({"name": "living room"})).unwrap_err();
+        let error = resolve_light(&lights, Some("living room")).unwrap_err();
         assert!(matches!(error, LightResolveError::Ambiguous(matches) if matches.len() == 2));
     }
 

@@ -7,5 +7,5 @@ mod servo;
 mod writer;
 
 pub use inspection::{MotionInspection, inspect_configuration};
-pub use plan::PreparedBodyCommand;
-pub use runtime::{BodyAuthorization, BodyObservation, MotionRuntime};
+pub use plan::PreparedMotionCommand;
+pub use runtime::{MotionAuthorization, MotionObservation, MotionRuntime};

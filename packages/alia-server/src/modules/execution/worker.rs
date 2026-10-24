@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use super::service::{ExecutionService, implementation_digest};
 use super::types::*;
-use crate::providers::adapter::{ToolContext, ToolExecutor};
+use crate::providers::adapter::{ToolContext, ToolEntry};
 
 const WORKERS: usize = 4;
 const DATABASE_DEADLINE: Duration = Duration::from_secs(2);
@@ -109,7 +109,8 @@ async fn fill(
                 continue;
             }
         };
-        if digest != effect.tool_digest
+        if !prepared.executor.allows_user(effect.key.user_id)
+            || digest != effect.tool_digest
             || policy.digest() != effect.policy_digest
             || !policy.allows(&definition)
         {
@@ -121,8 +122,8 @@ async fn fill(
             .await?;
             continue;
         }
-        if !effect.arguments.is_object() {
-            reject(service, &effect, "tool arguments must be a JSON object").await?;
+        if let Err(error) = prepared.executor.validate(&effect.arguments) {
+            reject(service, &effect, &error.to_string()).await?;
             continue;
         }
         if service.stop.is_cancelled() {
@@ -171,7 +172,7 @@ async fn reject(
 
 async fn execute_claim(
     service: Arc<ExecutionService>,
-    executor: Arc<dyn ToolExecutor>,
+    executor: Arc<ToolEntry>,
     claim: ExecutionClaim,
     deadline: tokio::time::Instant,
 ) -> anyhow::Result<()> {
@@ -192,15 +193,26 @@ async fn execute_claim(
     // The lease is durable on the database clock; local execution uses the
     // stricter monotonic deadline started before claim, avoiding clock skew.
     let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+    let mut pending = None;
     let outcome = if remaining.is_zero() {
         Completion::Failed {
             evidence: json!({"reason": "claim deadline elapsed before external dispatch"}),
         }
     } else {
-        let execution =
-            AssertUnwindSafe(executor.execute(effect.arguments.clone(), &context)).catch_unwind();
-        match tokio::time::timeout(remaining.min(MAX_EXECUTION_TIMEOUT), execution).await {
-            Ok(Ok(Ok(mut result))) => {
+        let owner = executor.clone();
+        let arguments = effect.arguments.clone();
+        let mut execution = tokio::spawn(async move {
+            AssertUnwindSafe(owner.execute(arguments, &context))
+                .catch_unwind()
+                .await
+        });
+        let result =
+            tokio::time::timeout(remaining.min(MAX_EXECUTION_TIMEOUT), &mut execution).await;
+        if result.is_err() {
+            pending = Some(execution);
+        }
+        match result {
+            Ok(Ok(Ok(Ok(mut result)))) => {
                 result.call_id = effect.model_call_id.clone();
                 let definitive_failure = executor.failure_is_definitive(&result);
                 let receipt = serde_json::to_value(result)?;
@@ -220,12 +232,12 @@ async fn execute_claim(
                     }
                 }
             }
-            Ok(Ok(Err(error))) => Completion::Unknown {
+            Ok(Ok(Ok(Err(error)))) => Completion::Unknown {
                 reason: bounded_reason(format!(
                     "adapter error; external outcome unverified: {error}"
                 )),
             },
-            Ok(Err(_)) => Completion::Unknown {
+            Ok(Err(_)) | Ok(Ok(Err(_))) => Completion::Unknown {
                 reason: "adapter panicked after claim".into(),
             },
             Err(_) => Completion::Unknown {
@@ -250,13 +262,23 @@ async fn execute_claim(
         )
         .await
         {
-            Ok(Ok(_)) => return Ok(()),
+            Ok(Ok(_)) => {
+                // A deadline ends the observer, not ownership of an already
+                // dispatched call. Retain its task and slot until it really ends.
+                if let Some(pending) = pending {
+                    let _ = pending.await;
+                }
+                return Ok(());
+            }
             Ok(Err(error)) => last_error = Some(anyhow::Error::from(error)),
             Err(error) => last_error = Some(anyhow::Error::from(error)),
         }
         if attempt < 2 {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
+    }
+    if let Some(pending) = pending {
+        let _ = pending.await;
     }
     Err(last_error.expect("three failed receipt writes"))
 }

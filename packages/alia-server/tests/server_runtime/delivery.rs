@@ -173,7 +173,7 @@ async fn canonical_response_and_history_commit_once_or_roll_back_together() {
         assert!(state.modules.responses.commit_response(owner, different_session, response.response_id, ChatMessage::new("assistant", "规范响应")).await.is_err());
         assert!(state.modules.responses.commit_response(owner, session, response.response_id, ChatMessage::new("user", "规范响应")).await.is_err());
         let mut named = ChatMessage::new("assistant", "规范响应");
-        named.name = Some(owner.to_string());
+        named.user_id = Some(owner.to_string());
         assert!(state.modules.responses.commit_response(owner, session, response.response_id, named).await.is_err());
         // Committing text alone never creates device presentation evidence.
         assert!(state.delivery.list_deliveries(owner, response.response_id).await.unwrap().is_empty());
@@ -236,6 +236,7 @@ async fn delivery_http_is_owner_scoped_and_cancellation_is_separate_from_generat
         let _stop_on_drop = stop.clone().drop_guard();
         let serving = tokio::spawn(runtime.run());
         let client = reqwest::Client::builder()
+            .no_proxy()
             .timeout(Duration::from_secs(3))
             .build()
             .unwrap();

@@ -1,0 +1,535 @@
+use std::path::{Path, PathBuf};
+
+use anyhow::Result;
+use serde::Serialize;
+use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
+
+use crate::config::R1Config;
+
+/// A command acknowledgement, not proof of live or intelligible PCM.
+#[derive(Debug, Serialize)]
+pub struct InitializationReport {
+    pub cold_boot_id: Uuid,
+    pub serial_path: PathBuf,
+    pub guard_path: PathBuf,
+    pub firmware: String,
+    pub beam: u8,
+    pub command_id: u16,
+    pub command_accepted: bool,
+    pub acoustic_capture_verified: bool,
+}
+
+/// Explicit operator-declared cold boot only. Never call from reconnect or capture reset.
+/// The caller keeps its capture stream open before and after this synchronous operation.
+/// Keep the state path on durable, owner-controlled storage; removing claims loses replay protection.
+pub fn initialize(
+    config: &R1Config,
+    state_path: &Path,
+    cold_boot_id: Uuid,
+    cancel: CancellationToken,
+) -> Result<InitializationReport> {
+    #[cfg(target_os = "linux")]
+    {
+        linux::initialize(config, state_path, cold_boot_id, cancel)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (config, state_path, cold_boot_id, cancel);
+        anyhow::bail!("R1 initialization requires Linux; no state or devices were opened")
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+mod transaction {
+    use std::time::Duration;
+
+    use anyhow::{Result, ensure};
+
+    use super::super::protocol;
+
+    const DEADLINE: Duration = Duration::from_secs(2);
+
+    #[derive(Debug, PartialEq)]
+    pub(super) enum Phase {
+        Version,
+        Ready,
+        Ack,
+        Accepted,
+    }
+
+    pub(super) struct Transaction {
+        pub phase: Phase,
+        pub version_id: u16,
+        pub command_id: u16,
+        started: Duration,
+        requery_pending: bool,
+        requery_attempted: bool,
+    }
+
+    impl Transaction {
+        pub fn new(version_id: u16) -> Self {
+            Self {
+                phase: Phase::Version,
+                version_id,
+                command_id: version_id.wrapping_add(1),
+                started: Duration::ZERO,
+                requery_pending: false,
+                requery_attempted: false,
+            }
+        }
+
+        pub fn check_deadline(&self, now: Duration) -> Result<()> {
+            if matches!(self.phase, Phase::Version | Phase::Ack) {
+                ensure!(
+                    now.saturating_sub(self.started) < DEADLINE,
+                    if self.phase == Phase::Version {
+                        "R1 version response timed out; manual_wakeup was not sent"
+                    } else {
+                        "R1 manual_wakeup ACK timed out; outcome unknown, do not retry"
+                    }
+                );
+            }
+            Ok(())
+        }
+
+        pub fn receive(
+            &mut self,
+            frame: &protocol::Frame,
+            now: Duration,
+        ) -> Result<Option<Vec<u8>>> {
+            self.check_deadline(now)?;
+            ensure!(
+                !matches!(self.phase, Phase::Version | Phase::Ready) || frame.kind != 0x04,
+                "R1 board event before manual_wakeup; operator-declared cold boot may already be active"
+            );
+            if let Some(ack) = frame.handshake_ack() {
+                ensure!(
+                    self.phase == Phase::Version,
+                    "R1 handshake after version verification; board may have restarted, do not retry"
+                );
+                self.requery_pending = !self.requery_attempted;
+                return Ok(Some(ack));
+            }
+            let id = match self.phase {
+                Phase::Version => self.version_id,
+                Phase::Ack => self.command_id,
+                _ => return Ok(None),
+            };
+            let Some(accepted) = frame.command_ack(id) else {
+                return Ok(None);
+            };
+            ensure!(
+                accepted,
+                "R1 command ACK rejected, malformed or missing numeric code:0"
+            );
+            if self.phase == Phase::Version {
+                ensure!(
+                    frame.version_response(id).as_deref()
+                        == Some(protocol::MANUAL_CAPTURE_FIRMWARE),
+                    "R1 firmware differs from the validated manual capture firmware; manual_wakeup was not sent"
+                );
+                self.phase = Phase::Ready;
+            } else {
+                self.phase = Phase::Accepted;
+            }
+            Ok(None)
+        }
+
+        pub fn requery(&mut self, now: Duration) -> Result<Option<Vec<u8>>> {
+            self.check_deadline(now)?;
+            if self.phase == Phase::Version && self.requery_pending {
+                self.requery_pending = false;
+                self.requery_attempted = true;
+                return Ok(Some(protocol::version_query(self.version_id)));
+            }
+            Ok(None)
+        }
+
+        pub fn manual(&mut self, now: Duration) -> Result<Vec<u8>> {
+            ensure!(
+                self.phase == Phase::Ready,
+                "R1 manual_wakeup is not ready or was already attempted"
+            );
+            self.phase = Phase::Ack;
+            self.started = now;
+            Ok(protocol::manual_wakeup_beam_zero(self.command_id))
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod linux {
+    use std::fs::{DirBuilder, File, OpenOptions};
+    use std::io::Write;
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+    use std::time::{Duration, Instant};
+
+    use anyhow::{Context, ensure};
+
+    use super::super::{protocol, serial};
+    use super::transaction::{Phase, Transaction};
+    use super::*;
+
+    fn claim(
+        config: &R1Config,
+        state_path: &Path,
+        cold_boot_id: Uuid,
+        command_id: u16,
+    ) -> Result<(File, InitializationReport)> {
+        ensure!(
+            !cold_boot_id.is_nil(),
+            "cold_boot_id must identify an operator-confirmed cold boot"
+        );
+        let state_path = std::path::absolute(state_path)?;
+        let mut directory_name = state_path
+            .file_name()
+            .context("state_path requires a filename")?
+            .to_os_string();
+        directory_name.push(".r1-initialization");
+        let directory = state_path
+            .parent()
+            .context("state_path requires a parent")?
+            .join(directory_name);
+        DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&directory)?;
+        let metadata = std::fs::symlink_metadata(&directory)?;
+        ensure!(
+            metadata.is_dir()
+                && metadata.uid() == unsafe { libc::geteuid() }
+                && metadata.permissions().mode() & 0o022 == 0,
+            "R1 claim directory must be an owned directory without group/world writes or symlink redirection"
+        );
+        let guard_path = directory.join(format!("{cold_boot_id}.jsonl"));
+        let mut guard = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&guard_path)
+            .with_context(|| {
+                format!(
+                    "claiming R1 cold boot {}: an existing claim must never be retried",
+                    guard_path.display()
+                )
+            })?;
+        let report = InitializationReport {
+            cold_boot_id,
+            serial_path: config.serial_path.clone(),
+            guard_path,
+            firmware: protocol::MANUAL_CAPTURE_FIRMWARE.into(),
+            beam: 0,
+            command_id,
+            command_accepted: false,
+            acoustic_capture_verified: false,
+        };
+        serde_json::to_writer(
+            &mut guard,
+            &serde_json::json!({
+                "status":"claimed_outcome_unknown", "operator_declared_cold_boot":true,
+                "report":report
+            }),
+        )?;
+        guard.write_all(b"\n")?;
+        guard.sync_all()?;
+        // Persist newly created parents as well as the one-shot claim before any UART write.
+        for ancestor in directory.ancestors() {
+            File::open(ancestor)?.sync_all()?;
+        }
+        Ok((guard, report))
+    }
+
+    pub(super) fn initialize(
+        config: &R1Config,
+        state_path: &Path,
+        cold_boot_id: Uuid,
+        cancel: CancellationToken,
+    ) -> Result<InitializationReport> {
+        config.validate()?;
+        ensure!(
+            !cancel.is_cancelled(),
+            "R1 initialization cancelled before claiming cold boot"
+        );
+        let transaction = Transaction::new(rand::random());
+        let (guard, report) = claim(config, state_path, cold_boot_id, transaction.command_id)?;
+        ensure!(
+            !cancel.is_cancelled(),
+            "R1 initialization cancelled after claim; do not retry this cold boot ID"
+        );
+        let serial = serial::Serial::open(&config.serial_path)?;
+        run(serial, transaction, guard, report, &cancel)
+    }
+
+    fn run(
+        mut serial: serial::Serial,
+        mut transaction: Transaction,
+        mut guard: File,
+        mut report: InitializationReport,
+        cancel: &CancellationToken,
+    ) -> Result<InitializationReport> {
+        let start = Instant::now();
+        serial.write(&protocol::version_query(transaction.version_id), cancel)?;
+        let mut decoder = protocol::Decoder::default();
+        let mut partial_since = None;
+        let mut bytes = [0u8; 1024];
+        loop {
+            ensure!(
+                !cancel.is_cancelled(),
+                "R1 initialization cancelled; outcome may be unknown, do not retry"
+            );
+            transaction.check_deadline(start.elapsed())?;
+            let count = serial.read(&mut bytes)?;
+            let now = start.elapsed();
+            ensure!(
+                !cancel.is_cancelled(),
+                "R1 initialization cancelled; outcome may be unknown, do not retry"
+            );
+            if partial_since
+                .is_some_and(|since| now.saturating_sub(since) >= Duration::from_millis(250))
+            {
+                decoder.clear();
+                partial_since = None;
+            }
+            let frames = decoder.push(&bytes[..count]);
+            if decoder.is_empty() {
+                partial_since = None;
+            } else if partial_since.is_none() || !frames.is_empty() {
+                partial_since = Some(now);
+            }
+            for frame in frames {
+                if let Some(ack) = transaction.receive(&frame, start.elapsed())? {
+                    serial.write(&ack, cancel)?;
+                }
+            }
+            if let Some(query) = transaction.requery(start.elapsed())? {
+                serial.write(&query, cancel)?;
+            }
+            if transaction.phase == Phase::Ready {
+                // Transition before I/O: partial writes and uncertain ACKs consume this attempt.
+                let command = transaction.manual(start.elapsed())?;
+                serial.write(&command, cancel)?;
+            }
+            if transaction.phase == Phase::Accepted {
+                report.command_accepted = true;
+                serde_json::to_writer(
+                    &mut guard,
+                    &serde_json::json!({"status":"command_accepted", "report":report}),
+                )?;
+                guard.write_all(b"\n")?;
+                guard.sync_all()?;
+                return Ok(report);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::io::{ErrorKind, Read};
+        use std::thread;
+
+        use super::*;
+
+        fn config() -> R1Config {
+            R1Config {
+                serial_path: "/missing-test-r1".into(),
+            }
+        }
+
+        #[test]
+        fn durable_claim_survives_reopen_and_rejects_duplicate_or_corrupt_records() {
+            let directory = tempfile::tempdir().unwrap();
+            let state = directory.path().join("state.sqlite3");
+            let id = Uuid::new_v4();
+            let (guard, report) = claim(&config(), &state, id, 42).unwrap();
+            drop(guard);
+            let original = std::fs::read(&report.guard_path).unwrap();
+            assert!(String::from_utf8_lossy(&original).contains("claimed_outcome_unknown"));
+            assert!(claim(&config(), &state, id, 43).is_err());
+            assert_eq!(std::fs::read(&report.guard_path).unwrap(), original);
+            std::fs::write(&report.guard_path, []).unwrap();
+            assert!(claim(&config(), &state, id, 44).is_err());
+        }
+
+        #[test]
+        fn claim_rejects_redirected_or_shared_writable_guard_directory() {
+            let directory = tempfile::tempdir().unwrap();
+            let state = directory.path().join("state.sqlite3");
+            let guard_directory = directory.path().join("state.sqlite3.r1-initialization");
+            let redirected = directory.path().join("redirected");
+            std::fs::create_dir(&redirected).unwrap();
+            std::os::unix::fs::symlink(&redirected, &guard_directory).unwrap();
+            assert!(claim(&config(), &state, Uuid::new_v4(), 42).is_err());
+            assert_eq!(std::fs::read_dir(&redirected).unwrap().count(), 0);
+            std::fs::remove_file(&guard_directory).unwrap();
+            std::fs::create_dir(&guard_directory).unwrap();
+            std::fs::set_permissions(&guard_directory, std::fs::Permissions::from_mode(0o777))
+                .unwrap();
+            assert!(claim(&config(), &state, Uuid::new_v4(), 42).is_err());
+            assert_eq!(std::fs::read_dir(&guard_directory).unwrap().count(), 0);
+        }
+
+        #[test]
+        fn cancellation_and_invalid_cold_id_do_not_claim_or_touch_hardware() {
+            let directory = tempfile::tempdir().unwrap();
+            let state = directory.path().join("state.sqlite3");
+            let cancel = CancellationToken::new();
+            cancel.cancel();
+            assert!(initialize(&config(), &state, Uuid::new_v4(), cancel).is_err());
+            assert!(initialize(&config(), &state, Uuid::nil(), CancellationToken::new()).is_err());
+            assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+        }
+
+        #[test]
+        fn failed_open_keeps_claim_and_same_id_never_retries() {
+            let directory = tempfile::tempdir().unwrap();
+            let state = directory.path().join("state.sqlite3");
+            let id = Uuid::new_v4();
+            let first = initialize(&config(), &state, id, CancellationToken::new()).unwrap_err();
+            assert!(format!("{first:#}").contains("opening R1 UART"));
+            let second = initialize(&config(), &state, id, CancellationToken::new()).unwrap_err();
+            assert!(format!("{second:#}").contains("existing claim must never be retried"));
+        }
+
+        fn read_frame(master: &mut File) -> protocol::Frame {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let mut decoder = protocol::Decoder::default();
+            let mut byte = [0u8; 1];
+            loop {
+                assert!(Instant::now() < deadline, "missing host UART frame");
+                match master.read(&mut byte) {
+                    Ok(1) => {
+                        if let Some(frame) = decoder.push(&byte).pop() {
+                            return frame;
+                        }
+                    }
+                    Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(1))
+                    }
+                    result => panic!("unexpected PTY read: {result:?}"),
+                }
+            }
+        }
+
+        #[test]
+        fn pty_cold_handshake_then_single_manual_command_and_durable_ack() {
+            let directory = tempfile::tempdir().unwrap();
+            let (guard, report) = claim(
+                &config(),
+                &directory.path().join("state.sqlite3"),
+                Uuid::new_v4(),
+                101,
+            )
+            .unwrap();
+            let guard_path = report.guard_path.clone();
+            let (mut board, serial, _) = serial::pty();
+            let worker = thread::spawn(move || {
+                run(
+                    serial,
+                    Transaction::new(100),
+                    guard,
+                    report,
+                    &CancellationToken::new(),
+                )
+            });
+            let query = read_frame(&mut board);
+            assert_eq!(query.id, 100);
+            board
+                .write_all(&protocol::encode(1, 9, &[0xa5, 0, 0, 0]))
+                .unwrap();
+            let ack = read_frame(&mut board);
+            assert_eq!((ack.kind, ack.id), (255, 9));
+            assert_eq!(read_frame(&mut board), query);
+            board
+                .write_all(&protocol::encode(
+                    5,
+                    100,
+                    &serde_json::to_vec(
+                        &serde_json::json!({"code":0,"content":protocol::MANUAL_CAPTURE_FIRMWARE}),
+                    )
+                    .unwrap(),
+                ))
+                .unwrap();
+            let manual = read_frame(&mut board);
+            assert_eq!((manual.kind, manual.id), (5, 101));
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&manual.payload).unwrap(),
+                serde_json::json!({"type":"manual_wakeup","content":{"beam":0}})
+            );
+            board
+                .write_all(&protocol::encode(5, 101, br#"{"code":0}"#))
+                .unwrap();
+            let report = worker.join().unwrap().unwrap();
+            assert!(report.command_accepted);
+            assert!(!report.acoustic_capture_verified);
+            let contents = std::fs::read_to_string(guard_path).unwrap();
+            assert_eq!(contents.lines().count(), 2);
+            assert!(
+                contents
+                    .lines()
+                    .nth(1)
+                    .unwrap()
+                    .contains("command_accepted")
+            );
+        }
+
+        #[test]
+        fn pty_cancel_or_disconnect_after_manual_keeps_unknown_claim_without_retry() {
+            for disconnect in [false, true] {
+                let directory = tempfile::tempdir().unwrap();
+                let state = directory.path().join("state.sqlite3");
+                let id = Uuid::new_v4();
+                let (guard, report) = claim(&config(), &state, id, 101).unwrap();
+                let guard_path = report.guard_path.clone();
+                let (mut board, serial, _) = serial::pty();
+                let cancel = CancellationToken::new();
+                let worker_cancel = cancel.clone();
+                let (send, receive) = std::sync::mpsc::sync_channel(1);
+                let worker = thread::spawn(move || {
+                    send.send(run(
+                        serial,
+                        Transaction::new(100),
+                        guard,
+                        report,
+                        &worker_cancel,
+                    ))
+                    .unwrap();
+                });
+                assert_eq!(read_frame(&mut board).id, 100);
+                board.write_all(&protocol::encode(5, 100, &serde_json::to_vec(&serde_json::json!({"code":0,"content":protocol::MANUAL_CAPTURE_FIRMWARE})).unwrap())).unwrap();
+                let manual = read_frame(&mut board);
+                assert_eq!((manual.kind, manual.id), (5, 101));
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&manual.payload).unwrap()["type"],
+                    "manual_wakeup"
+                );
+                if disconnect {
+                    drop(board);
+                } else {
+                    let mut extra = [0u8; 1024];
+                    assert_eq!(
+                        board.read(&mut extra).unwrap_err().kind(),
+                        ErrorKind::WouldBlock
+                    );
+                    cancel.cancel();
+                }
+                assert!(
+                    receive
+                        .recv_timeout(Duration::from_secs(3))
+                        .unwrap()
+                        .is_err()
+                );
+                worker.join().unwrap();
+                let contents = std::fs::read_to_string(&guard_path).unwrap();
+                assert_eq!(contents.lines().count(), 1);
+                assert!(contents.contains("claimed_outcome_unknown"));
+                assert!(claim(&config(), &state, id, 102).is_err());
+                assert_eq!(std::fs::read_to_string(&guard_path).unwrap(), contents);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "initializer_tests.rs"]
+mod tests;

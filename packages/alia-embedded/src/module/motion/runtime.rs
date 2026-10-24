@@ -1,14 +1,14 @@
-//! One admission gate and one native writer own every body output. Dropping an
+//! One admission gate and one native writer own every motion output. Dropping an
 //! RPC waiter cannot drop preparation, an admitted command, or a native write.
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use alia_core::body::{
-    BodyCommand, BodyCommandIdentity, BodyControlLease, BodyControlState, BodyEnd, BodyProgress,
-    BodyScope, MAX_BODY_CHANNELS,
-};
 use alia_core::delivery::VoiceScope;
+use alia_core::embodiment::motion::{
+    MAX_MOTION_CHANNELS, MotionCommand, MotionCommandIdentity, MotionControlLease,
+    MotionControlState, MotionEnd, MotionProgress, MotionScope,
+};
 use anyhow::{Context, Result, bail, ensure};
 use tokio::sync::{Mutex as AsyncMutex, oneshot, watch};
 use tokio::task::JoinHandle;
@@ -20,7 +20,7 @@ use crate::module::playback_session::VoiceOutputFence;
 use crate::module::traits::DiscoveryMetadata;
 
 use super::neck_mapper::NeckMapper;
-use super::plan::{PreparedBodyCommand, face_rotation};
+use super::plan::{PreparedMotionCommand, face_rotation};
 use super::servo::{ServoBackend, create_servo_backend};
 
 const QUEUE_CAPACITY: usize = 8;
@@ -30,31 +30,31 @@ const MAX_AUTHORIZATION: Duration = Duration::from_secs(60);
 const CANCEL_DEADLINE: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy)]
-pub struct BodyAuthorization {
+pub struct MotionAuthorization {
     /// Monotonic deadline derived from the verified signed request. It is
     /// checked again before each frame and each individual native write.
     pub expires_at: Instant,
 }
 
-impl BodyAuthorization {
+impl MotionAuthorization {
     fn validate(self) -> Result<()> {
         let now = Instant::now();
-        ensure!(self.expires_at > now, "body authorization has expired");
+        ensure!(self.expires_at > now, "motion authorization has expired");
         ensure!(
             self.expires_at.duration_since(now) <= MAX_AUTHORIZATION,
-            "body authorization exceeds 60 seconds"
+            "motion authorization exceeds 60 seconds"
         );
         Ok(())
     }
 }
 
 #[derive(Clone)]
-pub struct BodyObservation {
-    progress: watch::Receiver<BodyProgress>,
+pub struct MotionObservation {
+    progress: watch::Receiver<MotionProgress>,
 }
 
-impl BodyObservation {
-    pub fn snapshot(&self) -> BodyProgress {
+impl MotionObservation {
+    pub fn snapshot(&self) -> MotionProgress {
         self.progress.borrow().clone()
     }
 
@@ -62,7 +62,7 @@ impl BodyObservation {
         self.progress
             .changed()
             .await
-            .context("body observation owner ended")
+            .context("motion observation owner ended")
     }
 }
 
@@ -74,7 +74,7 @@ struct AuthorityState {
 pub(super) struct Authority(Mutex<AuthorityState>);
 
 impl Authority {
-    fn new(authorization: BodyAuthorization) -> Self {
+    fn new(authorization: MotionAuthorization) -> Self {
         Self(Mutex::new(AuthorityState {
             expires_at: authorization.expires_at,
             revoked: None,
@@ -84,20 +84,20 @@ impl Authority {
     fn reason(&self) -> Option<String> {
         let mut state = self.0.lock().unwrap_or_else(|error| error.into_inner());
         if state.revoked.is_none() && Instant::now() >= state.expires_at {
-            state.revoked = Some("body authorization expired".into());
+            state.revoked = Some("motion authorization expired".into());
         }
         state.revoked.clone()
     }
 
-    fn renew(&self, authorization: BodyAuthorization) -> Result<()> {
+    fn renew(&self, authorization: MotionAuthorization) -> Result<()> {
         authorization.validate()?;
         let mut state = self.0.lock().unwrap_or_else(|error| error.into_inner());
         if state.revoked.is_none() && Instant::now() >= state.expires_at {
-            state.revoked = Some("body authorization expired".into());
+            state.revoked = Some("motion authorization expired".into());
         }
         ensure!(
             state.revoked.is_none(),
-            "body control lease is revoked or expired"
+            "motion control lease is revoked or expired"
         );
         // A valid but earlier request cannot shorten another verified renewal.
         state.expires_at = state.expires_at.max(authorization.expires_at);
@@ -129,7 +129,7 @@ impl Permit {
 
     pub fn local() -> Arc<Self> {
         Self::new(
-            Arc::new(Authority::new(BodyAuthorization {
+            Arc::new(Authority::new(MotionAuthorization {
                 expires_at: Instant::now() + MAX_AUTHORIZATION,
             })),
             None,
@@ -159,21 +159,21 @@ impl Permit {
 }
 
 pub(super) struct CommandRecord {
-    pub command: BodyCommand,
+    pub command: MotionCommand,
     canonical: Vec<u8>,
     pub permit: Arc<Permit>,
-    current: Mutex<BodyProgress>,
-    events: watch::Sender<BodyProgress>,
+    current: Mutex<MotionProgress>,
+    events: watch::Sender<MotionProgress>,
 }
 
 impl CommandRecord {
     fn new(
-        command: BodyCommand,
+        command: MotionCommand,
         canonical: Vec<u8>,
         permit: Arc<Permit>,
         rejection: Option<String>,
     ) -> Arc<Self> {
-        let progress = BodyProgress {
+        let progress = MotionProgress {
             identity: command.identity,
             receipt_sequence: 1,
             accepted_actions: if rejection.is_some() {
@@ -190,7 +190,7 @@ impl CommandRecord {
             backend: None,
             writer_quiescent: rejection.is_some(),
             position_confirmed_actions: None,
-            end: rejection.map(|reason| BodyEnd::Rejected { reason }),
+            end: rejection.map(|reason| MotionEnd::Rejected { reason }),
         };
         let events = watch::channel(progress.clone()).0;
         Arc::new(Self {
@@ -202,33 +202,33 @@ impl CommandRecord {
         })
     }
 
-    pub fn observation(&self) -> BodyObservation {
-        BodyObservation {
+    pub fn observation(&self) -> MotionObservation {
+        MotionObservation {
             progress: self.events.subscribe(),
         }
     }
 
-    pub fn snapshot(&self) -> BodyProgress {
+    pub fn snapshot(&self) -> MotionProgress {
         self.current
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .clone()
     }
 
-    pub fn update(&self, change: impl FnOnce(&mut BodyProgress)) -> Result<()> {
+    pub fn update(&self, change: impl FnOnce(&mut MotionProgress)) -> Result<()> {
         let mut current = self
             .current
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         ensure!(
             current.end.is_none(),
-            "body observation is already terminal"
+            "motion observation is already terminal"
         );
         let mut next = current.clone();
         next.receipt_sequence = next
             .receipt_sequence
             .checked_add(1)
-            .context("body receipt sequence exhausted")?;
+            .context("motion receipt sequence exhausted")?;
         change(&mut next);
         next.validate(Some(&current), &self.command)
             .map_err(anyhow::Error::msg)?;
@@ -237,7 +237,7 @@ impl CommandRecord {
         Ok(())
     }
 
-    pub fn finish(&self, end: BodyEnd) -> Result<()> {
+    pub fn finish(&self, end: MotionEnd) -> Result<()> {
         self.update(|progress| {
             progress.writer_quiescent = true;
             progress.end = Some(end);
@@ -246,7 +246,7 @@ impl CommandRecord {
 }
 
 pub(super) struct QueuedCommand {
-    pub prepared: PreparedBodyCommand,
+    pub prepared: PreparedMotionCommand,
     pub record: Arc<CommandRecord>,
 }
 
@@ -271,7 +271,7 @@ impl ActiveWork {
 }
 
 struct LeaseState {
-    identity: BodyControlLease,
+    identity: MotionControlLease,
     authority: Arc<Authority>,
     high_water: u64,
 }
@@ -283,8 +283,8 @@ pub(super) struct State {
     voice: Option<VoiceScope>,
     pub queue: VecDeque<QueuedCommand>,
     pub face: Option<FaceWork>,
-    records: HashMap<BodyCommandIdentity, Arc<CommandRecord>>,
-    receipts: VecDeque<BodyCommandIdentity>,
+    records: HashMap<MotionCommandIdentity, Arc<CommandRecord>>,
+    receipts: VecDeque<MotionCommandIdentity>,
     pub active: Option<ActiveWork>,
     smoothed_face: [f32; 3],
     pub spawned: bool,
@@ -323,16 +323,16 @@ impl State {
         self.generation = self
             .generation
             .checked_add(1)
-            .context("body control generation exhausted")?;
+            .context("motion control generation exhausted")?;
         Ok(self.generation)
     }
 
-    fn check_lease(&self, lease: &BodyControlLease) -> Result<&LeaseState> {
+    fn check_lease(&self, lease: &MotionControlLease) -> Result<&LeaseState> {
         let current = self
             .lease
             .as_ref()
-            .context("body control lease is absent")?;
-        ensure!(current.identity == *lease, "body control lease is stale");
+            .context("motion control lease is absent")?;
+        ensure!(current.identity == *lease, "motion control lease is stale");
         if let Some(reason) = current.authority.reason() {
             bail!(reason);
         }
@@ -355,7 +355,7 @@ impl State {
         while let Some(queued) = self.queue.pop_front() {
             if matches(&queued.record) {
                 queued.record.permit.cancel(reason);
-                queued.record.finish(BodyEnd::Cancelled {
+                queued.record.finish(MotionEnd::Cancelled {
                     reason: bounded_reason(reason),
                 })?;
             } else {
@@ -393,7 +393,7 @@ impl State {
                         .get(identity)
                         .is_some_and(|record| record.snapshot().end.is_some())
                 })
-                .context("body receipt capacity is exhausted")?;
+                .context("motion receipt capacity is exhausted")?;
             let identity = self.receipts.remove(position).expect("selected receipt");
             self.records.remove(&identity);
         }
@@ -422,7 +422,7 @@ impl Shared {
         let reason = state
             .fault
             .clone()
-            .unwrap_or_else(|| "body writer stopped".into());
+            .unwrap_or_else(|| "motion writer stopped".into());
         if let Some(lease) = state.lease.take() {
             lease.authority.revoke(&reason);
         }
@@ -435,11 +435,11 @@ impl Shared {
                 // A panic supplies no facts about the entered frame. Keep the
                 // previous complete prefix and report the evidence gap.
                 let end = if active_identity == Some(record.command.identity) {
-                    BodyEnd::Unknown {
+                    MotionEnd::Unknown {
                         reason: reason.clone(),
                     }
                 } else {
-                    BodyEnd::Failed {
+                    MotionEnd::Failed {
                         reason: reason.clone(),
                     }
                 };
@@ -475,8 +475,8 @@ impl MotionRuntime {
     }
 
     pub fn new_with_boot(config: MotionConfig, boot: Uuid) -> Result<Self> {
-        ensure!(!boot.is_nil(), "body device boot ID must not be nil");
-        alia_core::body::validate_animation_catalog(&config.approved_animations)
+        ensure!(!boot.is_nil(), "motion device boot ID must not be nil");
+        alia_core::embodiment::motion::validate_animation_catalog(&config.approved_animations)
             .map_err(anyhow::Error::msg)?;
         if !config.enabled {
             return Ok(Self::disabled_with_boot(config, boot));
@@ -537,9 +537,9 @@ impl MotionRuntime {
         }
     }
 
-    pub fn control_state(&self) -> BodyControlState {
+    pub fn control_state(&self) -> MotionControlState {
         let state = self.shared.lock();
-        BodyControlState {
+        MotionControlState {
             device_boot_id: state.boot,
             generation: state.generation,
             lease: state
@@ -555,18 +555,18 @@ impl MotionRuntime {
         &self,
         expected_generation: u64,
         server_instance_id: Uuid,
-        authorization: BodyAuthorization,
-    ) -> Result<BodyControlLease> {
+        authorization: MotionAuthorization,
+    ) -> Result<MotionControlLease> {
         authorization.validate()?;
-        ensure!(!server_instance_id.is_nil(), "nil body server instance");
+        ensure!(!server_instance_id.is_nil(), "nil motion server instance");
         let mut state = self.shared.lock();
-        ensure!(state.available(), "body writer is unavailable");
+        ensure!(state.available(), "motion writer is unavailable");
         ensure!(
             state.generation == expected_generation,
-            "body control generation changed"
+            "motion control generation changed"
         );
-        state.revoke("body control lease replaced")?;
-        let identity = BodyControlLease {
+        state.revoke("motion control lease replaced")?;
+        let identity = MotionControlLease {
             device_boot_id: state.boot,
             server_instance_id,
             generation: state.generation,
@@ -582,15 +582,15 @@ impl MotionRuntime {
 
     pub fn renew_control(
         &self,
-        lease: &BodyControlLease,
-        authorization: BodyAuthorization,
+        lease: &MotionControlLease,
+        authorization: MotionAuthorization,
     ) -> Result<()> {
         let state = self.shared.lock();
-        ensure!(state.available(), "body writer is unavailable");
+        ensure!(state.available(), "motion writer is unavailable");
         state.check_lease(lease)?.authority.renew(authorization)
     }
 
-    pub fn close_control(&self, lease: &BodyControlLease, reason: &str) -> Result<()> {
+    pub fn close_control(&self, lease: &MotionControlLease, reason: &str) -> Result<()> {
         let mut state = self.shared.lock();
         // Expired owners may still close their exact current lease. An old
         // generation must never revoke a replacement owner's output.
@@ -599,7 +599,7 @@ impl MotionRuntime {
                 .lease
                 .as_ref()
                 .is_some_and(|current| current.identity == *lease),
-            "body control lease is stale"
+            "motion control lease is stale"
         );
         state.revoke(reason)?;
         self.shared.wake.notify_all();
@@ -614,9 +614,9 @@ impl MotionRuntime {
 
     pub async fn prepare(
         &self,
-        command: BodyCommand,
+        command: MotionCommand,
         canonical_command_bytes: Vec<u8>,
-    ) -> Result<PreparedBodyCommand> {
+    ) -> Result<PreparedMotionCommand> {
         let result_rx = {
             let mut preparations = self.preparations.lock().await;
             // Finished jobs have left their blocking closure; pending jobs retain
@@ -627,17 +627,17 @@ impl MotionRuntime {
                     preparations
                         .swap_remove(index)
                         .await
-                        .context("body preparation worker panicked")?;
+                        .context("motion preparation worker panicked")?;
                 } else {
                     index += 1;
                 }
             }
             ensure!(
                 preparations.len() < PREPARATION_CAPACITY,
-                "body preparation capacity is exhausted"
+                "motion preparation capacity is exhausted"
             );
             let state = self.shared.lock();
-            ensure!(state.available(), "body writer is unavailable");
+            ensure!(state.available(), "motion writer is unavailable");
             let config = self.config.clone();
             #[cfg(test)]
             let preparation_hook = self.preparation_hook.clone();
@@ -650,45 +650,45 @@ impl MotionRuntime {
                     }
                     super::plan::prepare(&config, command, canonical_command_bytes)
                 }))
-                .unwrap_or_else(|_| Err(anyhow::anyhow!("body preparation panicked")));
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("motion preparation panicked")));
                 let _ = result_tx.send(result);
             }));
             result_rx
         };
-        result_rx.await.context("body preparation owner ended")?
+        result_rx.await.context("motion preparation owner ended")?
     }
 
     pub fn submit(
         &self,
-        prepared: PreparedBodyCommand,
-        authorization: BodyAuthorization,
-    ) -> Result<BodyObservation> {
+        prepared: PreparedMotionCommand,
+        authorization: MotionAuthorization,
+    ) -> Result<MotionObservation> {
         authorization.validate()?;
         let identity = prepared.command.identity;
         let mut state = self.shared.lock();
-        ensure!(state.available(), "body writer is unavailable");
+        ensure!(state.available(), "motion writer is unavailable");
         let current = state.check_lease(&identity.lease)?;
         current.authority.renew(authorization)?;
         if let Some(record) = state.records.get(&identity) {
             ensure!(
                 record.canonical == prepared.signed_bytes,
-                "body identity was reused with a different intent"
+                "motion identity was reused with a different intent"
             );
             return Ok(record.observation());
         }
         ensure!(
             identity.sequence > current.high_water,
-            "body command sequence is retired or stale"
+            "motion command sequence is retired or stale"
         );
-        if let BodyScope::Voice { scope } = prepared.command.scope {
+        if let MotionScope::Voice { scope } = prepared.command.scope {
             ensure!(
                 state.voice == Some(scope),
-                "body command has no matching local voice scope"
+                "motion command has no matching local voice scope"
             );
         }
         ensure!(
             state.queue.len() < QUEUE_CAPACITY,
-            "body command queue is full"
+            "motion command queue is full"
         );
         let authority = current.authority.clone();
         state.retire_receipts()?;
@@ -709,7 +709,7 @@ impl MotionRuntime {
                 .permit
                 .cancel("preempted by higher priority in the original scope");
         }
-        state.cancel_face("body command admitted");
+        state.cancel_face("motion command admitted");
         state
             .lease
             .as_mut()
@@ -731,31 +731,31 @@ impl MotionRuntime {
     /// already started but has not yet returned to its RPC caller.
     pub fn reject(
         &self,
-        command: BodyCommand,
+        command: MotionCommand,
         canonical: Vec<u8>,
         reason: &str,
-    ) -> Result<BodyObservation> {
+    ) -> Result<MotionObservation> {
         super::plan::validate_canonical(&command, &canonical)?;
         let identity = command.identity;
         let mut state = self.shared.lock();
         if let Some(record) = state.records.get(&identity) {
             ensure!(
                 record.canonical == canonical,
-                "body identity was reused with a different intent"
+                "motion identity was reused with a different intent"
             );
             return Ok(record.observation());
         }
         let lease = state
             .lease
             .as_ref()
-            .context("body rejection cannot be proven without the original current lease")?;
+            .context("motion rejection cannot be proven without the original current lease")?;
         ensure!(
             identity.lease == lease.identity,
-            "body rejection for a retired or unknown lease cannot be proven"
+            "motion rejection for a retired or unknown lease cannot be proven"
         );
         ensure!(
             identity.sequence > lease.high_water,
-            "body rejection for a retired sequence cannot be proven"
+            "motion rejection for a retired sequence cannot be proven"
         );
         // Authority may already have expired. The identity and admission
         // waterline, not renewed write permission, prove this specific rejection.
@@ -772,30 +772,30 @@ impl MotionRuntime {
         Ok(record.observation())
     }
 
-    pub fn observe(&self, identity: BodyCommandIdentity) -> Result<BodyObservation> {
+    pub fn observe(&self, identity: MotionCommandIdentity) -> Result<MotionObservation> {
         let state = self.shared.lock();
         ensure!(
             identity.is_valid() && identity.lease.device_boot_id == state.boot,
-            "invalid original body identity"
+            "invalid original motion identity"
         );
         Ok(state
             .records
             .get(&identity)
-            .context("body observation is unavailable; submission must not be replayed")?
+            .context("motion observation is unavailable; submission must not be replayed")?
             .observation())
     }
 
     pub async fn cancel(
         &self,
-        identity: BodyCommandIdentity,
+        identity: MotionCommandIdentity,
         reason: &str,
-    ) -> Result<BodyProgress> {
+    ) -> Result<MotionProgress> {
         let mut observation = {
             let mut state = self.shared.lock();
             let record = state
                 .records
                 .get(&identity)
-                .context("body observation is unavailable; cancellation has no quiescence proof")?
+                .context("motion observation is unavailable; cancellation has no quiescence proof")?
                 .clone();
             state.cancel_matching(reason, |candidate| candidate.command.identity == identity)?;
             self.shared.wake.notify_all();
@@ -811,32 +811,32 @@ impl MotionRuntime {
             }
         })
         .await
-        .context("body cancellation deadline exceeded; native writer remains owned")?
+        .context("motion cancellation deadline exceeded; native writer remains owned")?
     }
 
     pub fn activate_voice(&self, scope: &VoiceScope) -> Result<()> {
         let mut state = self.shared.lock();
         ensure!(
             scope.is_valid() && scope.device_boot_id == state.boot,
-            "invalid local body voice scope"
+            "invalid local motion voice scope"
         );
         if let Some(current) = state.voice
             && current.session_id == scope.session_id
         {
             ensure!(
                 scope.generation_epoch >= current.generation_epoch,
-                "body voice generation regressed"
+                "motion voice generation regressed"
             );
         }
         state.voice = Some(*scope);
-        state.cancel_matching("local body voice scope replaced", |record| {
+        state.cancel_matching("local motion voice scope replaced", |record| {
             record
                 .command
                 .scope
                 .voice()
                 .is_some_and(|old| old != *scope)
         })?;
-        state.cancel_face("local body voice scope replaced");
+        state.cancel_face("local motion voice scope replaced");
         self.shared.wake.notify_all();
         Ok(())
     }
@@ -845,7 +845,7 @@ impl MotionRuntime {
         let mut state = self.shared.lock();
         ensure!(
             scope.is_valid() && scope.device_boot_id == state.boot,
-            "invalid local body voice scope"
+            "invalid local motion voice scope"
         );
         let Some(current) = state.voice else {
             return Ok(());
@@ -856,12 +856,12 @@ impl MotionRuntime {
             return Ok(());
         }
         state.voice = Some(*scope);
-        state.cancel_matching("local body voice generation fenced", |record| {
+        state.cancel_matching("local motion voice generation fenced", |record| {
             record.command.scope.voice().is_some_and(|old| {
                 old.session_id == scope.session_id && old.generation_epoch < scope.generation_epoch
             })
         })?;
-        state.cancel_face("local body voice generation fenced");
+        state.cancel_face("local motion voice generation fenced");
         self.shared.wake.notify_all();
         Ok(())
     }
@@ -870,16 +870,16 @@ impl MotionRuntime {
         let mut state = self.shared.lock();
         ensure!(
             scope.is_valid() && scope.device_boot_id == state.boot,
-            "invalid local body voice scope"
+            "invalid local motion voice scope"
         );
         if state.voice != Some(*scope) {
             return Ok(());
         }
         state.voice = None;
-        state.cancel_matching("local body voice scope closed", |record| {
+        state.cancel_matching("local motion voice scope closed", |record| {
             record.command.scope.voice() == Some(*scope)
         })?;
-        state.cancel_face("local body voice scope closed");
+        state.cancel_face("local motion voice scope closed");
         self.shared.wake.notify_all();
         Ok(())
     }
@@ -931,7 +931,7 @@ impl MotionRuntime {
     }
 
     pub fn enrich_discovery_metadata(&self, metadata: &mut DiscoveryMetadata) {
-        // Persistent BodyDelivery must opt into the current Body contract.
+        // Persistent MotionDelivery must opt into the current Motion contract.
         // A native writer alone must never advertise end-to-end completion.
         if self.config.enabled && self.config.calibration_confirmed && self.mapper.is_some() {
             metadata.capabilities.push("motion.native".into());
@@ -972,7 +972,7 @@ impl ModuleLifecycle for MotionRuntime {
             let mut state = self.shared.lock();
             ensure!(
                 !state.stopping && !state.finished,
-                "body runtime cannot restart after shutdown"
+                "motion runtime cannot restart after shutdown"
             );
             if !state.spawned {
                 state.spawned = true;
@@ -981,7 +981,7 @@ impl ModuleLifecycle for MotionRuntime {
                 let mapper = self
                     .mapper
                     .clone()
-                    .context("body calibration is unavailable")?;
+                    .context("motion calibration is unavailable")?;
                 let servo = self.servo.clone();
                 *writer = Some(tokio::task::spawn_blocking(move || {
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -989,12 +989,12 @@ impl ModuleLifecycle for MotionRuntime {
                     }))
                     .unwrap_or_else(|_| {
                         Err(anyhow::anyhow!(
-                            "owned body writer panicked; native evidence is unknown"
+                            "owned motion writer panicked; native evidence is unknown"
                         ))
                     });
                     let close =
                         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| servo.close()))
-                            .map_err(|_| anyhow::anyhow!("closing owned body backend panicked"));
+                            .map_err(|_| anyhow::anyhow!("closing owned motion backend panicked"));
                     let result = result.and(close);
                     shared.writer_finished(&result);
                     result
@@ -1009,7 +1009,7 @@ impl ModuleLifecycle for MotionRuntime {
             startup
                 .changed()
                 .await
-                .context("body startup owner ended")?;
+                .context("motion startup owner ended")?;
         }
     }
 
@@ -1019,9 +1019,9 @@ impl ModuleLifecycle for MotionRuntime {
             if !state.stopping {
                 state.stopping = true;
                 state.ready = false;
-                state.revoke("body runtime stopping")?;
+                state.revoke("motion runtime stopping")?;
                 if let Some(active) = &state.active {
-                    active.permit().cancel("body runtime stopping");
+                    active.permit().cancel("motion runtime stopping");
                 }
                 if !state.spawned {
                     state.finished = true;
@@ -1037,7 +1037,7 @@ impl ModuleLifecycle for MotionRuntime {
                 self.shared
                     .lock()
                     .fault
-                    .get_or_insert_with(|| format!("joining body preparation: {error}"));
+                    .get_or_insert_with(|| format!("joining motion preparation: {error}"));
             }
         }
         drop(preparations);
@@ -1045,7 +1045,7 @@ impl ModuleLifecycle for MotionRuntime {
         if let Some(job) = writer.as_mut() {
             let result = job
                 .await
-                .context("joining owned body writer")
+                .context("joining owned motion writer")
                 .and_then(|result| result);
             *writer = None;
             // Also handles a task-level panic outside the writer's native panic
@@ -1079,9 +1079,9 @@ impl Drop for MotionRuntime {
         let mut state = self.shared.lock();
         state.stopping = true;
         state.ready = false;
-        let _ = state.revoke("body runtime owner dropped");
+        let _ = state.revoke("motion runtime owner dropped");
         if let Some(active) = &state.active {
-            active.permit().cancel("body runtime owner dropped");
+            active.permit().cancel("motion runtime owner dropped");
         }
         self.shared.wake.notify_all();
     }
@@ -1090,25 +1090,25 @@ impl Drop for MotionRuntime {
 pub(super) fn validate_config(config: &MotionConfig) -> Result<()> {
     ensure!(
         !config.hardware_enabled || config.calibration_confirmed,
-        "native body output requires confirmed mechanism calibration"
+        "native motion output requires confirmed mechanism calibration"
     );
     ensure!(
-        (1..=MAX_BODY_CHANNELS).contains(&config.servo_count),
-        "body servo count must be 1..32"
+        (1..=MAX_MOTION_CHANNELS).contains(&config.servo_count),
+        "motion servo count must be 1..32"
     );
     ensure!(
         (1..=120).contains(&config.fps),
-        "body writer FPS must be 1..120"
+        "motion writer FPS must be 1..120"
     );
     ensure!(
         config.max_servo_speed_deg_per_sec.is_finite()
             && config.max_servo_speed_deg_per_sec > 0.0
             && config.max_servo_speed_deg_per_sec <= 720.0,
-        "body servo speed must be finite and 0..720 degrees/second"
+        "motion servo speed must be finite and 0..720 degrees/second"
     );
     ensure!(
         config.center_angle.is_finite() && (0.0..=180.0).contains(&config.center_angle),
-        "invalid body center angle"
+        "invalid motion center angle"
     );
     ensure!(
         config.serial_startup_delay_ms <= 30_000,
@@ -1126,18 +1126,18 @@ pub(super) fn validate_config(config: &MotionConfig) -> Result<()> {
         ]
         .iter()
         .all(|value| value.is_finite()),
-        "body face configuration must be finite"
+        "motion face configuration must be finite"
     );
     ensure!(
         (0.0..=180.0).contains(&config.face_max_yaw)
             && (0.0..=180.0).contains(&config.face_max_pitch)
             && (0.0..=1.0).contains(&config.face_deadzone)
             && (0.0..=1.0).contains(&config.face_smooth_alpha),
-        "invalid body face limits"
+        "invalid motion face limits"
     );
     ensure!(
         config.min_pulse_us < config.max_pulse_us && config.pca_frequency_hz > 0,
-        "invalid body PWM configuration"
+        "invalid motion PWM configuration"
     );
     if config.hardware_enabled && matches!(config.servo_backend.as_str(), "pca9685" | "i2c") {
         validate_pca_addresses(config)?;

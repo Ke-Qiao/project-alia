@@ -4,7 +4,7 @@ The central server for the Alia personal AI assistant system. Handles API reques
 
 ## Prerequisites
 
-- Rust 1.85+ (2024 edition)
+- Rust 1.96.0 (pinned by the workspace `rust-toolchain.toml`, 2024 edition)
 - PostgreSQL 15+
 - A running `alia-embedded` instance (optional, for device control)
 
@@ -114,8 +114,8 @@ src/
 ├── embedded/          # Reusable embedded gRPC client helpers
 ├── module/            # Module lifecycle, registry, builder, factory
 ├── providers/         # AI adapter trait definitions + implementations
-│   ├── adapter.rs     # All trait definitions (LlmAdapter, SttAdapter, etc.)
-│   ├── llm/           # LLM adapters (OpenAI, Anthropic, Gemini)
+│   ├── adapter.rs     # Domain records and audio/embedding contracts
+│   ├── llm/           # Rig model service, profile lifecycle and response admission
 │   ├── stt/           # Speech-to-text (whisper.cpp)
 │   ├── tts/           # Text-to-speech (GPT-SoVITS)
 │   ├── embedding/     # Embedding adapters (OpenAI)

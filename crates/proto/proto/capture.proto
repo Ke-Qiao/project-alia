@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package alia.capture.v1;
+
+// Authenticated system control of an Alia voice session, independent of board
+// initialization and microphone power. No operation issues an R1 command.
+service CaptureControl {
+  rpc Inspect(InspectCaptureRequest) returns (CaptureState);
+  rpc Start(CaptureRequest) returns (CaptureState);
+  rpc Stop(CaptureRequest) returns (CaptureState);
+}
+
+message InspectCaptureRequest {}
+
+message CaptureRequest {
+  string device_boot_id = 1;
+  uint64 expected_generation = 2;
+}
+
+message CaptureState {
+  string device_boot_id = 1;
+  uint64 generation = 2; // Local control revision, not a VoiceScope epoch.
+  bool active = 3; // Locally admitted, not proof of Server Ready or PCM delivery.
+  bool available = 4;
+}

@@ -22,10 +22,17 @@ metadata and adds semantic similarity before optional minor LLM filtering.
 
 ## Tool Calling
 
-The preferred path is native provider tool/function calling. Text-based tool
-call parsing is fallback-only and accepts strict structured envelopes. The
-pipeline should ignore examples or ordinary assistant prose that merely looks
-like tool syntax.
+Rig AgentRun processes native provider tool/function calls through the shared
+Execution service. Text resembling tool syntax remains ordinary assistant text;
+the previous text-based execution fallback has been removed. Each tool round
+revalidates Context and execution identity. The final summary turn disables
+tool selection and independently rejects calls beyond the configured budget.
+
+Rust tools, MCP services, and WASM packages share `ToolEntry`, typed parameter
+validation, host approval policy, and durable receipts. See the
+[tool and fetch contract](../../../docs/concepts/skills-and-tools.md),
+[MCP setup](../../../docs/operations/mcp-tools.md), and
+[WASM setup](../../../docs/operations/wasm-plugins.md).
 
 ## Automation
 
@@ -115,7 +122,7 @@ VoiceSession v2: ordered capture + local VAD evidence
   -> server Easy-Turn provider
   -> owner-bound recognized voice input
   -> router/cache/appraisal/memory
-  -> registered Playback v3 / BodyControl output
+  -> registered Playback v3 / MotionControl output
 ```
 
 The original account, channel, device boot, session, generation, and source

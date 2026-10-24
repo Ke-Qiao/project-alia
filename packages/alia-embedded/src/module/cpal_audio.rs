@@ -30,8 +30,12 @@ use super::volume::{AudioVolumeState, apply_gain_in_place};
 
 #[cfg(target_os = "linux")]
 mod alsa_backend;
+#[cfg(test)]
+mod capture_tests;
 mod clock;
 mod cpal_backend;
+#[cfg(all(test, target_os = "linux"))]
+mod hardware_tests;
 mod playback;
 
 use super::playback_session::AudioSubmission;
@@ -42,9 +46,13 @@ use playback::{
 pub struct CpalAudioCapture {
     config: AudioConfig,
     volume: AudioVolumeState,
-    control_tx: Mutex<Option<mpsc::Sender<()>>>,
-    thread: Mutex<Option<JoinHandle<()>>>,
-    active: AtomicBool,
+    runtime: Mutex<Option<CaptureRuntime>>,
+}
+
+struct CaptureRuntime {
+    control_tx: mpsc::Sender<()>,
+    thread: JoinHandle<()>,
+    stopped: tokio_util::sync::CancellationToken,
 }
 
 impl CpalAudioCapture {
@@ -52,9 +60,64 @@ impl CpalAudioCapture {
         Self {
             config,
             volume,
-            control_tx: Mutex::new(None),
-            thread: Mutex::new(None),
-            active: AtomicBool::new(false),
+            runtime: Mutex::new(None),
+        }
+    }
+
+    fn start_with(
+        &self,
+        bus: &AudioBus,
+        run: impl FnOnce(
+            AudioBus,
+            mpsc::Sender<()>,
+            mpsc::Receiver<()>,
+            mpsc::SyncSender<std::result::Result<(), String>>,
+        ) -> Result<()>
+        + Send
+        + 'static,
+    ) -> Result<()> {
+        let mut runtime = lock_mutex(&self.runtime, "capture runtime")?;
+        if let Some(current) = runtime.as_ref() {
+            anyhow::ensure!(
+                !current.stopped.is_cancelled() && !current.thread.is_finished(),
+                "capture owner exited; stop and join it before restarting"
+            );
+            return Ok(());
+        }
+
+        let (control_tx, control_rx) = mpsc::channel();
+        let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        let stopped = bus.begin_capture();
+        let lifetime = stopped.clone().drop_guard();
+        let bus = bus.clone();
+        let error_tx = control_tx.clone();
+        let handle = thread::Builder::new()
+            .name("alia-cpal-capture".to_string())
+            .spawn(move || {
+                let _lifetime = lifetime;
+                if let Err(error) = run(bus, error_tx, control_rx, ready_tx) {
+                    error!(%error, "cpal capture thread stopped with error");
+                }
+            })
+            .context("spawning cpal capture thread")?;
+        match ready_rx.recv().context("waiting for cpal capture startup") {
+            Ok(Ok(())) => {
+                *runtime = Some(CaptureRuntime {
+                    control_tx,
+                    thread: handle,
+                    stopped,
+                });
+                Ok(())
+            }
+            result => {
+                let _ = control_tx.send(());
+                let _ = handle.join();
+                match result {
+                    Ok(Err(error)) => bail!(error),
+                    Err(error) => Err(error),
+                    Ok(Ok(())) => unreachable!(),
+                }
+            }
         }
     }
 }
@@ -80,87 +143,32 @@ impl ModuleLifecycle for CpalAudioCapture {
 
 impl AudioCaptureBackend for CpalAudioCapture {
     fn start_capture(&self, bus: &AudioBus) -> Result<()> {
-        let mut thread_slot = lock_mutex(&self.thread, "capture thread")?;
-        if thread_slot.is_some() {
-            return Ok(());
-        }
-
-        let (control_tx, control_rx) = mpsc::channel();
-        let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let config = self.config.clone();
         let volume = self.volume.clone();
-        let bus = bus.clone();
-
-        let handle = thread::Builder::new()
-            .name("alia-cpal-capture".to_string())
-            .spawn(move || {
-                let result = run_capture_thread(config, bus, control_rx, ready_tx, volume);
-                if let Err(error) = result {
-                    error!(%error, "cpal capture thread stopped with error");
-                }
-            })
-            .context("spawning cpal capture thread")?;
-
-        match ready_rx
-            .recv()
-            .context("waiting for cpal capture startup")?
-        {
-            Ok(()) => {
-                *lock_mutex(&self.control_tx, "capture control")? = Some(control_tx);
-                *thread_slot = Some(handle);
-                self.active.store(true, Ordering::Release);
-                Ok(())
-            }
-            Err(error) => {
-                let _ = handle.join();
-                bail!(error);
-            }
-        }
+        self.start_with(bus, move |bus, error_tx, control_rx, ready_tx| {
+            run_capture_thread(config, bus, error_tx, control_rx, ready_tx, volume)
+        })
     }
 
     fn stop_capture(&self) -> Result<()> {
-        if let Some(tx) = lock_mutex(&self.control_tx, "capture control")?.take() {
-            let _ = tx.send(());
+        // Keep the owner locked until join completes so start cannot overlap it.
+        let mut runtime = lock_mutex(&self.runtime, "capture runtime")?;
+        if let Some(current) = runtime.take() {
+            let _ = current.control_tx.send(());
+            current
+                .thread
+                .join()
+                .map_err(|_| anyhow!("capture thread panicked"))?;
         }
-        if let Some(handle) = lock_mutex(&self.thread, "capture thread")?.take() {
-            let _ = handle.join();
-        }
-        self.active.store(false, Ordering::Release);
         Ok(())
     }
 
     fn is_available(&self) -> bool {
-        if matches!(
-            resolved_capture_backend(&self.config),
-            ResolvedAudioBackend::Alsa
-        ) {
-            #[cfg(target_os = "linux")]
-            {
-                return resolved_alsa_capture_device(&self.config)
-                    .is_some_and(|device| alsa_capture_device_available(&device));
-            }
-
-            #[cfg(not(target_os = "linux"))]
-            {
-                return false;
-            }
-        }
-
-        let host = cpal::default_host();
-        if select_input_device(&host, &self.config.capture_device).is_ok() {
-            return true;
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            return resolved_alsa_capture_device(&self.config)
-                .is_some_and(|device| alsa_capture_device_available(&device));
-        }
-
-        #[cfg(not(target_os = "linux"))]
-        {
-            false
-        }
+        self.runtime.lock().is_ok_and(|runtime| {
+            runtime.as_ref().is_some_and(|current| {
+                !current.stopped.is_cancelled() && !current.thread.is_finished()
+            })
+        })
     }
 }
 
@@ -370,37 +378,12 @@ impl AudioPlaybackBackend for CpalAudioPlayback {
     }
 
     fn is_available(&self) -> bool {
-        if matches!(
-            resolved_playback_backend(&self.config),
-            ResolvedAudioBackend::Alsa
-        ) {
-            #[cfg(target_os = "linux")]
-            {
-                return resolved_alsa_playback_device(&self.config)
-                    .is_some_and(|device| alsa_playback_device_available(&device));
-            }
-
-            #[cfg(not(target_os = "linux"))]
-            {
-                return false;
-            }
-        }
-
-        let host = cpal::default_host();
-        if select_output_device(&host, &self.config.playback_device).is_ok() {
-            return true;
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            return resolved_alsa_playback_device(&self.config)
-                .is_some_and(|device| alsa_playback_device_available(&device));
-        }
-
-        #[cfg(not(target_os = "linux"))]
-        {
-            false
-        }
+        // An active owner may hold the native device exclusively.
+        self.runtime.lock().is_ok_and(|runtime| {
+            runtime
+                .as_ref()
+                .is_some_and(|current| !current.thread.is_finished())
+        })
     }
 }
 
@@ -445,6 +428,7 @@ fn alsa_capture_s32_shift_override(config: &AudioConfig) -> Option<u8> {
 fn run_capture_thread(
     config: AudioConfig,
     bus: AudioBus,
+    error_tx: mpsc::Sender<()>,
     control_rx: mpsc::Receiver<()>,
     ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
     volume: AudioVolumeState,
@@ -472,7 +456,8 @@ fn run_capture_thread(
         }
     }
 
-    let started = cpal_backend::start_cpal_capture_runtime(&config, bus.clone(), volume.clone());
+    let started =
+        cpal_backend::start_cpal_capture_runtime(&config, bus.clone(), volume.clone(), error_tx);
 
     let stream = match started {
         Ok(stream) => {
@@ -919,16 +904,6 @@ fn lock_mutex<'a, T>(mutex: &'a Mutex<T>, name: &str) -> Result<std::sync::Mutex
 
 fn device_name(device: &Device) -> String {
     device.name().unwrap_or_else(|_| "<unknown>".to_string())
-}
-
-#[cfg(target_os = "linux")]
-fn alsa_capture_device_available(device_name: &str) -> bool {
-    AlsaPcm::new(device_name, AlsaDirection::Capture, true).is_ok()
-}
-
-#[cfg(target_os = "linux")]
-fn alsa_playback_device_available(device_name: &str) -> bool {
-    AlsaPcm::new(device_name, AlsaDirection::Playback, true).is_ok()
 }
 
 #[cfg(target_os = "linux")]

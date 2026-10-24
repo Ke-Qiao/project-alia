@@ -1,0 +1,22 @@
+[package]
+name = "alia-plugin-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+alia-plugin-api = { path = "../alia-plugin-api" }
+anyhow.workspace = true
+extism.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+wasmparser = "=0.258.3"
+wasmtime = { version = "49", default-features = false }
+tempfile = "3"
+
+[dev-dependencies]
+wat = "1"

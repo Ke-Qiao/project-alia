@@ -10,6 +10,8 @@ pub struct EmbeddedConfig {
     pub identity: IdentityConfig,
     pub wakeword: WakewordConfig,
     #[serde(default)]
+    pub r1: R1Config,
+    #[serde(default)]
     pub speech: SpeechConfig,
     #[serde(default)]
     pub vad: VadConfig,
@@ -128,7 +130,7 @@ fn default_wakeword_module() -> String {
 }
 
 fn default_vad_module() -> String {
-    "sherpa_onnx".to_string()
+    "silero".to_string()
 }
 fn default_direct_response_module() -> String {
     "keyword".to_string()
@@ -161,6 +163,24 @@ impl Default for IdentityConfig {
             device_name: "Alia Accessory".to_string(),
             keypair_path: PathBuf::from("device.key"),
         }
+    }
+}
+
+/// Host control UART for the existing R1 firmware. Audio uses the capture slot.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct R1Config {
+    /// Explicit device path; an empty default never selects a serial device.
+    pub serial_path: PathBuf,
+}
+
+impl R1Config {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !self.serial_path.as_os_str().is_empty(),
+            "R1 control requires an explicit r1.serial_path"
+        );
+        Ok(())
     }
 }
 
@@ -248,6 +268,7 @@ fn default_kws_num_threads() -> i32 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SpeechConfig {
+    pub trigger: SpeechTrigger,
     /// Exact Server channel instance ID, never a channel-type alias.
     #[serde(deserialize_with = "deserialize_speech_channel_id")]
     pub channel_id: String,
@@ -258,11 +279,20 @@ pub struct SpeechConfig {
 impl Default for SpeechConfig {
     fn default() -> Self {
         Self {
+            trigger: SpeechTrigger::Wakeword,
             channel_id: "embedded".into(),
             pre_roll_ms: 200,
             upload_queue_frames: 32,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpeechTrigger {
+    #[default]
+    Wakeword,
+    System,
 }
 
 impl SpeechConfig {
@@ -302,6 +332,7 @@ where
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VadConfig {
     #[serde(default = "default_vad_model_path")]
     pub model_path: PathBuf,
@@ -315,10 +346,6 @@ pub struct VadConfig {
     pub min_speech_duration_ms: u32,
     #[serde(default = "default_vad_window_size")]
     pub window_size: i32,
-    #[serde(default = "default_vad_max_speech_duration_ms")]
-    pub max_speech_duration_ms: u32,
-    #[serde(default = "default_vad_buffer_size_sec")]
-    pub buffer_size_sec: f32,
     #[serde(default = "default_sherpa_provider")]
     pub provider: String,
     #[serde(default = "default_vad_num_threads")]
@@ -336,12 +363,29 @@ impl Default for VadConfig {
             min_silence_duration_ms: default_vad_min_silence_duration_ms(),
             min_speech_duration_ms: default_vad_min_speech_duration_ms(),
             window_size: default_vad_window_size(),
-            max_speech_duration_ms: default_vad_max_speech_duration_ms(),
-            buffer_size_sec: default_vad_buffer_size_sec(),
             provider: default_sherpa_provider(),
             num_threads: default_vad_num_threads(),
             debug: false,
         }
+    }
+}
+
+impl VadConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.sample_rate == 16_000 && self.window_size == 512,
+            "Silero VAD requires sample_rate = 16000 and window_size = 512"
+        );
+        anyhow::ensure!(
+            self.provider == "cpu",
+            "Silero VAD supports only provider = 'cpu'"
+        );
+        anyhow::ensure!(self.num_threads > 0, "VAD num_threads must be positive");
+        anyhow::ensure!(
+            self.threshold.is_finite() && self.threshold > 0.0 && self.threshold < 1.0,
+            "VAD threshold must be finite and strictly between 0 and 1"
+        );
+        Ok(())
     }
 }
 
@@ -362,12 +406,6 @@ fn default_vad_min_speech_duration_ms() -> u32 {
 }
 fn default_vad_window_size() -> i32 {
     512
-}
-fn default_vad_max_speech_duration_ms() -> u32 {
-    15_000
-}
-fn default_vad_buffer_size_sec() -> f32 {
-    10.0
 }
 fn default_vad_num_threads() -> i32 {
     1
@@ -621,7 +659,7 @@ pub struct MotionConfig {
     pub animation_dir: PathBuf,
     /// Reviewed local pins; remote settings cannot change this trust catalog.
     #[serde(default)]
-    pub approved_animations: Vec<alia_core::body::BodyAnimationAsset>,
+    pub approved_animations: Vec<alia_core::embodiment::motion::MotionAnimationAsset>,
     #[serde(default = "default_motion_servo_count")]
     pub servo_count: usize,
     #[serde(default = "default_motion_servo_backend")]
@@ -974,6 +1012,8 @@ pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub wakeword: WakewordConfig,
     #[serde(default)]
+    pub r1: R1Config,
+    #[serde(default)]
     pub audio: AudioConfig,
     #[serde(default)]
     pub speech: SpeechConfig,
@@ -1002,6 +1042,7 @@ impl Default for EmbeddedConfig {
             device_runtime: DeviceRuntimeConfig::default(),
             identity: IdentityConfig::default(),
             wakeword: WakewordConfig::default(),
+            r1: R1Config::default(),
             speech: SpeechConfig::default(),
             vad: VadConfig::default(),
             audio: AudioConfig::default(),
@@ -1025,6 +1066,7 @@ impl EmbeddedConfig {
         self.device_runtime = runtime.device_runtime;
         self.identity = runtime.identity;
         self.wakeword = runtime.wakeword;
+        self.r1 = runtime.r1;
         self.audio = runtime.audio;
         self.speech = runtime.speech;
         self.vad = runtime.vad;
@@ -1047,6 +1089,7 @@ impl EmbeddedConfig {
             },
             identity: self.identity.clone(),
             wakeword: self.wakeword.clone(),
+            r1: self.r1.clone(),
             audio: self.audio.clone(),
             speech: self.speech.clone(),
             vad: self.vad.clone(),

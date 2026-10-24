@@ -1,5 +1,6 @@
 use crate::modules::delivery::audio::AudioBuffer;
 use crate::modules::delivery::transport::{AudioFormat, AudioPayload, DeliveryTarget};
+use crate::providers::llm::LlmService;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -31,7 +32,7 @@ use crate::modules::delivery::audio::{MAX_PCM_PAYLOAD_BYTES, ResponseAudioBudget
 use crate::modules::memory::MemoryContextPack;
 use crate::{
     modules::interaction::conversation::{ConversationEventEntry, ConversationStore},
-    providers::adapter::{ChatMessage, LlmAdapter, TtsAdapter, TtsCapabilities, TtsRequest},
+    providers::adapter::{ChatMessage, TtsAdapter, TtsCapabilities, TtsRequest},
 };
 use uuid::Uuid;
 
@@ -481,7 +482,7 @@ async fn execute_speech_start_expression(
 
 pub(super) async fn stream_llm_response_with_sentence_tts(
     modules: &InteractionServices,
-    llm: &dyn LlmAdapter,
+    llm: &LlmService,
     channel: &dyn ChannelAdapter,
     target: &DeliveryTarget,
     channel_id: &str,
@@ -624,7 +625,7 @@ async fn resolve_sentence_speech(
     expression: Arc<crate::expression::ExpressionRuntime>,
     context: &crate::modules::memory::context::ContextService,
     generation: &crate::modules::memory::context::GenerationContext,
-    sentence_expression_llm: Option<Arc<dyn LlmAdapter>>,
+    sentence_expression_llm: Option<Arc<LlmService>>,
     input: ExpressionInput,
     baseline: SpeechExpression,
     trace_context: Option<TtsTraceContext>,
@@ -835,7 +836,7 @@ async fn record_sentence_expression_trace(
 }
 
 async fn sentence_expression_llm_patch(
-    llm: &dyn LlmAdapter,
+    llm: &LlmService,
     policy: &SentenceExpressionLlmPolicySection,
     input: &ExpressionInput,
     baseline: &SpeechExpression,
@@ -843,7 +844,7 @@ async fn sentence_expression_llm_patch(
     let messages = sentence_expression_messages(input, baseline);
     let result = timeout(
         Duration::from_millis(policy.timeout_ms.max(1)),
-        llm.chat(&messages),
+        llm.text(&messages),
     )
     .await;
 
@@ -1082,7 +1083,7 @@ async fn stream_tts_sentences(
     tts: Arc<dyn TtsAdapter>,
     budget: ResponseAudioBudget,
     expression: Arc<crate::expression::ExpressionRuntime>,
-    sentence_expression_llm: Option<Arc<dyn LlmAdapter>>,
+    sentence_expression_llm: Option<Arc<LlmService>>,
     mut sentence_rx: mpsc::Receiver<String>,
     audio_tx: mpsc::Sender<SentenceAudio>,
     audio_started: Arc<AtomicBool>,
@@ -1369,7 +1370,7 @@ fn drain_speakable_segment(buffer: &mut String, final_flush: bool) -> Option<Str
 
 pub(super) async fn stream_llm_response(
     modules: &InteractionServices,
-    llm: &dyn LlmAdapter,
+    llm: &LlmService,
     channel: &dyn ChannelAdapter,
     target: &DeliveryTarget,
     channel_id: &str,
@@ -1407,7 +1408,7 @@ struct GeneratedText {
 /// the original writer or start another dispatch for the same representation.
 async fn stream_generated_text(
     modules: &InteractionServices,
-    llm: &dyn LlmAdapter,
+    llm: &LlmService,
     channel: &dyn ChannelAdapter,
     target: &DeliveryTarget,
     channel_id: &str,
@@ -1422,7 +1423,7 @@ async fn stream_generated_text(
         MAX_TEXT_BYTES, MAX_TEXT_CHUNK_BYTES, MAX_TEXT_CHUNKS, TextChunk, TextFrame,
     };
     let mut tokens =
-        match cancellable_stage(turn, "llm_stream_start", llm.chat_stream(messages)).await? {
+        match cancellable_stage(turn, "llm_stream_start", llm.text_stream(messages)).await? {
             Some(tokens) => tokens,
             None => return Ok(String::new()),
         };

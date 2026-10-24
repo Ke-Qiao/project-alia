@@ -1,4 +1,5 @@
 import { apiRequest, authedFetcher, normalizeApiPath } from '@/lib/api/client';
+import { executeToolRequest } from '@/lib/api/tool-recovery';
 import type {
   AuthResponse,
   ChannelsResponse,
@@ -15,7 +16,8 @@ import type {
   SettingsUpdateResponse,
   Skill,
   ToolDefinition,
-  ToolResult,
+  EffectRecord,
+  ExecuteToolRequest,
 } from '@/lib/api/types';
 import { useSession } from '@/lib/session/provider';
 import useSWR from 'swr';
@@ -70,10 +72,12 @@ export function useApiAction<TResponse = unknown>() {
   const session = useSession();
   return useSWRMutation(
     keyFor(session.effectiveBaseUrl, session.accessToken, '__action__'),
-    (
-      [baseUrl, token],
-      { arg }: MutationArg<{ path: string; method?: string; body?: unknown }>
-    ) => apiRequest<TResponse>(baseUrl, arg.path, { method: arg.method ?? 'POST', body: arg.body, token })
+    ([baseUrl, token], { arg }: MutationArg<{ path: string; method?: string; body?: unknown }>) =>
+      apiRequest<TResponse>(baseUrl, arg.path, {
+        method: arg.method ?? 'POST',
+        body: arg.body,
+        token,
+      })
   );
 }
 
@@ -92,28 +96,37 @@ export function useSetupTemplate() {
 }
 
 export function useSaveSetupConfig() {
-  return usePublicMutation<{ config: string; path?: string }, { success: boolean; path: string; error?: string }>(
-    '/api/v1/setup/save-config'
-  );
+  return usePublicMutation<
+    { config: string; path?: string },
+    { success: boolean; path: string; error?: string }
+  >('/api/v1/setup/save-config');
 }
 
 export function useChannels() {
   const session = useSession();
-  return useSWR(keyFor(session.effectiveBaseUrl, session.accessToken, '/api/v1/channels'), ([, , path]) =>
-    authedFetcher<ChannelsResponse>(session, path)
+  return useSWR(
+    keyFor(session.effectiveBaseUrl, session.accessToken, '/api/v1/channels'),
+    ([, , path]) => authedFetcher<ChannelsResponse>(session, path)
   );
 }
 
 export function useDeviceCandidate() {
   const session = useSession();
-  return useSWR(keyFor(session.effectiveBaseUrl, session.accessToken, '/api/v1/device'), ([, , path]) =>
-    authedFetcher<DeviceInfo | null>(session, path)
+  return useSWR(
+    keyFor(session.effectiveBaseUrl, session.accessToken, '/api/v1/device'),
+    ([, , path]) => authedFetcher<DeviceInfo | null>(session, path)
   );
 }
 
 export function useBindDevice() {
   return useApiMutation<
-    { channel_id?: string; server_id?: string; server_name?: string; server_endpoint?: string; require_confirmation?: boolean },
+    {
+      channel_id?: string;
+      server_id?: string;
+      server_name?: string;
+      server_endpoint?: string;
+      require_confirmation?: boolean;
+    },
     DeviceInfo
   >('/api/v1/device/bind');
 }
@@ -127,13 +140,17 @@ export function useSettings(prefix?: string) {
 }
 
 export function usePatchSettings() {
-  return useApiMutation<Record<string, unknown>, SettingsUpdateResponse>('/api/v1/settings', 'PATCH');
+  return useApiMutation<Record<string, unknown>, SettingsUpdateResponse>(
+    '/api/v1/settings',
+    'PATCH'
+  );
 }
 
 export function useSkills() {
   const session = useSession();
-  return useSWR(keyFor(session.effectiveBaseUrl, session.accessToken, '/api/v1/skills'), ([, , path]) =>
-    authedFetcher<Skill[]>(session, path)
+  return useSWR(
+    keyFor(session.effectiveBaseUrl, session.accessToken, '/api/v1/skills'),
+    ([, , path]) => authedFetcher<Skill[]>(session, path)
   );
 }
 
@@ -143,14 +160,36 @@ export function useMatchSkill() {
 
 export function useTools() {
   const session = useSession();
-  return useSWR(keyFor(session.effectiveBaseUrl, session.accessToken, '/api/v1/tools'), ([, , path]) =>
-    authedFetcher<ToolDefinition[]>(session, path)
+  return useSWR(
+    keyFor(session.effectiveBaseUrl, session.accessToken, '/api/v1/tools'),
+    ([, , path]) => authedFetcher<ToolDefinition[]>(session, path)
   );
 }
 
 export function useExecuteTool() {
-  return useApiMutation<{ tool_name: string; arguments: unknown; call_id?: string }, ToolResult>(
-    '/api/v1/tools/execute'
+  const session = useSession();
+  return useSWRMutation(
+    keyFor(session.effectiveBaseUrl, session.accessToken, '/api/v1/tools/execute'),
+    (
+      [baseUrl, token, endpoint],
+      { arg }: MutationArg<{ request: ExecuteToolRequest; reconcile: boolean }>
+    ) =>
+      executeToolRequest(
+        arg.request,
+        arg.reconcile,
+        (before) =>
+          apiRequest<EffectRecord[]>(
+            baseUrl,
+            normalizeApiPath('/api/v1/effects', {
+              request_id: arg.request.request_id,
+              before,
+              limit: 100,
+            }),
+            { token }
+          ),
+        () =>
+          apiRequest<EffectRecord>(baseUrl, endpoint, { method: 'POST', body: arg.request, token })
+      )
   );
 }
 
@@ -180,7 +219,13 @@ export function useMemoryCapabilities() {
 
 export function useCreateMemory() {
   return useApiMutation<
-    { content: string; memory_layer?: string; node_type?: string; kind?: string; importance?: number },
+    {
+      content: string;
+      memory_layer?: string;
+      node_type?: string;
+      kind?: string;
+      importance?: number;
+    },
     MemoryInfo
   >('/api/v1/memories');
 }
@@ -193,7 +238,13 @@ export function useSearchMemories() {
 
 export function useUpdateMemoryPrivacy() {
   return useApiMutation<
-    { enabled?: boolean; automatic_capture_enabled?: boolean; capture_mode?: string; pause_days?: number; clear_pause?: boolean },
+    {
+      enabled?: boolean;
+      automatic_capture_enabled?: boolean;
+      capture_mode?: string;
+      pause_days?: number;
+      clear_pause?: boolean;
+    },
     MemoryPrivacy
   >('/api/v1/memories/privacy', 'PATCH');
 }
@@ -212,7 +263,8 @@ export function useRelationshipProfile() {
 
 export function useSensors() {
   const session = useSession();
-  return useSWR(keyFor(session.effectiveBaseUrl, session.accessToken, '/api/v1/sensors'), ([, , path]) =>
-    authedFetcher<SensorSummary[]>(session, path)
+  return useSWR(
+    keyFor(session.effectiveBaseUrl, session.accessToken, '/api/v1/sensors'),
+    ([, , path]) => authedFetcher<SensorSummary[]>(session, path)
   );
 }

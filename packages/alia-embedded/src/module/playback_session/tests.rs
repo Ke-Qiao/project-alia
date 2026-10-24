@@ -236,16 +236,19 @@ fn hardware_stop_failure_never_leaves_a_stale_scope_admissible() {
 }
 
 #[tokio::test]
-async fn prior_native_and_body_retirement_failures_survive_later_successful_close() {
+async fn prior_native_and_motion_retirement_failures_survive_later_successful_close() {
     use alia_core::output_control::OutputRetirementRequest;
     use std::sync::atomic::{AtomicBool, Ordering};
-    struct Body(AtomicBool);
-    impl VoiceOutputFence for Body {
+    struct Motion(AtomicBool);
+    impl VoiceOutputFence for Motion {
         fn activate_voice(&self, _: &VoiceScope) -> Result<()> {
             Ok(())
         }
         fn fence_voice(&self, _: &VoiceScope) -> Result<()> {
-            ensure!(!self.0.load(Ordering::Acquire), "original body stop failed");
+            ensure!(
+                !self.0.load(Ordering::Acquire),
+                "original motion stop failed"
+            );
             Ok(())
         }
         fn close_voice(&self, scope: &VoiceScope) -> Result<()> {
@@ -277,8 +280,8 @@ async fn prior_native_and_body_retirement_failures_survive_later_successful_clos
         "later close erased the earlier native failure"
     );
 
-    let body = Arc::new(Body(AtomicBool::new(false)));
-    let session = PlaybackSession::with_output_fence(Arc::new(Device::default()), body.clone());
+    let motion = Arc::new(Motion(AtomicBool::new(false)));
+    let session = PlaybackSession::with_output_fence(Arc::new(Device::default()), motion.clone());
     let original = scope(1);
     session.activate(&original).unwrap();
     let request = OutputRetirementRequest {
@@ -286,16 +289,16 @@ async fn prior_native_and_body_retirement_failures_survive_later_successful_clos
         binding: None,
         expected_backend: None,
     };
-    body.0.store(true, Ordering::Release);
+    motion.0.store(true, Ordering::Release);
     assert!(session.retire_output(&request).is_err());
-    body.0.store(false, Ordering::Release);
+    motion.0.store(false, Ordering::Release);
     assert!(
         session.retire_output(&request).is_err(),
-        "retry erased the original body failure"
+        "retry erased the original motion failure"
     );
     assert!(
         session.stop().await.is_err(),
-        "later close erased the earlier body failure"
+        "later close erased the earlier motion failure"
     );
 }
 

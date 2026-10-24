@@ -2,6 +2,7 @@ use axum::extract::State;
 use axum::extract::rejection::JsonRejection;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use sea_orm::TransactionTrait;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -43,18 +44,18 @@ pub struct OpenAIFunctionsResponse {
 /// List all available tools
 async fn list_tools(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
 ) -> Result<Json<Vec<ToolDefinition>>> {
-    let tools = state.modules.tools.list_tools().await?;
+    let tools = state.modules.tools.list_tools_for(auth.id).await?;
     Ok(Json(tools))
 }
 
 /// Get tools in OpenAI function calling format
 async fn list_tools_openai_format(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
 ) -> Result<Json<OpenAIFunctionsResponse>> {
-    let tools = state.modules.tools.list_tools().await?;
+    let tools = state.modules.tools.list_tools_for(auth.id).await?;
     let openai_tools = to_openai_functions(&tools);
     Ok(Json(OpenAIFunctionsResponse {
         tools: openai_tools,
@@ -115,22 +116,94 @@ pub async fn execute_tool(
 /// Get a specific tool definition
 async fn get_tool(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     axum::extract::Path(name): axum::extract::Path<String>,
 ) -> Result<Json<ToolDefinition>> {
     state
         .modules
         .tools
-        .get_tool(&name)
+        .list_tools_for(auth.id)
         .await?
+        .into_iter()
+        .find(|tool| tool.name.as_str() == name)
         .map(Json)
         .ok_or_else(|| crate::error::AppError::NotFound(format!("Tool '{}' not found", name)))
+}
+
+/// MCP manages configured services only; executable paths/endpoints and
+/// credentials cannot be supplied by an API request or a model argument.
+async fn list_mcp(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<Vec<crate::tools::mcp::McpStatus>>> {
+    super::plugins::require_admin(&auth)?;
+    super::plugins::require_current_actor(&state.db, &auth, true, false).await?;
+    Ok(Json(state.mcp.statuses().await))
+}
+async fn restart_mcp(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>> {
+    mutate_mcp(state, auth, id, true).await
+}
+async fn stop_mcp(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>> {
+    mutate_mcp(state, auth, id, false).await
+}
+
+async fn mutate_mcp(
+    state: AppState,
+    auth: AuthUser,
+    id: String,
+    restart: bool,
+) -> Result<Json<serde_json::Value>> {
+    use crate::error::AppError;
+    super::plugins::require_admin(&auth)?;
+    let (reply, response) = tokio::sync::oneshot::channel();
+    let db = state.db.clone();
+    let manager = state.mcp.clone();
+    // The original runtime owner survives an HTTP disconnect. Hold the current
+    // actor row lock through publication so a revoked admin cannot start a host.
+    state
+        .runtime_tasks
+        .try_spawn("mcp_management", async move {
+            let result: Result<serde_json::Value> = async {
+                let tx = db.begin().await?;
+                super::plugins::require_current_actor(&tx, &auth, true, true).await?;
+                if restart {
+                    manager.restart(&id).await?;
+                } else {
+                    manager.stop(&id).await?;
+                }
+                tx.commit().await?;
+                Ok(serde_json::json!({"id":id,"state":if restart {"connecting"} else {"stopped"}}))
+            }
+            .await;
+            let _ = reply.send(result);
+            Ok(())
+        })
+        .map_err(|_| AppError::Unavailable("server runtime is stopping"))?;
+    response
+        .await
+        .map_err(|_| {
+            AppError::Unavailable(
+                "MCP operation owner failed; inspect service state before retrying",
+            )
+        })?
+        .map(Json)
 }
 
 // ========== Routes ==========
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/tools/mcp/services", get(list_mcp))
+        .route("/tools/mcp/services/{id}/restart", post(restart_mcp))
+        .route("/tools/mcp/services/{id}/stop", post(stop_mcp))
         .route("/tools", get(list_tools))
         .route("/tools/openai", get(list_tools_openai_format))
         .route("/tools/{name}", get(get_tool))

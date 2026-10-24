@@ -141,6 +141,7 @@ async fn device_routes_enforce_current_owner_or_admin_before_any_action() {
         let mut serving = tokio::spawn(runtime.run());
         let assertions = AssertUnwindSafe(async {
             let client = reqwest::Client::builder()
+                .no_proxy()
                 .timeout(Duration::from_secs(3))
                 .build()
                 .unwrap();
@@ -361,6 +362,7 @@ async fn device_status_uses_live_identity_and_reports_unavailable_without_fake_o
         let mut serving = tokio::spawn(runtime.run());
         let assertions = AssertUnwindSafe(async {
             let client = reqwest::Client::builder()
+                .no_proxy()
                 .timeout(Duration::from_secs(7))
                 .build()
                 .unwrap();

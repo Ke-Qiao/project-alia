@@ -1,15 +1,16 @@
 pub mod auth;
-pub mod body_deliveries;
 pub mod channels;
 pub mod companion;
 pub mod conversations;
 pub mod deliveries;
 pub mod devices;
 pub mod effects;
+pub mod embodiment;
 pub mod expression;
 pub mod health;
 pub mod insights;
 pub mod memories;
+pub mod motion_deliveries;
 pub mod personas;
 pub mod plugins;
 pub mod rules;
@@ -20,6 +21,7 @@ pub mod skills;
 pub mod tools;
 pub mod users;
 pub mod voice;
+pub mod wasm_plugins;
 
 use axum::Router;
 
@@ -39,12 +41,14 @@ fn api_routes() -> Router<AppState> {
         .merge(users::routes())
         .merge(devices::routes())
         .merge(deliveries::routes())
-        .merge(body_deliveries::routes())
+        .merge(motion_deliveries::routes())
         .merge(effects::routes())
+        .merge(embodiment::routes())
         .merge(expression::routes())
         .merge(voice::routes())
         .merge(conversations::routes())
         .merge(plugins::routes())
+        .merge(wasm_plugins::routes())
         .merge(rules::routes())
         .merge(scheduler::routes())
         .merge(settings::routes())

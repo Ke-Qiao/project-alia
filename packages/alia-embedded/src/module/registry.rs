@@ -44,7 +44,11 @@ pub struct EmbeddedModuleRegistry {
 }
 
 impl EmbeddedModuleRegistry {
-    pub(crate) async fn start(&self, ctx: &super::context::ModuleContext) -> anyhow::Result<()> {
+    pub(crate) async fn start(
+        &self,
+        ctx: &super::context::ModuleContext,
+        r1_cold_boot: Option<uuid::Uuid>,
+    ) -> anyhow::Result<()> {
         let cancel = &ctx.cancel_token;
         start_module(self.wakeword.as_ref(), cancel).await?;
         start_module(self.vad.as_ref(), cancel).await?;
@@ -61,9 +65,70 @@ impl EmbeddedModuleRegistry {
             !cancel.is_cancelled(),
             "startup cancelled before microphone start"
         );
+        let mut initialization_audio = r1_cold_boot.map(|_| ctx.audio_bus.subscribe());
         self.audio_capture
             .start_capture(&ctx.audio_bus)
             .map_err(|error| error.context("starting microphone capture"))?;
+        if let Some(cold_boot_id) = r1_cold_boot {
+            anyhow::ensure!(
+                self.audio_capture.is_available(),
+                "R1 capture is unavailable"
+            );
+            let first = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => anyhow::bail!("R1 startup cancelled before initialization"),
+                frame = tokio::time::timeout(
+                    std::time::Duration::from_secs(2),
+                    initialization_audio.as_mut().expect("subscribed before capture").recv(),
+                ) => frame.map_err(|_| anyhow::anyhow!("R1 capture produced no PCM before initialization"))??,
+            };
+            validate_r1_capture(&first)?;
+            drop(initialization_audio);
+            let stopped = ctx.audio_bus.capture_stopped();
+            anyhow::ensure!(
+                !cancel.is_cancelled()
+                    && !stopped
+                        .as_ref()
+                        .is_some_and(|stopped| stopped.is_cancelled())
+                    && self.audio_capture.is_available(),
+                "R1 capture stopped before initialization"
+            );
+            let config = ctx.config.clone();
+            let init_cancel = cancel.child_token();
+            let worker_cancel = init_cancel.clone();
+            let mut worker = tokio::task::spawn_blocking(move || {
+                super::r1::initialize(
+                    &config.r1,
+                    &config.device_runtime.state_path,
+                    cold_boot_id,
+                    worker_cancel,
+                )
+            });
+            let result = tokio::select! {
+                result = &mut worker => result?,
+                _ = async {
+                    match &stopped {
+                        Some(stopped) => stopped.cancelled().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    init_cancel.cancel();
+                    // Join the serial owner before startup rollback closes the capture stream.
+                    let result = worker.await?;
+                    anyhow::bail!("R1 capture stopped during initialization: {result:?}");
+                }
+            }?;
+            anyhow::ensure!(
+                !cancel.is_cancelled()
+                    && !stopped.is_some_and(|stopped| stopped.is_cancelled())
+                    && self.audio_capture.is_available(),
+                "R1 capture stopped at initialization completion; command may already be accepted"
+            );
+            tracing::info!(
+                ?result,
+                "R1 manual command accepted; audio validity requires separate evidence"
+            );
+        }
         if self.audio_capture.is_available() {
             start_module(self.speech_pipeline.as_ref(), cancel).await?;
         }
@@ -118,6 +183,71 @@ impl EmbeddedModuleRegistry {
             map.insert(module.name(), module.health_check().await);
         }
         map
+    }
+}
+
+fn validate_r1_capture(frame: &super::context::AudioFrame) -> anyhow::Result<()> {
+    use alia_core::audio_clock::{AudioDirection, AudioFormat};
+    let format = AudioFormat {
+        sample_rate_hz: 16000,
+        channels: 1,
+    };
+    anyhow::ensure!(
+        frame.sample_rate == 16000
+            && !frame.pcm.is_empty()
+            && frame
+                .timing
+                .is_some_and(
+                    |timing| timing.native.stream.direction == AudioDirection::Capture
+                        && timing.native.format == format
+                        && timing.converted_format == format
+                        && !timing.resampled
+                        && timing.native.frames == frame.pcm.len() as u64
+                        && timing.converted_frames == frame.pcm.len() as u64
+                ),
+        "R1 initialization requires observed native 16 kHz mono PCM without resampling"
+    );
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::module::context::{AudioBus, AudioFrame};
+    use alia_core::audio_clock::{AudioDirection, AudioFormat, CaptureTiming};
+
+    #[test]
+    fn r1_initialization_checks_observed_capture_format_not_just_config() {
+        let format = AudioFormat {
+            sample_rate_hz: 16000,
+            channels: 1,
+        };
+        let bus = AudioBus::new(4);
+        let mut clock = bus.reference().open_stream(AudioDirection::Capture, format);
+        let native = clock.observe(320, clock.probe.unknown_clock());
+        let mut frame = AudioFrame {
+            pcm: vec![0; 320],
+            sample_rate: 16000,
+            timestamp_us: 0,
+            timing: Some(CaptureTiming {
+                native,
+                converted_format: format,
+                converted_start_frame: 0,
+                converted_frames: 320,
+                resampled: false,
+            }),
+        };
+        validate_r1_capture(&frame).unwrap(); // Silence is valid PCM, not proof of speech.
+        frame.timing.as_mut().unwrap().native.format.sample_rate_hz = 48000;
+        assert!(validate_r1_capture(&frame).is_err());
+        frame.timing.as_mut().unwrap().native.format = format;
+        frame.timing.as_mut().unwrap().native.format.channels = 2;
+        assert!(validate_r1_capture(&frame).is_err());
+        frame.timing.as_mut().unwrap().native.format = format;
+        frame.timing.as_mut().unwrap().resampled = true;
+        assert!(validate_r1_capture(&frame).is_err());
+        frame.timing = None;
+        assert!(validate_r1_capture(&frame).is_err());
     }
 }
 

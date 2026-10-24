@@ -31,7 +31,8 @@ use alia_server::{
     modules::delivery::audio::ResponseAudioBudget,
     modules::{
         delivery::{AudioDelivery, DeliveryService, OutputProducer, types::*},
-        platform::{lifecycle::ModuleLifecycle as ServerLifecycle, sensors::SensorRegistry},
+        embodiment::sensors::SensorRegistry,
+        platform::lifecycle::ModuleLifecycle as ServerLifecycle,
     },
 };
 use delivery_support::{Fixture, with_db, with_db_context};
@@ -399,6 +400,7 @@ struct Scene {
 }
 struct Runtime {
     scene: Scene,
+    binding: Arc<BindingManager>,
     server: RpcServer,
     _directory: Directory,
 }
@@ -488,7 +490,7 @@ impl Runtime {
         let stop = CancellationToken::new();
         let shutdown = stop.clone();
         let proxy = Proxy(wire.clone());
-        let binding_service = companion::binding_service(binding, &directory.0);
+        let binding_service = companion::binding_service(binding.clone(), &directory.0);
         let server = tokio::spawn(async move {
             let incoming = async_stream::stream! { loop { yield listener.accept().await.map(|(stream, _)| stream); } };
             tonic::transport::Server::builder()
@@ -542,6 +544,7 @@ impl Runtime {
         });
         let service = DeliveryService::new(f.repo(), &CancellationToken::new());
         *slot = Some(Self {
+            binding,
             scene: Scene {
                 f,
                 service,
@@ -1078,3 +1081,9 @@ mod late_drain;
 
 #[path = "duplex_playback/initialization_cancel.rs"]
 mod initialization_cancel;
+
+#[path = "duplex_playback/speech.rs"]
+mod speech;
+
+#[path = "duplex_playback/r1_live.rs"]
+mod r1_live;

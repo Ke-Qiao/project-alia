@@ -6,7 +6,10 @@ type RequestOptions = Omit<RequestInit, 'body'> & {
   token?: string | null;
 };
 
-export function normalizeApiPath(path: string, query?: Record<string, string | number | boolean | null | undefined>) {
+export function normalizeApiPath(
+  path: string,
+  query?: Record<string, string | number | boolean | null | undefined>
+) {
   const [pathname, existingQuery] = path.split('?');
   const params = new URLSearchParams(existingQuery ?? '');
   for (const [key, value] of Object.entries(query ?? {})) {
@@ -48,10 +51,19 @@ export async function apiRequest<T>(
   const payload = isJsonResponse(response) ? ((await response.json()) as JsonValue) : null;
 
   if (!response.ok) {
-    const message =
+    const detail =
       payload && typeof payload === 'object' && !Array.isArray(payload)
-        ? String(payload.error ?? payload.message ?? `Request failed with ${response.status}`)
-        : `Request failed with ${response.status}`;
+        ? (payload.error ?? payload.message)
+        : null;
+    const message =
+      typeof detail === 'string'
+        ? detail
+        : detail &&
+            typeof detail === 'object' &&
+            !Array.isArray(detail) &&
+            typeof detail.message === 'string'
+          ? detail.message
+          : `Request failed with ${response.status}`;
     throw new ApiError(response.status, message, payload);
   }
 

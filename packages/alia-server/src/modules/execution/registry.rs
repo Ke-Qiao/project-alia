@@ -7,7 +7,7 @@ use serde_json::Value;
 use super::ExecutionService;
 use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult,
+    ToolCall, ToolContext, ToolDefinition, ToolEntry, ToolRegistry, ToolResult,
     ToolRoutingIndexEntry,
 };
 
@@ -68,31 +68,35 @@ impl ToolRegistry for ExecutionToolRegistry {
     async fn list_tools(&self) -> anyhow::Result<Vec<ToolDefinition>> {
         self.execution.raw.list_tools().await
     }
+    async fn list_tools_for(&self, user_id: uuid::Uuid) -> anyhow::Result<Vec<ToolDefinition>> {
+        self.execution.raw.list_tools_for(user_id).await
+    }
     async fn get_tool(&self, name: &str) -> anyhow::Result<Option<ToolDefinition>> {
         self.execution.raw.get_tool(name).await
     }
     async fn execute(&self, call: ToolCall, ctx: &ToolContext) -> anyhow::Result<ToolResult> {
         self.execution.execute(call, ctx).await
     }
-    async fn register_plugin_tool(&self, tool: ToolDefinition) -> anyhow::Result<()> {
-        let _catalog = self.execution.catalog_gate.write().await;
-        self.execution.raw.register_plugin_tool(tool).await
-    }
     async fn register_tool_executor(
         &self,
         owner: &str,
-        executor: Arc<dyn ToolExecutor>,
+        executor: Arc<ToolEntry>,
     ) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            executor
-                .implementation_revision()
-                .is_some_and(|revision| !revision.trim().is_empty()),
-            "tool implementation revision is required for durable execution"
-        );
         let _catalog = self.execution.catalog_gate.write().await;
         self.execution
             .raw
             .register_tool_executor(owner, executor)
+            .await
+    }
+    async fn replace_source_tools(
+        &self,
+        owner: &str,
+        entries: Vec<Arc<ToolEntry>>,
+    ) -> anyhow::Result<()> {
+        let _catalog = self.execution.catalog_gate.write().await;
+        self.execution
+            .raw
+            .replace_source_tools(owner, entries)
             .await
     }
     async fn unregister_plugin_tool(&self, name: &str) -> anyhow::Result<()> {

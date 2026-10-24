@@ -1,11 +1,10 @@
+use crate::providers::llm::LlmService;
 use std::collections::{HashMap, HashSet};
 
 use uuid::Uuid;
 
 use super::InteractionServices;
-use super::debug::{
-    debug_component_llm_call, debug_component_tool_calls, debug_component_tool_result,
-};
+use super::debug::{debug_component_tool_calls, debug_component_tool_result};
 use super::trace::AgentTrace;
 use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
 use crate::config::ToolsSection;
@@ -13,25 +12,13 @@ use crate::registry::is_plugin_source;
 use crate::{
     modules::interaction::routing::{ToolCandidateInfo, ToolSelectionInput},
     providers::adapter::{
-        ChatMessage, LlmAdapter, LlmResponse, LlmToolCall, ToolCall, ToolContext, ToolDefinition,
-        ToolResult, ToolRoutingEmbedding, ToolRoutingIndexEntry,
+        ChatMessage, ToolCall, ToolContext, ToolDefinition, ToolResult, ToolRoutingEmbedding,
+        ToolRoutingIndexEntry,
     },
 };
 
-const TEXT_TOOL_CALL_SCHEMA: &str = "alia.tool_calls.v1";
-const MAX_TEXT_TOOL_CALLS: usize = 8;
-const EMPTY_TOOL_RESPONSE_FALLBACK: &str = "抱歉，我刚才没有生成有效回复，请再试一次。";
 const PREFERRED_TOOL_SCORE_BOOST: i32 = 4;
-const TOOL_TEXT_PROTOCOL_RETRY_PROMPT: &str = r#"The previous provider tool-call response was empty.
-If a tool is needed, reply with exactly one JSON object using the `alia.tool_calls.v1` text tool-call protocol.
-If no tool is needed, answer the user concisely in natural language.
-Do not return an empty message."#;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToolCallProtocol {
-    Native,
-    TextFallback,
-}
+const TOOL_USE_SYSTEM_PROMPT: &str = "Use only the native tools advertised for this turn. Tools are the only executable units; skills are context. Arguments must match the tool schema. Never claim an action succeeded without its execution receipt. Pending, unknown, or confirmation-required results do not authorize retry or claims of completion. After tool results, answer in natural language.";
 
 #[derive(Debug, Clone)]
 pub(super) struct ToolLoopOutcome {
@@ -39,295 +26,180 @@ pub(super) struct ToolLoopOutcome {
     pub used_tools: bool,
 }
 
-const TOOL_USE_SYSTEM_PROMPT: &str = r#"Tool use rules:
-- Skills are cognitive context only. Never try to call a skill by name.
-- Tools are the only executable units. When an appropriate tool is available, call the tool instead of describing imaginary results.
-- Use native tool/function calling whenever the provider supports it. Tool arguments must be valid JSON matching the tool's parameter schema.
-- If native tool calling is unavailable and a tool is needed, reply with exactly one JSON object and no prose:
-  {"schema":"alia.tool_calls.v1","tool_calls":[{"name":"tool_name","arguments":{}}]}
-- The JSON fallback is executable only when the entire assistant message is that JSON object, optionally wrapped in one `json` code fence.
-- Never write pseudo function syntax such as `memory_store(...)` or `tool_name(...)` in user-facing text.
-- If the user asks you to show, repeat, quote, explain, or debug prompts, tool formats, JSON examples, or available tools, do not use the JSON fallback; answer as normal user-facing text.
-- Only call tools listed in Available tools for this turn. Calls to any other tool will be rejected.
-- If no tool is needed, answer normally in natural language.
-- Never put raw tool-call JSON, function names, or hidden arguments in the final user-facing answer.
-- After tool results are provided, produce only a natural-language answer for the user.
-- If a tool result says confirmation is required, ask the user to confirm before claiming the action was done.
-"#;
-
+/// Rig owns the native transcript and round state. Execution alone owns dispatch.
 pub(super) async fn run_llm_tool_loop(
     modules: &InteractionServices,
-    llm: &dyn LlmAdapter,
+    llm: &LlmService,
     base_messages: Vec<ChatMessage>,
     tools: Vec<ToolDefinition>,
     user_id: Uuid,
     session_id: Option<Uuid>,
     channel_id: &str,
     user_id_text: &str,
-    route: &'static str,
+    _route: &'static str,
     tools_config: &ToolsSection,
     debug_output: bool,
     trace: &mut AgentTrace,
     turn: Option<&VoiceTurn>,
 ) -> anyhow::Result<ToolLoopOutcome> {
-    let mut messages = inject_tool_prompt(base_messages, &tools)?;
+    use futures::StreamExt;
+    use rig_agent::run::{AgentRun, AgentRunStep, ModelTurn, RunSpec, prepare_request};
+    use rig_core::{
+        completion::CompletionRequest,
+        message::{Message, ToolChoice, UserContent},
+    };
+    let messages = inject_tool_prompt(base_messages, &tools)?;
+    let mut native = crate::providers::llm::text_request(&messages)?.chat_history;
+    let prompt = native
+        .pop()
+        .ok_or_else(|| anyhow::anyhow!("tool run requires an initial prompt"))?;
+    let max_depth = tools_config.max_tool_call_depth.max(1) as usize;
+    let mut run = AgentRun::new(prompt)
+        .with_history(native)
+        .max_turns(max_depth + 1);
     let tool_map = tools
         .iter()
-        .map(|tool| (tool.name.clone(), tool.clone()))
+        .map(|tool| (tool.name.to_string(), tool.clone()))
         .collect::<HashMap<_, _>>();
     let admitted_turn = turn.ok_or_else(|| anyhow::anyhow!("tool loop has no original context"))?;
     let ctx = ToolContext {
         context_id: Some(admitted_turn.context_binding().await?.context_id),
-        source_privacy_epoch: turn.and_then(|turn| turn.source_privacy_epoch),
+        source_privacy_epoch: admitted_turn.source_privacy_epoch,
         user_id,
-        source_received_at: turn
-            .map(|turn| turn.received_at)
-            .unwrap_or_else(chrono::Utc::now),
-        source_event_id: turn.and_then(|turn| turn.source_event_id.get()).copied(),
+        source_received_at: admitted_turn.received_at,
+        source_event_id: admitted_turn.source_event_id.get().copied(),
         request_id: trace.turn_id,
         invocation_key: String::new(),
         conversation_id: session_id,
         source: "ai".to_string(),
         channel_id: Some(channel_id.to_string()),
-        cancel: turn.map(|turn| turn.token.clone()),
+        cancel: Some(admitted_turn.token.clone()),
     };
-    let max_depth = tools_config.max_tool_call_depth.max(1);
-    let mut last_tool_display: Option<String> = None;
-    let mut called_tool_names = Vec::new();
-
-    for depth in 0..max_depth {
-        super::context::validate_generation_context(modules, turn).await?;
-        debug_component_llm_call(
-            debug_output,
-            "llm",
-            "tool_call",
-            route,
-            &messages,
-            Some((channel_id, user_id_text)),
-        );
-
-        let capabilities = llm.llm_capabilities().await;
-        let tool_call_future = async {
-            if capabilities.supports_streaming_tool_calls {
-                llm.chat_stream_with_tools(&messages, &tools).await
-            } else {
-                llm.chat_with_tools(&messages, &tools).await
-            }
-        };
-        let stage = if capabilities.supports_streaming_tool_calls {
-            "llm_tool_call_stream"
-        } else {
-            "llm_tool_call"
-        };
-        let mut response = match cancellable_stage(turn, stage, tool_call_future).await? {
-            Some(response) => response,
-            None => {
-                return Ok(ToolLoopOutcome {
-                    text: String::new(),
-                    used_tools: !called_tool_names.is_empty(),
-                });
-            }
-        };
-        let mut protocol = normalize_tool_response(&mut response)?;
-        if response.tool_calls.is_empty()
-            && response.content.trim().is_empty()
-            && !turn_is_interrupted(turn)
-        {
-            tracing::warn!(
-                depth,
-                channel_id,
-                user_id = user_id_text,
-                "LLM returned empty tool response; retrying with text tool protocol"
-            );
-            let mut retry_messages = messages.clone();
-            retry_messages.push(ChatMessage::new("system", TOOL_TEXT_PROTOCOL_RETRY_PROMPT));
-            debug_component_llm_call(
-                debug_output,
-                "llm",
-                "tool_call_retry",
-                route,
-                &retry_messages,
-                Some((channel_id, user_id_text)),
-            );
-            super::context::validate_generation_context(modules, turn).await?;
-            let retry_text = match cancellable_stage(
-                turn,
-                "llm_tool_call_text_retry",
-                llm.chat(&retry_messages),
-            )
-            .await?
-            {
-                Some(retry_text) => retry_text,
-                None => {
-                    return Ok(ToolLoopOutcome {
-                        text: String::new(),
-                        used_tools: !called_tool_names.is_empty(),
-                    });
-                }
-            };
-            response = LlmResponse::text(retry_text);
-            protocol = normalize_tool_response(&mut response)?;
-        }
-
-        if response.tool_calls.is_empty() {
-            if response.content.trim().is_empty() {
-                tracing::warn!(
-                    depth,
-                    channel_id,
-                    user_id = user_id_text,
-                    "LLM returned empty response after tool retry"
-                );
-                return Ok(ToolLoopOutcome {
-                    text: non_empty_tool_fallback(last_tool_display.as_deref()),
-                    used_tools: !called_tool_names.is_empty(),
-                });
-            }
+    let mut used_tools = false;
+    loop {
+        if turn_is_interrupted(turn) {
             return Ok(ToolLoopOutcome {
-                text: response.content,
-                used_tools: !called_tool_names.is_empty(),
+                text: String::new(),
+                used_tools,
             });
         }
-
-        let tool_calls = response
-            .tool_calls
-            .iter()
-            .enumerate()
-            .map(|(index, call)| normalize_tool_call(call, depth, index))
-            .collect::<Vec<_>>();
-
-        debug_component_tool_calls(
-            debug_output,
-            depth + 1,
-            &tool_calls,
-            Some((channel_id, user_id_text)),
-        );
-        trace
-            .record(
-                modules,
-                "tool_calls",
-                "llm",
-                Some(format!("{} tool call(s)", tool_calls.len())),
-                serde_json::json!({
-                    "depth": depth + 1,
-                    "calls": tool_calls
-                        .iter()
-                        .map(|call| serde_json::json!({
-                            "tool": call.tool_name,
-                            "call_id": call.id,
-                            "arguments": call.arguments,
-                        }))
-                        .collect::<Vec<_>>(),
-                }),
-            )
-            .await;
-
-        messages.push(tool_call_request_message(
-            protocol,
-            &response.content,
-            &tool_calls,
-        ));
-
-        for (index, call) in tool_calls.iter().enumerate() {
-            if turn_is_interrupted(turn) {
-                return Ok(ToolLoopOutcome {
-                    text: String::new(),
-                    used_tools: !called_tool_names.is_empty(),
-                });
+        match run.next_step()? {
+            AgentRunStep::CallModel {
+                prompt,
+                mut history,
+                turn: round,
+            } => {
+                // Recheck the original context and every extension before every network attempt.
+                super::context::validate_generation_context(modules, turn).await?;
+                let mut spec = RunSpec::new();
+                spec.tool_choice = llm.tool_choice().await?;
+                if round > max_depth {
+                    spec.tool_choice = Some(ToolChoice::None);
+                    history.push(Message::system("Tool-call depth limit reached. Give a final natural-language answer using the existing receipts. Do not request further actions."));
+                }
+                let definitions = tools.iter().map(ToolDefinition::to_rig).collect::<Vec<_>>();
+                let prepared = prepare_request(
+                    &spec,
+                    &Default::default(),
+                    &history,
+                    definitions,
+                    None,
+                    None,
+                )?;
+                run.advertise_tools(round, prepared.tools.clone());
+                let request = prepared.clone().apply(CompletionRequest::new(prompt));
+                let response = cancellable_stage(turn, "llm_tool_turn", async {
+                    let deadline =
+                        tokio::time::Instant::now() + crate::providers::llm::MODEL_TIMEOUT;
+                    let mut stream = llm.completion_stream(request).await?;
+                    // Stream once through Rig's fold. No parallel transcript or argument parser.
+                    while let Some(item) = tokio::time::timeout_at(deadline, stream.next()).await? {
+                        if matches!(item?, rig_core::streaming::Item::Unknown(_)) {
+                            anyhow::bail!("unsupported provider stream event");
+                        }
+                    }
+                    let response = tokio::time::timeout_at(deadline, stream.finish()).await??;
+                    crate::providers::llm::validate_response(&response)?;
+                    Ok(response)
+                })
+                .await?;
+                let Some(response) = response else {
+                    return Ok(ToolLoopOutcome {
+                        text: String::new(),
+                        used_tools,
+                    });
+                };
+                // Defaults fail malformed/unknown tools and do not repair or retry calls.
+                run.model_response(ModelTurn::from_response(&response, &prepared))?;
             }
-            // Do not drop this execution on response cancellation. Its result
-            // must be recorded even if the response no longer has a consumer.
-            if !called_tool_names.contains(&call.tool_name) {
-                called_tool_names.push(call.tool_name.clone());
-            }
-            let mut call_context = ctx.clone();
-            call_context.invocation_key = format!("{depth}:{index}");
-            call_context.context_id = Some(admitted_turn.context_binding().await?.context_id);
-            let result =
-                execute_turn_tool_call(modules, &call, &tool_map, &call_context, admitted_turn)
-                    .await?;
-            trace
-                .record(
-                    modules,
-                    "tool_result",
-                    "tool",
-                    Some(call.tool_name.clone()),
-                    serde_json::json!({
-                        "tool": call.tool_name,
-                        "call_id": result.call_id,
-                        "success": result.success,
-                        "display": result.display,
-                        "output": result.output,
-                    }),
-                )
-                .await;
-            if turn_is_interrupted(turn) {
-                tracing::info!(
-                    channel_id,
-                    user_id = user_id_text,
-                    tool = %call.tool_name,
-                    "discarding tool result from interrupted voice turn"
+            AgentRunStep::CallTools { calls } => {
+                anyhow::ensure!(
+                    run.turn() <= max_depth,
+                    "tool dispatch exceeds the turn budget"
                 );
+                let mut results = Vec::with_capacity(calls.len());
+                for (index, pending) in calls.into_iter().enumerate() {
+                    anyhow::ensure!(
+                        pending.preresolved_result.is_none(),
+                        "automatic tool recovery is disabled"
+                    );
+                    if turn_is_interrupted(turn) {
+                        return Ok(ToolLoopOutcome {
+                            text: String::new(),
+                            used_tools,
+                        });
+                    }
+                    super::context::validate_generation_context(modules, turn).await?;
+                    let native = pending.tool_call;
+                    let call = ToolCall {
+                        call_id: native.id.to_string(),
+                        tool_name: native.function.name.to_string(),
+                        arguments: serde_json::Value::Object(native.function.arguments),
+                    };
+                    debug_component_tool_calls(
+                        debug_output,
+                        run.turn() as u32,
+                        std::slice::from_ref(&call),
+                        Some((channel_id, user_id_text)),
+                    );
+                    used_tools = true;
+                    // Never drop a dispatched Execution future on generation cancellation.
+                    let mut call_context = ctx.clone();
+                    call_context.invocation_key = format!("{}:{index}", run.turn() - 1);
+                    call_context.context_id =
+                        Some(admitted_turn.context_binding().await?.context_id);
+                    let result = execute_turn_tool_call(
+                        modules,
+                        &call,
+                        &tool_map,
+                        &call_context,
+                        admitted_turn,
+                    )
+                    .await?;
+                    trace.record(modules, "tool_result", "tool", Some(call.tool_name.clone()), serde_json::json!({"tool":call.tool_name,"call_id":result.call_id,"success":result.success,"output":result.output})).await;
+                    debug_component_tool_result(
+                        debug_output,
+                        &call.tool_name,
+                        &result,
+                        Some((channel_id, user_id_text)),
+                    );
+                    results.push(UserContent::ToolResult(rig_core::message::ToolResult {
+                        call: native.id,
+                        name: native.function.name,
+                        content: result.to_rig_output().into_content(),
+                        is_error: !result.success,
+                    }));
+                }
+                run.tool_results(results)?;
+            }
+            AgentRunStep::Done(response) => {
                 return Ok(ToolLoopOutcome {
-                    text: String::new(),
-                    used_tools: !called_tool_names.is_empty(),
+                    text: response.output().to_string(),
+                    used_tools,
                 });
             }
-            debug_component_tool_result(
-                debug_output,
-                &call.tool_name,
-                &result,
-                Some((channel_id, user_id_text)),
-            );
-            if let Some(display) = result
-                .display
-                .as_ref()
-                .map(|display| display.trim())
-                .filter(|display| !display.is_empty())
-            {
-                last_tool_display = Some(display.to_string());
-            }
-            messages.push(tool_result_message(protocol, &call.tool_name, result)?);
         }
     }
-
-    tracing::warn!(
-        depth = max_depth,
-        "LLM tool loop reached max_tool_call_depth; asking model for final answer"
-    );
-    messages.push(ChatMessage::new(
-        "system",
-        "Tool-call depth limit reached. Stop calling tools and give the user a concise final answer based on the tool results already available.",
-    ));
-
-    super::context::validate_generation_context(modules, turn).await?;
-    let final_response = match cancellable_stage(turn, "llm", llm.chat(&messages)).await? {
-        Some(final_response) => final_response,
-        None => String::new(),
-    };
-    Ok(ToolLoopOutcome {
-        text: final_response,
-        used_tools: !called_tool_names.is_empty(),
-    })
-}
-
-fn normalize_tool_response(response: &mut LlmResponse) -> anyhow::Result<ToolCallProtocol> {
-    if response.tool_calls.is_empty() {
-        response.tool_calls = parse_text_tool_calls(&response.content)?;
-        if !response.tool_calls.is_empty() {
-            response.content.clear();
-        }
-        Ok(ToolCallProtocol::TextFallback)
-    } else {
-        Ok(ToolCallProtocol::Native)
-    }
-}
-
-pub fn non_empty_tool_fallback(last_tool_display: Option<&str>) -> String {
-    last_tool_display
-        .map(str::trim)
-        .filter(|display| !display.is_empty())
-        .unwrap_or(EMPTY_TOOL_RESPONSE_FALLBACK)
-        .to_string()
 }
 
 #[derive(Debug, Clone, Default)]
@@ -339,6 +211,7 @@ pub(super) struct ToolSelection {
 
 pub(super) async fn select_tools_for_skill(
     modules: &InteractionServices,
+    user_id: Uuid,
     preferred_names: &[String],
     user_text: &str,
     tools_config: &ToolsSection,
@@ -347,6 +220,7 @@ pub(super) async fn select_tools_for_skill(
 ) -> anyhow::Result<ToolSelection> {
     select_tools(
         modules,
+        user_id,
         Some(preferred_names),
         user_text,
         tools_config,
@@ -358,6 +232,7 @@ pub(super) async fn select_tools_for_skill(
 
 pub(super) async fn select_all_tools(
     modules: &InteractionServices,
+    user_id: Uuid,
     user_text: &str,
     tools_config: &ToolsSection,
     channel_id: &str,
@@ -365,6 +240,7 @@ pub(super) async fn select_all_tools(
 ) -> anyhow::Result<ToolSelection> {
     select_tools(
         modules,
+        user_id,
         None,
         user_text,
         tools_config,
@@ -376,13 +252,14 @@ pub(super) async fn select_all_tools(
 
 async fn select_tools(
     modules: &InteractionServices,
+    user_id: Uuid,
     preferred_names: Option<&[String]>,
     user_text: &str,
     tools_config: &ToolsSection,
     channel_id: &str,
     assistant_name: &str,
 ) -> anyhow::Result<ToolSelection> {
-    let all_tools = modules.tools.list_tools().await?;
+    let all_tools = modules.tools.list_tools_for(user_id).await?;
     let skill_context = preferred_names.is_some();
     let preferred_names = preferred_names
         .map(preferred_tool_names)
@@ -460,7 +337,7 @@ pub trait ToolPreferenceArg {
 impl ToolPreferenceArg for bool {
     fn to_preferred_tool_names(&self, tools: &[ToolDefinition]) -> HashSet<String> {
         if *self {
-            tools.iter().map(|tool| tool.name.clone()).collect()
+            tools.iter().map(|tool| tool.name.to_string()).collect()
         } else {
             HashSet::new()
         }
@@ -650,7 +527,7 @@ async fn load_tool_routing_index(
 
     let tool_names = tools
         .iter()
-        .map(|tool| tool.name.clone())
+        .map(|tool| tool.name.to_string())
         .collect::<Vec<_>>();
     let index_entries = match modules.tools.routing_index(&tool_names).await {
         Ok(entries) => entries,
@@ -666,7 +543,7 @@ async fn load_tool_routing_index(
 
     let missing = tools
         .iter()
-        .filter(|tool| !index_by_name.contains_key(&tool.name))
+        .filter(|tool| !index_by_name.contains_key(tool.name.as_str()))
         .map(|tool| tool.name.as_str())
         .collect::<Vec<_>>();
     if !missing.is_empty() {
@@ -713,12 +590,12 @@ async fn indexed_rank_tool_candidates(
             && stored.model.as_deref() == Some(embedding_model.as_str())
             && stored.vector.len() == query_embedding.len()
         {
-            embeddings_by_name.insert(tool.name.clone(), stored.vector.clone());
+            embeddings_by_name.insert(tool.name.to_string(), stored.vector.clone());
             continue;
         }
 
         if tools_config.indexed_search_refresh_missing_embeddings {
-            missing.push((tool.name.clone(), routing.routing_text));
+            missing.push((tool.name.to_string(), routing.routing_text));
         }
     }
 
@@ -774,7 +651,7 @@ async fn indexed_rank_tool_candidates(
                 preferred_names.contains(tool.name.as_str()),
             );
             let semantic_similarity = embeddings_by_name
-                .get(&tool.name)
+                .get(tool.name.as_str())
                 .and_then(|embedding| cosine_similarity(&query_embedding, embedding));
             let semantic_match = semantic_similarity.is_some_and(|score| score >= min_similarity);
             if lexical_score <= 0 && !semantic_match {
@@ -898,7 +775,7 @@ fn select_tools_by_name_order(
 
 fn tool_candidate_info(candidate: &RankedToolCandidate) -> ToolCandidateInfo {
     ToolCandidateInfo {
-        name: candidate.tool.name.clone(),
+        name: candidate.tool.name.to_string(),
         description: candidate.tool.description.clone(),
         source: candidate.tool.source.clone(),
         require_confirmation: candidate.tool.require_confirmation,
@@ -910,7 +787,7 @@ fn tool_routing_metadata(
     tool: &ToolDefinition,
     index_by_name: &HashMap<String, ToolRoutingIndexEntry>,
 ) -> ToolRoutingMetadata {
-    if let Some(entry) = index_by_name.get(&tool.name) {
+    if let Some(entry) = index_by_name.get(tool.name.as_str()) {
         let routing_text = entry
             .routing_text
             .trim()
@@ -1115,14 +992,15 @@ fn inject_tool_prompt(
 
 pub(super) async fn execute_turn_tool_call(
     modules: &InteractionServices,
-    call: &LlmToolCall,
+    call: &ToolCall,
     tool_map: &HashMap<String, ToolDefinition>,
     ctx: &ToolContext,
     turn: &VoiceTurn,
 ) -> anyhow::Result<ToolResult> {
     let Some(tool) = tool_map.get(&call.tool_name) else {
         return Ok(ToolResult {
-            call_id: call.id.clone(),
+            presentation: None,
+            call_id: call.call_id.clone(),
             success: false,
             output: serde_json::json!({"error":"tool_not_available"}),
             display: Some("The requested tool is not available.".into()),
@@ -1149,7 +1027,7 @@ pub(super) async fn execute_turn_tool_call(
             ToolCall {
                 tool_name: call.tool_name.clone(),
                 arguments: call.arguments.clone(),
-                call_id: call.id.clone(),
+                call_id: call.call_id.clone(),
             },
             ctx,
         )
@@ -1172,7 +1050,7 @@ pub(super) async fn execute_turn_tool_call(
             && canonical
                 .get("model_call_id")
                 .and_then(serde_json::Value::as_str)
-                == Some(call.id.as_str()),
+                == Some(call.call_id.as_str()),
         "canonical execution belongs to another tool invocation"
     );
     let status = canonical.get("status").and_then(serde_json::Value::as_str);
@@ -1195,7 +1073,7 @@ pub(super) async fn execute_turn_tool_call(
         anyhow::ensure!(
             canonical["completion"]["status"] == "succeeded"
                 && canonical["completion"]["receipt"]["success"] == true
-                && canonical["completion"]["receipt"]["call_id"] == call.id
+                && canonical["completion"]["receipt"]["call_id"] == call.call_id
                 && canonical["completion"]["receipt"]["output"]["context_read_requested"] == true,
             "memory search lacks a canonical successful read authorization"
         );
@@ -1205,7 +1083,8 @@ pub(super) async fn execute_turn_tool_call(
             .extend_memory_with_opts(&extended, query, opts)
             .await?;
         let result = ToolResult {
-            call_id: call.id.clone(),
+            presentation: None,
+            call_id: call.call_id.clone(),
             success: true,
             output: serde_json::json!({
                 "execution":canonical,
@@ -1230,7 +1109,8 @@ pub(super) async fn execute_turn_tool_call(
     state.generation = Some(extended);
     Box::pin(super::expression::project_turn_affect(modules, &mut state)).await?;
     Ok(ToolResult {
-        call_id: call.id.clone(),
+        presentation: ToolResult::canonical_presentation(&canonical),
+        call_id: call.call_id.clone(),
         success,
         output: canonical,
         display: Some(display.into()),
@@ -1299,20 +1179,15 @@ mod tests {
     use super::*;
 
     fn tool(name: &str, description: &str) -> ToolDefinition {
-        ToolDefinition {
-            name: name.to_string(),
-            description: description.to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"}
-                }
+        ToolDefinition::new(
+            name,
+            description,
+            serde_json::json!({
+                "type":"object", "properties":{"query":{"type":"string"}}
             }),
-            routing_hints: Vec::new(),
-            source: "builtin".to_string(),
-            require_confirmation: false,
-            required_role: None,
-        }
+            "builtin",
+        )
+        .unwrap()
     }
 
     #[test]
@@ -1333,438 +1208,4 @@ mod tests {
         assert!(text.contains("parameters: query"));
         assert!(text.contains("latest"));
     }
-}
-
-pub fn normalize_tool_call(call: &LlmToolCall, depth: u32, index: usize) -> LlmToolCall {
-    let id = if call.id.trim().is_empty() {
-        format!("call_{depth}_{index}")
-    } else {
-        call.id.clone()
-    };
-    LlmToolCall {
-        id,
-        tool_name: call.tool_name.clone(),
-        arguments: call.arguments.clone(),
-    }
-}
-
-pub fn tool_call_request_message(
-    protocol: ToolCallProtocol,
-    content: &str,
-    calls: &[LlmToolCall],
-) -> ChatMessage {
-    match protocol {
-        ToolCallProtocol::Native => ChatMessage {
-            role: "assistant".into(),
-            content: content.to_string(),
-            name: None,
-            tool_calls: calls.to_vec(),
-            ..ChatMessage::default()
-        },
-        ToolCallProtocol::TextFallback => {
-            let names = calls
-                .iter()
-                .map(|call| call.tool_name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            ChatMessage::new(
-                "assistant",
-                format!("Tool call requested through text protocol: {names}"),
-            )
-        }
-    }
-}
-
-pub fn tool_result_message(
-    protocol: ToolCallProtocol,
-    tool_name: &str,
-    result: ToolResult,
-) -> anyhow::Result<ChatMessage> {
-    let content = serde_json::to_string(&serde_json::json!({
-        "tool": tool_name,
-        "success": result.success,
-        "output": result.output,
-        "display": result.display,
-    }))?;
-
-    match protocol {
-        ToolCallProtocol::Native => Ok(ChatMessage {
-            role: "tool".into(),
-            content,
-            name: Some(tool_name.to_string()),
-            tool_call_id: Some(result.call_id),
-            ..ChatMessage::default()
-        }),
-        ToolCallProtocol::TextFallback => Ok(ChatMessage::new(
-            "system",
-            format!(
-                "Tool result for text-protocol call `{}` (call_id `{}`): {}\nUse this result to answer the user. If confirmation is required, ask the user to confirm before claiming the action was done.",
-                tool_name, result.call_id, content
-            ),
-        )),
-    }
-}
-
-pub fn parse_text_tool_calls(content: &str) -> anyhow::Result<Vec<LlmToolCall>> {
-    let Some(candidate) = standalone_tool_call_json(content) else {
-        return Ok(parse_pseudo_function_tool_call(content)
-            .into_iter()
-            .collect());
-    };
-    if !candidate.contains("\"tool_calls\"") {
-        return Ok(Vec::new());
-    }
-
-    let value: serde_json::Value = match serde_json::from_str(candidate) {
-        Ok(value) => value,
-        Err(error) => {
-            tracing::warn!(
-                error = %error,
-                "ignoring malformed standalone text tool-call envelope"
-            );
-            return Ok(Vec::new());
-        }
-    };
-
-    let Some(object) = value.as_object() else {
-        return Ok(Vec::new());
-    };
-    if object.get("schema").and_then(|value| value.as_str()) != Some(TEXT_TOOL_CALL_SCHEMA) {
-        tracing::warn!(
-            schema = ?object.get("schema"),
-            expected = TEXT_TOOL_CALL_SCHEMA,
-            "ignoring text tool-call envelope with missing or invalid schema"
-        );
-        return Ok(Vec::new());
-    };
-    if object
-        .keys()
-        .any(|key| !matches!(key.as_str(), "schema" | "tool_calls"))
-    {
-        tracing::warn!("ignoring text tool-call envelope with unexpected top-level fields");
-        return Ok(Vec::new());
-    }
-
-    let Some(calls) = object.get("tool_calls").and_then(|value| value.as_array()) else {
-        tracing::warn!("ignoring text tool-call envelope without a tool_calls array");
-        return Ok(Vec::new());
-    };
-    let mut parsed = Vec::new();
-    for (index, call) in calls.iter().take(MAX_TEXT_TOOL_CALLS).enumerate() {
-        let Some(call_object) = call.as_object() else {
-            tracing::warn!(index, "ignoring non-object text tool call");
-            continue;
-        };
-        if call_object
-            .keys()
-            .any(|key| !matches!(key.as_str(), "id" | "name" | "tool_name" | "arguments"))
-        {
-            tracing::warn!(index, "ignoring text tool call with unexpected fields");
-            continue;
-        }
-        let Some(name) = call
-            .get("name")
-            .or_else(|| call.get("tool_name"))
-            .and_then(|value| value.as_str())
-            .filter(|name| is_valid_text_tool_name(name))
-        else {
-            tracing::warn!(index, "ignoring text tool call without a valid name");
-            continue;
-        };
-        let arguments = call
-            .get("arguments")
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!({}));
-        let arguments = match arguments {
-            serde_json::Value::String(raw) => match serde_json::from_str::<serde_json::Value>(&raw)
-            {
-                Ok(value) if value.is_object() => value,
-                Ok(_) => {
-                    tracing::warn!(
-                        index,
-                        tool = %name,
-                        "ignoring text tool call with non-object JSON arguments"
-                    );
-                    continue;
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        index,
-                        tool = %name,
-                        error = %error,
-                        "ignoring text tool call with invalid JSON arguments"
-                    );
-                    continue;
-                }
-            },
-            value if value.is_object() => value,
-            _ => {
-                tracing::warn!(
-                    index,
-                    tool = %name,
-                    "ignoring text tool call with non-object arguments"
-                );
-                continue;
-            }
-        };
-        let id = call
-            .get("id")
-            .and_then(|value| value.as_str())
-            .map(ToOwned::to_owned)
-            .unwrap_or_default();
-        parsed.push(LlmToolCall {
-            id,
-            tool_name: name.to_string(),
-            arguments,
-        });
-    }
-    if calls.len() > MAX_TEXT_TOOL_CALLS {
-        tracing::warn!(
-            count = calls.len(),
-            limit = MAX_TEXT_TOOL_CALLS,
-            "truncated oversized text tool-call envelope"
-        );
-    }
-
-    Ok(parsed)
-}
-
-fn parse_pseudo_function_tool_call(content: &str) -> Option<LlmToolCall> {
-    let trimmed = content.trim_start();
-    let name_end = trimmed
-        .char_indices()
-        .take_while(|(_, ch)| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
-        .last()
-        .map(|(index, ch)| index + ch.len_utf8())?;
-    let name = &trimmed[..name_end];
-    if !is_valid_text_tool_name(name) {
-        return None;
-    }
-
-    let rest = trimmed[name_end..].trim_start();
-    if !rest.starts_with('(') {
-        return None;
-    }
-
-    let closing = find_matching_paren(rest)?;
-    let args = &rest[1..closing];
-    let arguments = parse_pseudo_function_arguments(args).ok()?;
-    Some(LlmToolCall {
-        id: String::new(),
-        tool_name: name.to_string(),
-        arguments,
-    })
-}
-
-fn find_matching_paren(input: &str) -> Option<usize> {
-    let mut depth = 0usize;
-    let mut in_string = false;
-    let mut quote = '\0';
-    let mut escaped = false;
-
-    for (index, ch) in input.char_indices() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == quote {
-                in_string = false;
-            }
-            continue;
-        }
-
-        match ch {
-            '"' | '\'' => {
-                in_string = true;
-                quote = ch;
-            }
-            '(' => depth += 1,
-            ')' => {
-                depth = depth.checked_sub(1)?;
-                if depth == 0 {
-                    return Some(index);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    None
-}
-
-fn parse_pseudo_function_arguments(input: &str) -> anyhow::Result<serde_json::Value> {
-    let mut object = serde_json::Map::new();
-    for item in split_pseudo_args(input) {
-        let item = item.trim();
-        if item.is_empty() {
-            continue;
-        }
-        let Some((key, value)) = split_pseudo_key_value(item) else {
-            anyhow::bail!("invalid pseudo tool argument '{item}'");
-        };
-        let key = key.trim();
-        if !is_valid_text_tool_name(key) {
-            anyhow::bail!("invalid pseudo tool argument key '{key}'");
-        }
-        object.insert(key.to_string(), parse_pseudo_value(value.trim()));
-    }
-
-    Ok(serde_json::Value::Object(object))
-}
-
-fn split_pseudo_args(input: &str) -> Vec<&str> {
-    let mut parts = Vec::new();
-    let mut start = 0usize;
-    let mut in_string = false;
-    let mut quote = '\0';
-    let mut escaped = false;
-    let mut bracket_depth = 0usize;
-
-    for (index, ch) in input.char_indices() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == quote {
-                in_string = false;
-            }
-            continue;
-        }
-
-        match ch {
-            '"' | '\'' => {
-                in_string = true;
-                quote = ch;
-            }
-            '[' | '{' => bracket_depth += 1,
-            ']' | '}' => bracket_depth = bracket_depth.saturating_sub(1),
-            ',' if bracket_depth == 0 => {
-                parts.push(&input[start..index]);
-                start = index + ch.len_utf8();
-            }
-            _ => {}
-        }
-    }
-    parts.push(&input[start..]);
-    parts
-}
-
-fn split_pseudo_key_value(input: &str) -> Option<(&str, &str)> {
-    let mut in_string = false;
-    let mut quote = '\0';
-    let mut escaped = false;
-
-    for (index, ch) in input.char_indices() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == quote {
-                in_string = false;
-            }
-            continue;
-        }
-
-        match ch {
-            '"' | '\'' => {
-                in_string = true;
-                quote = ch;
-            }
-            '=' | ':' => return Some((&input[..index], &input[index + ch.len_utf8()..])),
-            _ => {}
-        }
-    }
-
-    None
-}
-
-fn parse_pseudo_value(input: &str) -> serde_json::Value {
-    let trimmed = input.trim();
-    if trimmed.starts_with('"') || trimmed.starts_with('\'') {
-        return parse_quoted_pseudo_string(trimmed)
-            .map(serde_json::Value::String)
-            .unwrap_or_else(|| serde_json::Value::String(trimmed.to_string()));
-    }
-    if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
-        return value;
-    }
-    if let Ok(number) = trimmed.parse::<f64>() {
-        return serde_json::json!(number);
-    }
-    serde_json::Value::String(trimmed.to_string())
-}
-
-fn parse_quoted_pseudo_string(input: &str) -> Option<String> {
-    let quote = input.chars().next()?;
-    let mut value = String::new();
-    let mut escaped = false;
-
-    for ch in input[quote.len_utf8()..].chars() {
-        if escaped {
-            let decoded = match ch {
-                'n' => '\n',
-                'r' => '\r',
-                't' => '\t',
-                '\\' => '\\',
-                '"' => '"',
-                '\'' => '\'',
-                other => other,
-            };
-            value.push(decoded);
-            escaped = false;
-        } else if ch == '\\' {
-            escaped = true;
-        } else if ch == quote {
-            return Some(value);
-        } else {
-            value.push(ch);
-        }
-    }
-
-    None
-}
-
-fn standalone_tool_call_json(content: &str) -> Option<&str> {
-    let trimmed = content.trim();
-
-    if trimmed.starts_with("```") {
-        return standalone_json_fence(trimmed);
-    }
-
-    if trimmed.starts_with('{') && trimmed.ends_with('}') {
-        Some(trimmed)
-    } else {
-        None
-    }
-}
-
-fn standalone_json_fence(trimmed: &str) -> Option<&str> {
-    let body = trimmed.strip_prefix("```")?;
-    let header_end = body.find('\n')?;
-    let header = body[..header_end].trim();
-    if !header.is_empty() && !header.eq_ignore_ascii_case("json") {
-        return None;
-    }
-
-    let after_header = &body[header_end + 1..];
-    let closing_start = after_header.rfind("```")?;
-    if !after_header[closing_start + 3..].trim().is_empty() {
-        return None;
-    }
-    let inner = after_header[..closing_start].trim();
-    (inner.starts_with('{') && inner.ends_with('}')).then_some(inner)
-}
-
-fn is_valid_text_tool_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !(first.is_ascii_alphabetic() || first == '_') {
-        return false;
-    }
-    name.len() <= 128 && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
 }

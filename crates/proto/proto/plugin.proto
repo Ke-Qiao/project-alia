@@ -34,6 +34,7 @@ message InstallPluginRequest {
 message InstallPluginResponse {
   bool success = 1;
   string message = 2;
+  string asset_sha256 = 3;
 }
 
 message UninstallPluginRequest {
@@ -58,6 +59,8 @@ message PluginInfo {
   PluginState state = 4;
   string description = 5;
   repeated string capabilities = 6;
+  string asset_sha256 = 7;
+  string instance_id = 8;
 }
 
 enum PluginState {
@@ -72,6 +75,10 @@ enum PluginState {
 
 message StartPluginRequest {
   string name = 1;
+  // Required reviewed installed identity. Installation never grants execution.
+  string expected_asset_sha256 = 2;
+  // Native sensor/actuator drivers only; grants unrestricted local process authority.
+  bool allow_trusted_native = 3;
 }
 
 message StartPluginResponse {
@@ -93,11 +100,17 @@ message PluginCommandRequest {
   string command_id = 2;
   string action = 3;
   bytes payload_json = 4;
+  // Required: bind retries and results to the exact run returned by ListPlugins.
+  string instance_id = 5;
 }
 
 message PluginCommandResponse {
   bool success = 1;
   string message = 2;
+  string state = 3; // completed | failed | cancelled | unknown | rejected
+  string instance_id = 4;
+  string command_id = 5;
+  bytes result_json = 6;
 }
 
 message StreamEventsRequest {
@@ -110,4 +123,6 @@ message PluginEvent {
   string event_type = 2;
   bytes payload_json = 3;
   uint64 timestamp_us = 4;
+  string instance_id = 5;
+  string command_id = 6;
 }

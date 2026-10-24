@@ -98,12 +98,8 @@ fn plugin_storage_manifest_rejects_unsafe_declarations() {
 
 #[tokio::test]
 async fn postgres_plugin_storage_round_trips_records_and_policy() {
-    let Some(database_url) = std::env::var("ALIA_TEST_DATABASE_URL").ok() else {
-        eprintln!(
-            "skipping real PostgreSQL plugin storage test: ALIA_TEST_DATABASE_URL is not set"
-        );
-        return;
-    };
+    let database_url = std::env::var("ALIA_TEST_DATABASE_URL")
+        .expect("set ALIA_TEST_DATABASE_URL to disposable PostgreSQL with pgvector");
     let db = Database::connect(&database_url)
         .await
         .expect("ALIA_TEST_DATABASE_URL should connect");

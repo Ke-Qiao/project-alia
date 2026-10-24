@@ -93,7 +93,7 @@ impl PlaybackSession {
         }
     }
 
-    /// Body admission is ordered with all local Ready/fence/close transitions.
+    /// Motion admission is ordered with all local Ready/fence/close transitions.
     /// Binding authentication holds its read lock outside this lock; an output
     /// sink must never call back into PlaybackSession while holding its own gate.
     pub fn with_voice_admission<T>(
@@ -107,7 +107,7 @@ impl PlaybackSession {
                 && state
                     .as_ref()
                     .is_some_and(|active| active.scope == *scope && !active.retired),
-            "body voice scope is not locally current"
+            "motion voice scope is not locally current"
         );
         admit()
     }
@@ -179,6 +179,7 @@ impl PlaybackSession {
         let mut retired = self.retired.lock().unwrap_or_else(|e| e.into_inner());
         debug_assert!(retired.len() < retirement::RETIRED_CAPACITY);
         retired.push_back(retirement::RetiredOutput {
+            capture: active.capture.clone(),
             scope: active.scope,
             registration: active.registration.take(),
             control: active.control.take(),
@@ -244,16 +245,16 @@ impl PlaybackSession {
                     "Ready cannot replace the capture owner or capabilities"
                 );
                 if scope.generation_epoch > active.scope.generation_epoch {
-                    let body = self
+                    let motion = self
                         .output_fence
                         .as_ref()
                         .map_or(Ok(()), |sink| sink.fence_voice(scope));
                     let audio = self.retire(active, "local voice generation advanced");
-                    self.remember_retirement_error(active.scope, "body", &body);
+                    self.remember_retirement_error(active.scope, "motion", &motion);
                     self.reserve_retirement_slot()?;
                     active.scope = *scope;
                     active.retired = false;
-                    body.and(audio)?;
+                    motion.and(audio)?;
                 }
                 ensure!(
                     !active.retired,
@@ -266,13 +267,13 @@ impl PlaybackSession {
             if let Some(capture) = &old.capture {
                 capture.mark_retired();
             }
-            let body = self
+            let motion = self
                 .output_fence
                 .as_ref()
                 .map_or(Ok(()), |sink| sink.close_voice(&old.scope));
             let audio = self.retire(&mut old, "local voice session replaced");
-            self.remember_retirement_error(old.scope, "body", &body);
-            body.and(audio)?;
+            self.remember_retirement_error(old.scope, "motion", &motion);
+            motion.and(audio)?;
         }
         self.reserve_retirement_slot()?;
         if let Some(sink) = &self.output_fence {
@@ -301,13 +302,13 @@ impl PlaybackSession {
             if let Some(capture) = &retired.capture {
                 capture.mark_retired();
             }
-            let body = self
+            let motion = self
                 .output_fence
                 .as_ref()
                 .map_or(Ok(()), |sink| sink.close_voice(&retired.scope));
             let audio = self.retire(&mut retired, "device binding revoked");
-            self.remember_retirement_error(retired.scope, "body", &body);
-            body.and(audio)?;
+            self.remember_retirement_error(retired.scope, "motion", &motion);
+            motion.and(audio)?;
         }
         Ok(())
     }
@@ -328,29 +329,29 @@ impl PlaybackSession {
             if let Some(capture) = &retired.capture {
                 capture.mark_retired();
             }
-            let body = self
+            let motion = self
                 .output_fence
                 .as_ref()
                 .map_or(Ok(()), |sink| sink.close_voice(&retired.scope));
             let audio = self.retire(&mut retired, "matching voice session closed");
-            self.remember_retirement_error(retired.scope, "body", &body);
-            body.and(audio)?;
+            self.remember_retirement_error(retired.scope, "motion", &motion);
+            motion.and(audio)?;
             return Ok(true);
         }
         if minimum.generation_epoch <= active.scope.generation_epoch {
             return Ok(false);
         }
         // State is invalidated even when hardware stop fails.
-        let body = self
+        let motion = self
             .output_fence
             .as_ref()
             .map_or(Ok(()), |sink| sink.fence_voice(minimum));
         let audio = self.retire(active, "voice generation fence applied");
-        self.remember_retirement_error(active.scope, "body", &body);
+        self.remember_retirement_error(active.scope, "motion", &motion);
         self.reserve_retirement_slot()?;
         active.scope.generation_epoch = minimum.generation_epoch;
         active.retired = false;
-        body.and(audio)?;
+        motion.and(audio)?;
         Ok(true)
     }
     /// The independently authenticated Register is safe even when its RPC wins
@@ -485,16 +486,16 @@ impl PlaybackSession {
         );
         active.highest_sequence = playback_sequence;
         if newer {
-            let body = self
+            let motion = self
                 .output_fence
                 .as_ref()
                 .map_or(Ok(()), |sink| sink.fence_voice(scope));
             let audio = self.retire(active, "new playback generation fence applied");
-            self.remember_retirement_error(active.scope, "body", &body);
+            self.remember_retirement_error(active.scope, "motion", &motion);
             self.reserve_retirement_slot()?;
             active.scope = *scope;
             active.retired = false;
-            body.and(audio)?;
+            motion.and(audio)?;
         }
         ensure!(
             active.control.as_ref().is_none_or(|c| !c.is_retired()),

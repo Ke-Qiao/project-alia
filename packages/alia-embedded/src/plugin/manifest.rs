@@ -1,31 +1,34 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
 
 /// Plugin manifest parsed from `manifest.toml` inside each plugin directory.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PluginManifest {
     pub plugin: PluginSection,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PluginSection {
     pub name: String,
     pub version: String,
     #[serde(rename = "type")]
     pub plugin_type: PluginType,
     pub entry: String,
+    pub runtime: PluginRuntime,
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
-    pub resources: PluginResources,
+    pub wasm_limits: alia_plugin_api::Limits,
     #[serde(default)]
     pub capabilities: PluginCapabilities,
     #[serde(default)]
     pub events: PluginEvents,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PluginType {
     Sensor,
@@ -45,31 +48,16 @@ impl fmt::Display for PluginType {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct PluginResources {
-    #[serde(default = "default_cpu_percent")]
-    pub max_cpu_percent: u32,
-    #[serde(default = "default_memory_mb")]
-    pub max_memory_mb: u32,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginRuntime {
+    Wasm,
+    /// Explicitly authorized device driver, outside the WASM security boundary.
+    TrustedNative,
 }
 
-impl Default for PluginResources {
-    fn default() -> Self {
-        Self {
-            max_cpu_percent: default_cpu_percent(),
-            max_memory_mb: default_memory_mb(),
-        }
-    }
-}
-
-fn default_cpu_percent() -> u32 {
-    10
-}
-fn default_memory_mb() -> u32 {
-    100
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PluginCapabilities {
     #[serde(default)]
     pub gpio: bool,
@@ -92,7 +80,8 @@ pub struct PluginCapabilities {
     pub expression_state: Vec<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PluginEvents {
     #[serde(default)]
     pub publishes: Vec<String>,

@@ -10,6 +10,11 @@
 //! - Sensor tools: `sensor_read`, `sensor_list`
 
 pub mod builtin;
+pub mod entry;
+#[cfg(feature = "tools-http")]
+pub mod fetch;
+pub mod mcp;
 pub mod sensor;
+pub mod wasm;
 
 pub use builtin::BuiltinToolRegistry;

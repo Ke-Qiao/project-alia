@@ -1,22 +1,21 @@
 use alia_server::modules::interaction::tools::{
-    ToolCallProtocol, non_empty_tool_fallback, normalize_tool_call, rank_and_limit_tools,
-    rank_and_limit_tools_with_index, tool_call_request_message, tool_result_message,
+    rank_and_limit_tools, rank_and_limit_tools_with_index,
 };
-use alia_server::providers::adapter::{
-    LlmToolCall, ToolDefinition, ToolResult, ToolRoutingIndexEntry,
-};
+use alia_server::providers::adapter::{ToolDefinition, ToolRoutingIndexEntry};
 
 fn tool(name: &str, description: &str) -> ToolDefinition {
     ToolDefinition {
-        name: name.to_string(),
-        description: description.to_string(),
-        parameters: serde_json::json!({
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "timezone": {"type": "string"}
-            }
-        }),
+        function: rig_core::completion::ToolDefinition::new(
+            rig_core::message::ToolName::new(name.to_string()).unwrap(),
+            description.to_string(),
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "timezone": {"type": "string"}
+                }
+            }),
+        ),
         routing_hints: Vec::new(),
         source: "builtin".to_string(),
         require_confirmation: false,
@@ -270,83 +269,4 @@ fn url_and_arithmetic_structural_rules_still_work_without_db_keywords() {
 
     assert_eq!(url_selected[0].name, "fetch");
     assert_eq!(math_selected[0].name, "calculate");
-}
-
-#[test]
-fn native_tool_history_uses_normalized_call_ids() {
-    let call = normalize_tool_call(
-        &LlmToolCall {
-            id: String::new(),
-            tool_name: "embedded_volume_control".to_string(),
-            arguments: serde_json::json!({"kind": "microphone", "volume": 2.0}),
-        },
-        0,
-        0,
-    );
-    let request =
-        tool_call_request_message(ToolCallProtocol::Native, "", std::slice::from_ref(&call));
-    let result = tool_result_message(
-        ToolCallProtocol::Native,
-        "embedded_volume_control",
-        ToolResult {
-            call_id: call.id.clone(),
-            success: false,
-            output: serde_json::json!({"requires_confirmation": true}),
-            display: Some("Please confirm".to_string()),
-        },
-    )
-    .unwrap();
-
-    assert_eq!(request.tool_calls[0].id, "call_0_0");
-    assert_eq!(result.role, "tool");
-    assert_eq!(result.tool_call_id.as_deref(), Some("call_0_0"));
-}
-
-#[test]
-fn text_fallback_tool_history_does_not_use_native_tool_roles() {
-    let call = normalize_tool_call(
-        &LlmToolCall {
-            id: String::new(),
-            tool_name: "embedded_volume_control".to_string(),
-            arguments: serde_json::json!({"kind": "microphone", "volume": 2.0}),
-        },
-        0,
-        0,
-    );
-    let request = tool_call_request_message(
-        ToolCallProtocol::TextFallback,
-        "",
-        std::slice::from_ref(&call),
-    );
-    let result = tool_result_message(
-        ToolCallProtocol::TextFallback,
-        "embedded_volume_control",
-        ToolResult {
-            call_id: call.id,
-            success: false,
-            output: serde_json::json!({"requires_confirmation": true}),
-            display: Some("Please confirm".to_string()),
-        },
-    )
-    .unwrap();
-
-    assert_eq!(request.role, "assistant");
-    assert!(request.tool_calls.is_empty());
-    assert_eq!(result.role, "system");
-    assert!(result.tool_call_id.is_none());
-    assert!(result.content.contains("requires_confirmation"));
-}
-
-#[test]
-fn empty_tool_response_falls_back_to_last_tool_display() {
-    assert_eq!(
-        non_empty_tool_fallback(Some("Updated embedded volume: mic 1.00")),
-        "Updated embedded volume: mic 1.00"
-    );
-}
-
-#[test]
-fn empty_tool_response_has_non_empty_generic_fallback() {
-    assert!(!non_empty_tool_fallback(None).trim().is_empty());
-    assert!(!non_empty_tool_fallback(Some("   ")).trim().is_empty());
 }

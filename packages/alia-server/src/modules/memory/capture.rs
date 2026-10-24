@@ -1,3 +1,4 @@
+use crate::providers::llm::LlmService;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -9,7 +10,7 @@ use crate::modules::memory::policy::{
     detect_sensitive_memory, memory_content_equivalent, memory_merge_key, merge_memory_patch,
     normalize_memory_layer, normalize_memory_node_type,
 };
-use crate::providers::adapter::{ChatMessage, LlmAdapter};
+use crate::providers::adapter::ChatMessage;
 use uuid::Uuid;
 
 use super::{MemoryListOpts, MemoryNode, MemoryService, MemoryWriteContext, MemoryWriteOrigin};
@@ -164,7 +165,7 @@ struct MemoryCaptureCandidate {
 
 pub async fn capture_turn_memory(
     context: &ContextService,
-    llm: &dyn LlmAdapter,
+    llm: &LlmService,
     memory: &MemoryService,
     pending: &CaptureTurn,
     memory_config: &MemorySection,
@@ -195,7 +196,7 @@ pub async fn capture_turn_memory(
 }
 
 pub async fn capture_turn_memory_with_model(
-    llm: &dyn LlmAdapter,
+    llm: &LlmService,
     memory: &MemoryService,
     pending: &CaptureTurn,
     memory_config: &MemorySection,
@@ -214,7 +215,7 @@ pub async fn capture_turn_memory_with_model(
 }
 
 async fn llm_selected_turn_memory(
-    llm: &dyn LlmAdapter,
+    llm: &LlmService,
     memory: &MemoryService,
     pending: &CaptureTurn,
     memory_config: &MemorySection,
@@ -282,7 +283,7 @@ async fn llm_selected_turn_memory(
     ];
     let response = match time::timeout(
         Duration::from_secs(memory_config.capture_timeout_sec.max(1)),
-        llm.chat(&messages),
+        llm.text(&messages),
     )
     .await
     {

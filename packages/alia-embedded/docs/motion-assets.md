@@ -45,7 +45,7 @@ catalogs, then restart. A running settings manager retains its startup snapshot;
 editing its file while it is running can be overwritten by a later ordinary
 settings save.
 
-This catalog boundary protects the Body and Settings data paths. It does not
+This catalog boundary protects the Motion and Settings data paths. It does not
 isolate host files from an operator or plugin authorized to execute code as the
 embedded process user. The existing plugin deployment and process permissions
 are a separate boundary; see [configuration](configuration.md#runtime-state).
@@ -85,7 +85,7 @@ wall-clock deadline.
 
 For each already approved animation, inspection uses the production bounded
 read, exact tuple verification and frame parser, then reports the original
-`asset` and `source_frames`. It does not add approvals or create a Body command.
+`asset` and `source_frames`. It does not add approvals or create a Motion command.
 An empty catalog stays empty. This check does not validate a future action's
 fps/loops/duration combination, instantiate other modules, compare the Server
 catalog, or certify physical motion.
@@ -137,7 +137,7 @@ replaying an old command.
 operator has calibrated the actual mechanism, channel mapping, PWM range and
 center target. The shipped historical assets and a successfully parsed matrix
 are not evidence that this has happened. This confirmation belongs to the local
-configuration; a remote Body command cannot supply or bypass it.
+configuration; a remote Motion command cannot supply or bypass it.
 
 With confirmation absent, a mock runtime remains unavailable and issues no
 startup targets. Enabling hardware without confirmation is rejected before
@@ -198,8 +198,8 @@ The `.anim` reader requires:
 ## Expression Action
 
 The native motion runtime accepts animation actions inside the signed
-`alia.body.v1.BodyControl/Exchange` command. The service route remains unchanged;
-the JSON Body contract and signing domains are version 2. Version 1 and old
+`alia.motion.v1.MotionControl/Exchange` command. The service route remains unchanged;
+the JSON Motion contract and signing domains are version 2. Version 1 and old
 filename-only animation commands are rejected. The old scope-free generic
 expression execution path is disabled. An action has the following schematic
 shape; the asset fields must come from the operator-reviewed catalog:
@@ -224,7 +224,7 @@ shape; the asset fields must come from the operator-reviewed catalog:
 
 This is an action fragment, not a complete executable request. The original
 Response/owner, voice or nonvoice scope, boot/control lease, sequence, binding
-and signatures are required; see [the body contract](../../../docs/refactor/body-command-design.md).
+and signatures are required; see [the Motion contract](../../../docs/architecture/motion-contract.md).
 The signature binds the complete asset pin and playback parameters. The device
 first requires an exact match with its local catalog, then checks byte count and
 SHA-256 against the same bounded buffer that it parses. Invalid UTF-8, frame

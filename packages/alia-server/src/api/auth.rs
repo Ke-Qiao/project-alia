@@ -4,7 +4,10 @@ use axum::routing::post;
 use axum::{Json, Router};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
+    TransactionTrait, sea_query::Expr,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use utoipa::ToSchema;
@@ -115,6 +118,7 @@ fn request_user_agent(headers: &HeaderMap) -> Option<String> {
 
 async fn issue_refresh_token(
     state: &AppState,
+    db: &impl ConnectionTrait,
     user_id: Uuid,
     headers: &HeaderMap,
 ) -> Result<String> {
@@ -132,7 +136,7 @@ async fn issue_refresh_token(
         expires_at: Set(expires_at.into()),
         revoked_at: Set(None),
     }
-    .insert(&state.db)
+    .insert(db)
     .await?;
 
     Ok(refresh)
@@ -140,6 +144,7 @@ async fn issue_refresh_token(
 
 async fn issue_auth_response(
     state: &AppState,
+    db: &impl ConnectionTrait,
     user: &user::Model,
     headers: &HeaderMap,
 ) -> Result<AuthResponse> {
@@ -153,7 +158,7 @@ async fn issue_auth_response(
             state.config.auth.jwt_expiry_hours,
         )
         .map_err(AppError::Internal)?;
-    let refresh_token = issue_refresh_token(state, user.id, headers).await?;
+    let refresh_token = issue_refresh_token(state, db, user.id, headers).await?;
 
     Ok(AuthResponse {
         access_token,
@@ -203,7 +208,9 @@ pub async fn login(
     active.updated_at = Set(now.into());
     let user = active.update(&state.db).await?;
 
-    Ok(Json(issue_auth_response(&state, &user, &headers).await?))
+    Ok(Json(
+        issue_auth_response(&state, &state.db, &user, &headers).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -224,17 +231,25 @@ pub async fn register(
     let email = normalize_email(&req.email)?;
     let name = validate_name(&req.name)?;
     validate_password(&req.password)?;
+    let password_hash = hash_password(&req.password)
+        .await
+        .map_err(AppError::Internal)?;
+
+    let tx = state.db.begin().await?;
+    // The empty users table has no row to lock for first-administrator election.
+    tx.execute_unprepared("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE")
+        .await?;
 
     if user::Entity::find()
         .filter(user::Column::Email.eq(&email))
-        .one(&state.db)
+        .one(&tx)
         .await?
         .is_some()
     {
         return Err(AppError::Validation("email already registered".into()));
     }
 
-    let existing_users = user::Entity::find().count(&state.db).await?;
+    let existing_users = user::Entity::find().count(&tx).await?;
     let role = if existing_users == 0 {
         ROLE_ADMIN
     } else {
@@ -242,10 +257,6 @@ pub async fn register(
     };
     let now = Utc::now();
     let user_id = Uuid::new_v4();
-    let password_hash = hash_password(&req.password)
-        .await
-        .map_err(AppError::Internal)?;
-
     let new_user = user::ActiveModel {
         id: Set(user_id),
         email: Set(email.clone()),
@@ -257,7 +268,7 @@ pub async fn register(
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
     }
-    .insert(&state.db)
+    .insert(&tx)
     .await?;
 
     user_identity_link::ActiveModel {
@@ -272,12 +283,12 @@ pub async fn register(
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
     }
-    .insert(&state.db)
+    .insert(&tx)
     .await?;
 
-    Ok(Json(
-        issue_auth_response(&state, &new_user, &headers).await?,
-    ))
+    let response = issue_auth_response(&state, &tx, &new_user, &headers).await?;
+    tx.commit().await?;
+    Ok(Json(response))
 }
 
 #[utoipa::path(
@@ -296,33 +307,28 @@ pub async fn refresh(
     Json(req): Json<RefreshRequest>,
 ) -> Result<Json<TokenResponse>> {
     let token_hash = hash_refresh_token(req.refresh_token.trim());
-    let Some(stored) = refresh_token::Entity::find()
+    let tx = state.db.begin().await?;
+    let Some(stored) = refresh_token::Entity::update_many()
+        .col_expr(
+            refresh_token::Column::RevokedAt,
+            Expr::current_timestamp().into(),
+        )
         .filter(refresh_token::Column::TokenHash.eq(token_hash))
-        .one(&state.db)
+        .filter(refresh_token::Column::RevokedAt.is_null())
+        .filter(Expr::col(refresh_token::Column::ExpiresAt).gt(Expr::cust("clock_timestamp()")))
+        .exec_with_returning(&tx)
         .await?
+        .pop()
     else {
         return Err(AppError::Auth("invalid refresh token".into()));
     };
 
-    let now = Utc::now();
-    let now_db = now.into();
-    if stored.revoked_at.is_some() || stored.expires_at <= now_db {
-        return Err(AppError::Auth("invalid refresh token".into()));
-    }
-
-    let Some(user) = user::Entity::find_by_id(stored.user_id)
-        .one(&state.db)
-        .await?
-    else {
+    let Some(user) = user::Entity::find_by_id(stored.user_id).one(&tx).await? else {
         return Err(AppError::Auth("invalid refresh token".into()));
     };
     if user.status != STATUS_ACTIVE {
         return Err(AppError::Auth("user is not active".into()));
     }
-
-    let mut revoke: refresh_token::ActiveModel = stored.into();
-    revoke.revoked_at = Set(Some(now_db));
-    revoke.update(&state.db).await?;
 
     let access_token = state
         .jwt_keys
@@ -334,7 +340,8 @@ pub async fn refresh(
             state.config.auth.jwt_expiry_hours,
         )
         .map_err(AppError::Internal)?;
-    let refresh_token = issue_refresh_token(&state, user.id, &headers).await?;
+    let refresh_token = issue_refresh_token(&state, &tx, user.id, &headers).await?;
+    tx.commit().await?;
 
     Ok(Json(TokenResponse {
         access_token,

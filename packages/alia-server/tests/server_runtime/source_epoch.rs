@@ -178,7 +178,7 @@ async fn old_source_cannot_refresh_after_slow_condition(producer: Producer) {
             &[(owner, Some(before.privacy_epoch))]
         );
         let repository = ExecutionRepository::new(f.db.clone());
-        let records = repository.list(owner, None, 10).await.unwrap();
+        let records = repository.list(owner, None, 10, None).await.unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].source_privacy_epoch, Some(before.privacy_epoch));
         assert_eq!(
@@ -215,7 +215,7 @@ async fn old_source_cannot_refresh_after_slow_condition(producer: Producer) {
                 (owner, Some(after.privacy_epoch))
             ]
         );
-        let records = repository.list(owner, None, 10).await.unwrap();
+        let records = repository.list(owner, None, 10, None).await.unwrap();
         assert_eq!(records.len(), 2);
         assert_eq!(
             records[0].status,

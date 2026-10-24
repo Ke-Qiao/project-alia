@@ -12,3 +12,5 @@ pub use storage::{
     PluginRecord, PluginStorage, PluginStorageHandle, PluginStorageService,
     PluginStorageUninstallReport, PluginStorageUsage, StorageScope, StorageScopeKind,
 };
+
+pub mod wasm;

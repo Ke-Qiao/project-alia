@@ -1,6 +1,6 @@
 # alia-embedded
 
-Raspberry Pi 5 edge node for the Alia smart home assistant. The library runtime owns continuous VoiceSession input, wake word and VAD evidence, scoped native playback, local cues, signed BodyControl, optional YuNet face tracking, sensors, plugins, and device binding. Easy-Turn and response generation run in `alia-server`.
+Raspberry Pi 5 edge node for the Alia smart home assistant. The library runtime owns continuous VoiceSession input, wake word and VAD evidence, scoped native playback, local cues, signed MotionControl, optional YuNet face tracking, sensors, plugins, and device binding. Easy-Turn and response generation run in `alia-server`.
 
 ## Prerequisites
 
@@ -64,7 +64,7 @@ The expected file shape is shown in [config/embedded.example.toml](../../config/
 | `[device_runtime]` | Bind address, instance-local state paths, and cleanup budgets |
 | `[modules]` | Selected backends; `noop` explicitly disables a slot |
 | `[audio]` | Capture/playback devices, mono 16 kHz capture, fixed native output format, and bounded buffers |
-| `[speech]` | Exact Server channel instance ID, continuous VoiceSession pre-roll, and upload queue |
+| `[speech]` | Wakeword/system trigger, exact Server channel instance ID, continuous VoiceSession pre-roll, and upload queue |
 | `[motion]` | Neck matrix/animation assets, PCA9685/I2C settings, and face-center to rotation tuning |
 | `[vision]` | Camera and OpenCV YuNet face tracker settings |
 | `[discovery]` | mDNS, BLE provisioning, bind security |
@@ -159,7 +159,7 @@ keeps speech inactive with degraded health. A real capture backend requires an
 available VAD. Shutdown cancels and joins voice/network/cue work before resource
 cleanup completes.
 
-After wake word, authenticated VoiceSession v2 uploads continuously, including
+After a wake word or authenticated system Start, VoiceSession v2 uploads continuously, including
 during playback. Local cues wait for Ready and retain its original scope.
 Native output mixes conversation at gain 1.0 and cues at 0.2. Hold suppresses cue
 tails; scoped retirement cancels both sources. Playback v3 reports native
@@ -167,8 +167,10 @@ submission evidence without claiming physical presentation or AEC validation.
 
 The old utterance RPCs, edge STT path, thinking/follow-up timers, configurable
 mixer slot, and unscoped direct-response/stop controls have been removed. An
-explicit input-session close command is deferred; output Fence does not serve
-as an acknowledged microphone-session close.
+explicit input-session close is available through CaptureControl.Stop; output
+Fence does not serve as an acknowledged microphone-session close. The R1
+[system capture setup](docs/audio-and-voice.md#r1-system-controlled-capture)
+uses explicit cold-boot initialization independently of session Start/Stop.
 
 ## Architecture
 

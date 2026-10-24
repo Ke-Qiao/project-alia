@@ -3,7 +3,7 @@ use crate::modules::execution::{
     ExecutionService, ExecutionToolRegistry, repository::ExecutionRepository,
 };
 use crate::modules::memory::context::ContextUse;
-use crate::providers::adapter::{LlmToolCall, ToolContext, ToolDefinition, ToolExecutor};
+use crate::providers::adapter::{ToolCall, ToolContext, ToolDefinition};
 use crate::tools::{BuiltinToolRegistry, builtin::MemorySearch};
 use futures::FutureExt;
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
@@ -26,14 +26,14 @@ where
 
         // The AI branch only requests an authorized context read. Supplying a
         // An unattached, empty MemoryService proves retrieval reads canonical SQL.
-        let executor = Arc::new(MemorySearch::new(Some(Arc::new(
+        let executor = MemorySearch::new(Some(Arc::new(
             crate::modules::memory::MemoryService::new(),
-        ))));
+        ))).entry().unwrap();
         let definition = executor.definition();
         db.execute(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO tools(name,description,parameters,source,require_confirmation,enabled) VALUES($1,$2,$3,'builtin',false,true)",
-            vec![definition.name.clone().into(),definition.description.clone().into(),definition.parameters.clone().into()],
+            vec![definition.name.to_string().into(),definition.description.clone().into(),definition.parameters.clone().into()],
         )).await.unwrap();
         let raw = Arc::new(BuiltinToolRegistry::new());
         raw.register_executor(executor);
@@ -50,7 +50,7 @@ where
             Arc::new(ExecutionToolRegistry::new(service.clone()));
         let result = std::panic::AssertUnwindSafe(test(
             fixture,
-            HashMap::from([(definition.name.clone(), definition)]),
+            HashMap::from([(definition.name.to_string(), definition)]),
         ))
         .catch_unwind()
         .await;
@@ -91,8 +91,8 @@ async fn invoke_search(
     let source = generation.source();
     tools::execute_turn_tool_call(
         &fixture.modules,
-        &LlmToolCall {
-            id: format!("call-{invocation}"),
+        &ToolCall {
+            call_id: format!("call-{invocation}"),
             tool_name: "memory_search".into(),
             arguments,
         },
@@ -390,4 +390,98 @@ async fn empty_or_invalid_memory_search_filter_never_widens_the_read() {
         }
     })
     .await;
+}
+
+#[tokio::test]
+async fn rig_native_tool_round_preserves_receipts_context_and_final_turn_budget() {
+    use rig_core::{
+        completion::FinishReason,
+        operation::Finish,
+        test_utils::{MockCompletionModel, MockStreamEvent},
+    };
+    for extra_call in [false, true] {
+        with_search_fixture(move |fixture, definitions| async move {
+            let turn = search_turn(&fixture).await;
+            let initial = turn.generation_context().await.unwrap();
+            seed_memory(&fixture, "core", "Blueberry is the user's favorite fruit.").await;
+            let args = json!({"query":"Blueberry","max_results":1,"layers":["core"]});
+            let terminal = |reason| {
+                MockStreamEvent::FinalResponse(Finish {
+                    reason: Some(reason),
+                    ..Finish::default()
+                })
+            };
+            let second = if extra_call {
+                vec![
+                    MockStreamEvent::tool_call(
+                        "unexpected-final-call",
+                        "memory_search",
+                        args.clone(),
+                    ),
+                    terminal(FinishReason::ToolCalls),
+                ]
+            } else {
+                vec![
+                    MockStreamEvent::text("Your favorite fruit is blueberry."),
+                    terminal(FinishReason::Stop),
+                ]
+            };
+            let mock = MockCompletionModel::from_stream_turns([
+                vec![
+                    MockStreamEvent::tool_call("native-search", "memory_search", args),
+                    terminal(FinishReason::ToolCalls),
+                ],
+                second,
+            ]);
+            let model = LlmService::from_model("native-tool-loop", mock.clone());
+            let source = initial.source();
+            let mut trace = crate::modules::interaction::trace::AgentTrace::new(
+                source.conversation_id.unwrap(),
+            );
+            trace.turn_id = source.request_id;
+            let mut config = fixture.policy.tools.clone();
+            config.max_tool_call_depth = 1;
+            let result = tools::run_llm_tool_loop(
+                &fixture.modules,
+                &model,
+                vec![ChatMessage::new("user", "Recall my favorite fruit.")],
+                definitions.into_values().collect(),
+                source.owner_id,
+                source.conversation_id,
+                &source.channel_id,
+                &source.owner_id.to_string(),
+                "test",
+                &config,
+                false,
+                &mut trace,
+                Some(&turn),
+            )
+            .await;
+            if extra_call {
+                assert!(
+                    result.is_err(),
+                    "the final no-tools turn must not execute another call"
+                );
+            } else {
+                let result = result.unwrap();
+                assert!(result.used_tools);
+                assert_eq!(result.text, "Your favorite fruit is blueberry.");
+            }
+            assert_eq!(effect_count(&fixture).await, 1);
+            let current = turn.generation_context().await.unwrap();
+            assert_ne!(current.lease().id(), initial.lease().id());
+            assert!(current.memory_prompt().contains("Blueberry"));
+            let requests = mock.requests();
+            assert_eq!(requests.len(), 2, "no hidden repair or replay requests");
+            assert_eq!(
+                requests[1].tool_choice,
+                Some(rig_core::message::ToolChoice::None)
+            );
+            let native_history = serde_json::to_string(&requests[1].chat_history).unwrap();
+            assert!(
+                native_history.contains("native-search") && native_history.contains("Blueberry")
+            );
+        })
+        .await;
+    }
 }

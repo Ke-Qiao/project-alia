@@ -3,11 +3,11 @@
 use super::*;
 use alia_server::config::LlmProviderProfileSection;
 use alia_server::modules::platform::lifecycle::ModuleHealth;
-use alia_server::providers::adapter::{ChatMessage, LlmAdapter};
 use serde_json::{Value, json};
 use std::sync::atomic::AtomicBool;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-const ROLES: [&str; 4] = [
+const ROLES: [&str; 5] = [
+    "llm.default",
     "llm.minor",
     "llm.major",
     "llm.memory_capture",
@@ -15,6 +15,9 @@ const ROLES: [&str; 4] = [
 ];
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
+        // Loopback fixtures must not synchronously discover OS proxies while
+        // their current-thread runtime owns live database recovery deadlines.
+        .no_proxy()
         .timeout(Duration::from_secs(8))
         .build()
         .unwrap()
@@ -226,7 +229,7 @@ async fn shared_openai_health_is_opt_in_single_probe_and_busy_requests_do_not_qu
                     assert!(started.elapsed() < Duration::from_secs(7));
                     for role in ROLES {
                         assert_eq!(body["modules"][role], json!({
-                            "status":"degraded", "message":"OpenAI profile 'major' probe timed out after 5s"
+                            "status":"degraded", "message":"model configuration changed during probe"
                         }));
                     }
                     assert_eq!(body["modules"]["router"]["status"], "healthy");
@@ -238,8 +241,16 @@ async fn shared_openai_health_is_opt_in_single_probe_and_busy_requests_do_not_qu
                     }
                     for value in busy {
                         assert_eq!(
-                            value["modules"].as_object().unwrap().keys().collect::<Vec<_>>(),
-                            body["modules"].as_object().unwrap().keys().collect::<Vec<_>>()
+                            value["modules"]
+                                .as_object()
+                                .unwrap()
+                                .keys()
+                                .collect::<std::collections::BTreeSet<_>>(),
+                            body["modules"]
+                                .as_object()
+                                .unwrap()
+                                .keys()
+                                .collect::<std::collections::BTreeSet<_>>()
                         );
                     }
                     let serialized = body.to_string();
@@ -286,6 +297,71 @@ async fn shared_openai_health_is_opt_in_single_probe_and_busy_requests_do_not_qu
         })
         .await;
     }
+}
+
+#[tokio::test]
+async fn independent_default_profile_receives_health_and_settings() {
+    with_fixture(|mut f| async move {
+        let mut profile = f.config.profiles.llm["major"].clone();
+        profile.provider = "openai".into();
+        profile.model = "default-before".into();
+        f.config.profiles.llm.insert("independent".into(), profile);
+        f.config.llm.roles.default = "independent".into();
+        let LlmProviderProfileSection::OpenAi(provider) =
+            f.config.providers.llm.get_mut("openai").unwrap()
+        else {
+            panic!("OpenAI fixture provider is required");
+        };
+        provider.api_key = "local-default-health-secret".into();
+        provider.base_url = "http://127.0.0.1:9/v1".into();
+        provider.health_probe_enabled = false;
+        let runtime = f.builder().build().await.unwrap();
+        let state = runtime.state().clone();
+        let stop = state.cancel_token.clone();
+        let _runtime_drop = stop.clone().drop_guard();
+        let url = format!("http://{}/health", runtime.http_addr());
+        let serving = tokio::spawn(runtime.run());
+        let assertions = AssertUnwindSafe(async {
+            assert!(!Arc::ptr_eq(&state.modules.llm, &state.modules.minor_llm));
+            assert!(!Arc::ptr_eq(&state.modules.llm, &state.modules.major_llm));
+            let body = response(&client(), &url).await;
+            assert_eq!(
+                body["modules"]["llm.default"],
+                json!({
+                    "status":"degraded", "message":"live model probe disabled"
+                })
+            );
+            let updates = std::collections::BTreeMap::from([
+                (
+                    "core.profiles.llm.independent.model".into(),
+                    json!("default-after"),
+                ),
+                (
+                    "core.profiles.llm.independent.max_output_tokens".into(),
+                    json!(123),
+                ),
+            ]);
+            let reports = state.modules.apply_settings(&updates).await;
+            assert_eq!(reports.len(), 1);
+            assert!(reports[0].error.is_none());
+            assert_eq!(reports[0].applied.len(), updates.len());
+            let capabilities = state.modules.llm.llm_capabilities().await;
+            assert_eq!(
+                capabilities.provider_specific["model"],
+                json!("default-after")
+            );
+            assert_eq!(capabilities.max_output_tokens, Some(123));
+            assert_eq!(state.modules.minor_llm.name(), "noop_llm");
+            assert_eq!(state.modules.major_llm.name(), "noop_llm");
+        })
+        .catch_unwind()
+        .await;
+        stop_runtime(&stop, serving).await;
+        if let Err(panic) = assertions {
+            std::panic::resume_unwind(panic);
+        }
+    })
+    .await;
 }
 
 struct HealthProbeState {
@@ -361,17 +437,12 @@ impl ModuleLifecycle for GatedLlm {
         }
     }
 }
-#[async_trait]
-impl LlmAdapter for GatedLlm {
-    async fn chat(&self, _: &[ChatMessage]) -> anyhow::Result<String> {
-        anyhow::bail!("health must never generate text")
-    }
-    async fn chat_stream(
-        &self,
-        _: &[ChatMessage],
-    ) -> anyhow::Result<std::pin::Pin<Box<dyn futures::Stream<Item = anyhow::Result<String>> + Send>>>
-    {
-        anyhow::bail!("health must never generate text")
+impl GatedLlm {
+    fn service(self) -> LlmService {
+        test_text("independent-health-fixture", |_| async {
+            anyhow::bail!("health must never generate text")
+        })
+        .with_lifecycle(Box::new(self))
     }
 }
 
@@ -382,8 +453,8 @@ async fn http_health_has_one_total_budget_and_preserves_independent_same_name_in
         let major = Arc::new(HealthProbeState::default());
         let runtime = f
             .builder()
-            .with_minor_llm(GatedLlm(minor.clone()))
-            .with_major_llm(GatedLlm(major.clone()))
+            .with_minor_llm(GatedLlm(minor.clone()).service())
+            .with_major_llm(GatedLlm(major.clone()).service())
             .build()
             .await
             .unwrap();
@@ -479,7 +550,7 @@ async fn stopping_http_health_drops_active_probes_before_runtime_join() {
         let probe = Arc::new(HealthProbeState::default());
         let runtime = f
             .builder()
-            .with_major_llm(GatedLlm(probe.clone()))
+            .with_major_llm(GatedLlm(probe.clone()).service())
             .build()
             .await
             .unwrap();

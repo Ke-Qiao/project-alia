@@ -6,4 +6,3 @@ pub mod lifecycle;
 pub mod migrations;
 
 pub mod insights;
-pub mod sensors;

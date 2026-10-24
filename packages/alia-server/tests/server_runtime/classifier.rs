@@ -5,7 +5,7 @@ use alia_server::channels::adapter::{ChannelAdapter, ChannelCapabilities, Channe
 use alia_server::event::ServerEvent;
 use alia_server::modules::delivery::transport::DeliveryTransport;
 use alia_server::modules::memory::source::capture_source_epochs;
-use alia_server::providers::adapter::{ChatMessage, LlmAdapter};
+use alia_server::providers::adapter::ChatMessage;
 use alia_server::state::AppState;
 use serde_json::{Value, json};
 use std::sync::atomic::AtomicBool;
@@ -90,52 +90,55 @@ impl ModuleLifecycle for ClassifierProbe {
         "classifier-model-fixture"
     }
 }
-#[async_trait]
-impl LlmAdapter for ClassifierProbe {
-    async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
-        if messages
-            .first()
-            .is_some_and(|message| message.content.contains("intent classifier"))
-        {
-            anyhow::ensure!(self.role == "minor", "classification used the major model");
-            let content = &messages
-                .iter()
-                .find(|message| message.role == "user")
-                .unwrap()
-                .content;
-            let payload = content
-                .rsplit_once("\n\n")
-                .expect("classifier JSON payload")
-                .1;
-            let payload: Value = serde_json::from_str(payload)?;
-            anyhow::ensure!(
-                !messages
-                    .iter()
-                    .any(|message| message.content.contains(PROMPT)),
-                "execution prompt leaked into classification"
-            );
-            self.classifications.lock().unwrap().push(payload);
-            let selected = self.selection.lock().unwrap().clone();
-            self.entered.add_permits(1);
-            if self.block_next.swap(false, Ordering::SeqCst) {
-                self.release.acquire().await?.forget();
+impl ClassifierProbe {
+    fn service(&self) -> LlmService {
+        let fixture = self.clone();
+        test_text("ClassifierProbe", move |messages| {
+            let fixture = fixture.clone();
+            async move {
+                if messages
+                    .first()
+                    .is_some_and(|message| message.content.contains("intent classifier"))
+                {
+                    anyhow::ensure!(
+                        fixture.role == "minor",
+                        "classification used the major model"
+                    );
+                    let content = &messages
+                        .iter()
+                        .find(|message| message.role == "user")
+                        .unwrap()
+                        .content;
+                    let payload = content
+                        .rsplit_once("\n\n")
+                        .expect("classifier JSON payload")
+                        .1;
+                    let payload: Value = serde_json::from_str(payload)?;
+                    anyhow::ensure!(
+                        !messages
+                            .iter()
+                            .any(|message| message.content.contains(PROMPT)),
+                        "execution prompt leaked into classification"
+                    );
+                    fixture.classifications.lock().unwrap().push(payload);
+                    let selected = fixture.selection.lock().unwrap().clone();
+                    fixture.entered.add_permits(1);
+                    if fixture.block_next.swap(false, Ordering::SeqCst) {
+                        fixture.release.acquire().await?.forget();
+                    }
+                    return Ok(
+                        json!({"route":"skill","skill_name":selected,"confidence":0.99})
+                            .to_string(),
+                    );
+                }
+                fixture
+                    .answers
+                    .lock()
+                    .unwrap()
+                    .push((fixture.role, messages.to_vec()));
+                Ok("A complete classifier fixture answer.".into())
             }
-            return Ok(
-                json!({"route":"skill","skill_name":selected,"confidence":0.99}).to_string(),
-            );
-        }
-        self.answers
-            .lock()
-            .unwrap()
-            .push((self.role, messages.to_vec()));
-        Ok("A complete classifier fixture answer.".into())
-    }
-    async fn chat_stream(
-        &self,
-        _: &[ChatMessage],
-    ) -> anyhow::Result<std::pin::Pin<Box<dyn futures::Stream<Item = anyhow::Result<String>> + Send>>>
-    {
-        anyhow::bail!("classifier fixture uses buffered generation")
+        })
     }
 }
 
@@ -205,7 +208,7 @@ async fn http_skill_catalog_drives_real_classification_and_final_model_context()
     with_fixture(|mut f| async move {
         configure(&mut f);
         let probe = ClassifierProbe::new(SKILL);
-        let runtime = f.builder().with_minor_llm(probe.for_role("minor")).with_major_llm(probe.for_role("major"))
+        let runtime = f.builder().with_minor_llm(probe.for_role("minor").service()).with_major_llm(probe.for_role("major").service())
             .with_channel(InputChannel).build().await.unwrap();
         let state = runtime.state().clone();
         let (owner, token) = delivery::account(&state, "user").await;
@@ -269,8 +272,8 @@ async fn classification_in_flight_revalidates_the_selected_skill_and_current_fal
         let probe = ClassifierProbe::new(SKILL);
         let runtime = f
             .builder()
-            .with_minor_llm(probe.for_role("minor"))
-            .with_major_llm(probe.for_role("major"))
+            .with_minor_llm(probe.for_role("minor").service())
+            .with_major_llm(probe.for_role("major").service())
             .with_channel(InputChannel)
             .build()
             .await

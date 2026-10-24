@@ -11,7 +11,7 @@ use tonic::transport::Channel;
 
 use alia_proto::sensor::embedded_sensor_client::EmbeddedSensorClient;
 
-use crate::modules::platform::sensors::{
+use crate::modules::embodiment::sensors::{
     SensorDefinition as ServerSensorDefinition, SensorReadProvider,
     SensorReading as ServerSensorReading, SensorRegistry,
 };

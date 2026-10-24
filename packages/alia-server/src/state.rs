@@ -7,7 +7,7 @@ use crate::auth::JwtKeys;
 use crate::bootstrap::ModuleRegistry;
 use crate::config::ServerConfig;
 use crate::event::EventBus;
-use crate::modules::platform::sensors::SensorRegistry;
+use crate::modules::embodiment::sensors::SensorRegistry;
 use crate::plugins::PluginStorageService;
 use crate::registry::ArtifactRegistry;
 use crate::scheduler::{ActionRegistry, ConditionRegistry};
@@ -17,8 +17,11 @@ use crate::{channels::ChannelRegistry, modules::interaction::SharedInteractionPo
 /// Application global state, passed to Axum handlers via State extractor
 #[derive(Clone)]
 pub struct AppState {
+    pub wasm_plugins: Option<Arc<crate::plugins::wasm::WasmPlugins>>,
+    pub mcp: Arc<crate::tools::mcp::McpManager>,
     pub runtime_tasks: Arc<crate::modules::platform::lifecycle::RuntimeTasks>,
     pub execution: Arc<crate::modules::execution::ExecutionService>,
+    pub embodiment: Arc<crate::modules::embodiment::operations::EmbodimentService>,
     pub delivery: Arc<crate::modules::delivery::DeliveryService>,
     pub voice_input: crate::modules::interaction::voice_input::VoiceInputHandle,
     pub voice_initiatives: crate::modules::interaction::initiative::VoiceInitiativeHandle,

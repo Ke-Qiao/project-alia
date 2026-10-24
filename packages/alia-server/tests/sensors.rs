@@ -10,11 +10,11 @@ use alia_server::channels::embedded::{
     embedded_sensor_public_id, embedded_sensor_remote_id, ingest_embedded_sensor_reading,
     mirror_embedded_sensor_definitions,
 };
-use alia_server::modules::platform::sensors::{
+use alia_server::modules::embodiment::sensors::{
     SensorDefinition, SensorQuery, SensorReadProvider, SensorReading, SensorRegistry,
     SensorRegistryConfig,
 };
-use alia_server::providers::adapter::{ToolContext, ToolExecutor};
+use alia_server::providers::adapter::ToolContext;
 use alia_server::scheduler::condition::{ConditionContext, ConditionEvaluator, ConditionRegistry};
 use alia_server::scheduler::evaluators::SensorConditionEvaluator;
 use alia_server::tools::sensor::{SensorListTool, SensorReadTool};
@@ -123,14 +123,20 @@ async fn sensor_tools_read_from_shared_registry() {
     };
 
     let read = SensorReadTool::new(sensors.clone())
-        .execute(serde_json::json!({"sensor_id": "room:humidity"}), &ctx)
+        .execute(
+            serde_json::from_value(serde_json::json!({"sensor_id": "room:humidity"})).unwrap(),
+            &ctx,
+        )
         .await
         .unwrap();
     assert!(read.success);
     assert_eq!(read.output["value"], serde_json::json!(61));
 
     let list = SensorListTool::new(sensors)
-        .execute(serde_json::json!({"source": "room"}), &ctx)
+        .execute(
+            serde_json::from_value(serde_json::json!({"source": "room"})).unwrap(),
+            &ctx,
+        )
         .await
         .unwrap();
     assert_eq!(list.output["count"], serde_json::json!(1));
@@ -178,11 +184,12 @@ async fn sensor_read_tool_refreshes_from_registered_provider() {
     };
     let read = SensorReadTool::new(sensors.clone())
         .execute(
-            serde_json::json!({
+            serde_json::from_value(serde_json::json!({
                 "sensor_id": "probe:temperature",
                 "read_mode": "fresh",
                 "max_age_sec": 60
-            }),
+            }))
+            .unwrap(),
             &ctx,
         )
         .await

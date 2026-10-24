@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
@@ -22,6 +22,7 @@ pub(crate) use audio_reference::{AudioStreamClock, AudioStreamOwner, AudioStream
 pub struct AudioBus {
     tx: broadcast::Sender<AudioFrame>,
     reference: AudioReferenceBus,
+    capture_stopped: Arc<Mutex<Option<CancellationToken>>>,
 }
 
 /// A single audio frame on the bus.
@@ -45,6 +46,7 @@ impl AudioBus {
         Self {
             tx,
             reference: AudioReferenceBus::new(boot_id),
+            capture_stopped: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -60,6 +62,22 @@ impl AudioBus {
     pub fn subscribe(&self) -> broadcast::Receiver<AudioFrame> {
         self.tx.subscribe()
     }
+
+    pub(crate) fn begin_capture(&self) -> CancellationToken {
+        let stopped = CancellationToken::new();
+        *self
+            .capture_stopped
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(stopped.clone());
+        stopped
+    }
+
+    pub(crate) fn capture_stopped(&self) -> Option<CancellationToken> {
+        self.capture_stopped
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
 }
 
 /// Event bus for internal module-to-module signaling.
@@ -71,7 +89,7 @@ pub struct EventBus {
 /// Events that modules can emit for cross-module coordination.
 #[derive(Debug, Clone)]
 pub enum ModuleEvent {
-    WakeWordDetected { keyword: String, timestamp_us: u64 },
+    WakeWordDetected(super::traits::WakeWordEvent),
     SpeechStart,
     SpeechEnd,
     PlaybackStarted { source: String },

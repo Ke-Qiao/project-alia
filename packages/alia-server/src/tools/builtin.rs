@@ -14,46 +14,35 @@
 use crate::modules::memory::MemoryService;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-#[cfg(feature = "tools-http")]
-use std::{net::IpAddr, time::Duration};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use chrono::Utc;
 use chrono_tz::Tz;
-#[cfg(feature = "tools-http")]
-use futures::StreamExt;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
     TransactionTrait,
 };
-#[cfg(feature = "tools-http")]
-use tokio::net::lookup_host;
 use uuid::Uuid;
 
 use crate::entity::{registry_artifact, registry_dependency, skill_preferred_tool, tool};
-use crate::event::{EventBus, ServerEvent};
+use crate::modules::embodiment::sensors::SensorRegistry;
 use crate::modules::memory::policy::{
     detect_sensitive_memory, memory_content_equivalent, memory_merge_key, merge_memory_patch,
     normalize_memory_layer,
 };
 use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
-use crate::modules::platform::sensors::SensorRegistry;
 use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_TOOL, is_plugin_source};
 use crate::tools::sensor::{SensorListTool, SensorReadTool};
 use crate::{
     modules::memory::{MemoryListOpts, MemoryNode, RetrievalOpts},
     providers::adapter::{
         PreparedTool, ScheduleConfig, ScheduledTask, SchedulerBackend, ToolCall, ToolContext,
-        ToolDefinition, ToolExecutor, ToolRegistry, ToolResult, ToolRoutingEmbedding,
+        ToolDefinition, ToolEntry, ToolRegistry, ToolResult, ToolRoutingEmbedding,
         ToolRoutingIndexEntry,
     },
 };
 
-const FETCH_DEFAULT_MAX_BYTES: usize = 64 * 1024;
-const FETCH_HARD_MAX_BYTES: usize = 1024 * 1024;
-const FETCH_DEFAULT_TIMEOUT_SEC: u64 = 10;
-const FETCH_HARD_TIMEOUT_SEC: u64 = 30;
 const OBSOLETE_BUILTIN_TOOLS: &[&str] = &["device_control", "send_notification"];
 
 struct ToolCatalogFields {
@@ -64,7 +53,7 @@ struct ToolCatalogFields {
 
 fn tool_catalog_fields(definition: &ToolDefinition) -> ToolCatalogFields {
     let schema_terms = schema_property_names(&definition.parameters).join(" ");
-    let mut hints = tool_routing_hints(&definition.name)
+    let mut hints = tool_routing_hints(definition.name.as_str())
         .iter()
         .map(|hint| (*hint).to_string())
         .collect::<Vec<_>>();
@@ -209,23 +198,19 @@ fn tool_routing_hints(tool_name: &str) -> &'static [&'static str] {
 /// BuiltinToolRegistry: Full implementation of ToolRegistry
 #[derive(Default)]
 struct ExecutorCatalog {
-    entries: HashMap<String, Arc<dyn ToolExecutor>>,
+    entries: HashMap<String, Arc<ToolEntry>>,
     revisions: HashMap<String, String>,
 }
 
 impl std::ops::Deref for ExecutorCatalog {
-    type Target = HashMap<String, Arc<dyn ToolExecutor>>;
+    type Target = HashMap<String, Arc<ToolEntry>>;
     fn deref(&self) -> &Self::Target {
         &self.entries
     }
 }
 
 impl ExecutorCatalog {
-    fn insert(
-        &mut self,
-        name: String,
-        executor: Arc<dyn ToolExecutor>,
-    ) -> Option<Arc<dyn ToolExecutor>> {
+    fn insert(&mut self, name: String, executor: Arc<ToolEntry>) -> Option<Arc<ToolEntry>> {
         let revision = if self.revisions.contains_key(&name) {
             Uuid::new_v4().to_string()
         } else {
@@ -235,7 +220,7 @@ impl ExecutorCatalog {
         self.entries.insert(name, executor)
     }
 
-    fn remove(&mut self, name: &str) -> Option<Arc<dyn ToolExecutor>> {
+    fn remove(&mut self, name: &str) -> Option<Arc<ToolEntry>> {
         // Retain the revision tombstone so remove + re-register cannot restore
         // the identity of an earlier approval in this process.
         self.entries.remove(name)
@@ -246,8 +231,6 @@ pub struct BuiltinToolRegistry {
     /// Code-backed tools. Built-ins, Rust components, and in-process Rust
     /// plugins all live here; DB rows are only the discoverable catalog.
     executors: Arc<RwLock<ExecutorCatalog>>,
-    /// Event bus for publishing tool events
-    event_bus: Option<EventBus>,
     /// DB connection for persisting plugin tools
     db: Option<DatabaseConnection>,
     /// Unified artifact/dependency graph manager.
@@ -262,7 +245,6 @@ impl BuiltinToolRegistry {
     pub fn new() -> Self {
         Self {
             executors: Arc::default(),
-            event_bus: None,
             db: None,
             artifacts: None,
             memory: None,
@@ -272,14 +254,12 @@ impl BuiltinToolRegistry {
 
     pub fn with_runtime(
         db: DatabaseConnection,
-        event_bus: EventBus,
         artifacts: Arc<ArtifactRegistry>,
         memory: Option<Arc<MemoryService>>,
         scheduler: Option<Arc<dyn SchedulerBackend>>,
     ) -> Self {
         Self {
             db: Some(db),
-            event_bus: Some(event_bus),
             artifacts: Some(artifacts),
             memory,
             scheduler,
@@ -289,94 +269,47 @@ impl BuiltinToolRegistry {
 
     /// Register sensor_read and sensor_list against the shared sensor plane.
     pub fn with_sensors(self, sensors: Arc<SensorRegistry>) -> Self {
-        self.register_executor(Arc::new(SensorReadTool::new(sensors.clone())));
-        self.register_executor(Arc::new(SensorListTool::new(sensors)));
+        self.register_executor(
+            SensorReadTool::new(sensors.clone())
+                .entry()
+                .expect("sensor_read schema"),
+        );
+        self.register_executor(
+            SensorListTool::new(sensors)
+                .entry()
+                .expect("sensor_list schema"),
+        );
         self
     }
 
-    fn register_builtins(&self) {
-        // get_current_time
-        self.executors
-            .write()
-            .unwrap()
-            .insert("get_current_time".to_string(), Arc::new(GetCurrentTime));
-
-        // fetch
+    fn register_builtins(&self) -> anyhow::Result<()> {
+        self.register_executor(GetCurrentTime.entry()?);
         #[cfg(feature = "tools-http")]
-        self.executors
-            .write()
-            .unwrap()
-            .insert("fetch".to_string(), Arc::new(FetchUrl));
-
-        // calculate
-        self.executors
-            .write()
-            .unwrap()
-            .insert("calculate".to_string(), Arc::new(Calculate));
-
+        self.register_executor(crate::tools::fetch::tool()?);
+        self.register_executor(Calculate.entry()?);
         if let Some(memory) = &self.memory {
-            // memory_search
-            self.executors.write().unwrap().insert(
-                "memory_search".to_string(),
-                Arc::new(MemorySearch::new(Some(memory.clone()))),
-            );
-
-            // memory_store
-            self.executors.write().unwrap().insert(
-                "memory_store".to_string(),
-                Arc::new(MemoryStore::new(Some(memory.clone()))),
-            );
-
-            self.executors.write().unwrap().insert(
-                "memory_forget".to_string(),
-                Arc::new(MemoryForget::new(Some(memory.clone()))),
-            );
-        } else {
-            tracing::info!("memory system unavailable; memory tools are not registered");
+            self.register_executor(MemorySearch::new(Some(memory.clone())).entry()?);
+            self.register_executor(MemoryStore::new(Some(memory.clone())).entry()?);
+            self.register_executor(MemoryForget::new(Some(memory.clone())).entry()?);
         }
-
-        // schedule_task
         if let Some(scheduler) = &self.scheduler {
-            self.executors.write().unwrap().insert(
-                "schedule_task".to_string(),
-                Arc::new(ScheduleTask::new(scheduler.clone())),
-            );
-        } else {
-            tracing::info!("scheduler unavailable; schedule_task tool is not registered");
+            self.register_executor(ScheduleTask::new(scheduler.clone()).entry()?);
         }
+        Ok(())
     }
 
     /// Register an additional tool executor at runtime (for tools that need external state).
-    pub fn register_executor(&self, executor: Arc<dyn ToolExecutor>) {
-        let name = executor.definition().name;
+    pub fn register_executor(&self, executor: Arc<ToolEntry>) {
+        let name = executor.definition().name.to_string();
         self.executors.write().unwrap().insert(name, executor);
     }
 
-    fn artifacts(&self) -> anyhow::Result<&ArtifactRegistry> {
-        self.artifacts
-            .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("BuiltinToolRegistry not initialized"))
-    }
-
-    /// Persist built-in tool definitions so skills can prefer them through
-    /// `skill_preferred_tools` with real foreign keys. The in-memory executor
-    /// remains authoritative for execution.
-    async fn upsert_executor_tools_to_db(&self) -> anyhow::Result<()> {
-        let Some(db) = &self.db else { return Ok(()) };
-        let now = Utc::now();
-
-        let definitions = self
-            .executors
-            .read()
-            .unwrap()
-            .values()
-            .map(|executor| executor.definition())
-            .collect::<Vec<_>>();
-
-        for definition in definitions {
-            let artifact = ArtifactRef::tool(definition.name.clone());
+    async fn persist_tool_definition(&self, definition: &ToolDefinition) -> anyhow::Result<()> {
+        if let Some(db) = &self.db {
+            let now = Utc::now();
+            let artifact = ArtifactRef::tool(definition.name.to_string());
             let existing = tool::Entity::find()
-                .filter(tool::Column::Name.eq(&definition.name))
+                .filter(tool::Column::Name.eq(definition.name.as_str()))
                 .one(db)
                 .await?;
 
@@ -398,9 +331,81 @@ impl BuiltinToolRegistry {
                     let catalog = tool_catalog_fields(&definition);
                     tool::ActiveModel {
                         id: Set(Uuid::new_v4()),
-                        name: Set(definition.name),
-                        description: Set(definition.description),
-                        parameters: Set(definition.parameters),
+                        name: Set(definition.name.to_string()),
+                        description: Set(definition.description.clone()),
+                        parameters: Set(definition.parameters.clone()),
+                        source: Set(definition.source.clone()),
+                        require_confirmation: Set(definition.require_confirmation),
+                        required_role: Set(definition.required_role.clone()),
+                        routing_keywords: Set(catalog.routing_keywords),
+                        routing_examples: Set(catalog.routing_examples),
+                        routing_text: Set(catalog.routing_text),
+                        routing_embedding: Set(None),
+                        enabled: Set(true),
+                        created_at: Set(now),
+                        updated_at: Set(now),
+                    }
+                    .insert(db)
+                    .await?;
+                }
+            }
+            self.artifacts()?
+                .upsert_artifact_in(db, &artifact, &definition.source)
+                .await?;
+        }
+        Ok(())
+    }
+
+    fn artifacts(&self) -> anyhow::Result<&ArtifactRegistry> {
+        self.artifacts
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("BuiltinToolRegistry not initialized"))
+    }
+
+    /// Persist built-in tool definitions so skills can prefer them through
+    /// `skill_preferred_tools` with real foreign keys. The in-memory executor
+    /// remains authoritative for execution.
+    async fn upsert_executor_tools_to_db(&self) -> anyhow::Result<()> {
+        let Some(db) = &self.db else { return Ok(()) };
+        let now = Utc::now();
+
+        let definitions = self
+            .executors
+            .read()
+            .unwrap()
+            .values()
+            .filter(|executor| executor.is_live())
+            .map(|executor| executor.definition())
+            .collect::<Vec<_>>();
+
+        for definition in definitions {
+            let artifact = ArtifactRef::tool(definition.name.to_string());
+            let existing = tool::Entity::find()
+                .filter(tool::Column::Name.eq(definition.name.as_str()))
+                .one(db)
+                .await?;
+
+            match existing {
+                Some(row) => {
+                    let preserve_catalog = preserve_existing_tool_catalog(&row, &definition);
+                    let mut active: tool::ActiveModel = row.into();
+                    active.description = Set(definition.description.clone());
+                    active.parameters = Set(definition.parameters.clone());
+                    active.source = Set(definition.source.clone());
+                    active.require_confirmation = Set(definition.require_confirmation);
+                    active.required_role = Set(definition.required_role.clone());
+                    set_tool_catalog(&mut active, &definition, preserve_catalog);
+                    active.enabled = Set(true);
+                    active.updated_at = Set(now);
+                    active.update(db).await?;
+                }
+                None => {
+                    let catalog = tool_catalog_fields(&definition);
+                    tool::ActiveModel {
+                        id: Set(Uuid::new_v4()),
+                        name: Set(definition.name.to_string()),
+                        description: Set(definition.description.clone()),
+                        parameters: Set(definition.parameters.clone()),
                         source: Set(definition.source.clone()),
                         require_confirmation: Set(definition.require_confirmation),
                         required_role: Set(definition.required_role),
@@ -496,7 +501,7 @@ impl ModuleLifecycle for BuiltinToolRegistry {
         self.remove_obsolete_builtin_tools()
             .await
             .context("removing obsolete built-in tools")?;
-        self.register_builtins();
+        self.register_builtins()?;
 
         self.upsert_executor_tools_to_db()
             .await
@@ -518,10 +523,14 @@ impl ModuleLifecycle for BuiltinToolRegistry {
 impl ToolRegistry for BuiltinToolRegistry {
     async fn resolve_executor(&self, name: &str) -> anyhow::Result<Option<PreparedTool>> {
         let catalog = self.executors.read().unwrap();
-        Ok(catalog.entries.get(name).map(|executor| PreparedTool {
-            executor: executor.clone(),
-            registration_revision: catalog.revisions[name].clone(),
-        }))
+        Ok(catalog
+            .entries
+            .get(name)
+            .filter(|entry| entry.is_live())
+            .map(|executor| PreparedTool {
+                executor: executor.clone(),
+                registration_revision: catalog.revisions[name].clone(),
+            }))
     }
     async fn list_tools(&self) -> anyhow::Result<Vec<ToolDefinition>> {
         let tools: Vec<ToolDefinition> = self
@@ -529,80 +538,46 @@ impl ToolRegistry for BuiltinToolRegistry {
             .read()
             .unwrap()
             .values()
+            .filter(|executor| executor.is_live())
             .map(|executor| executor.definition())
             .collect();
 
         Ok(tools)
     }
 
+    async fn list_tools_for(&self, user_id: Uuid) -> anyhow::Result<Vec<ToolDefinition>> {
+        Ok(self
+            .executors
+            .read()
+            .unwrap()
+            .values()
+            .filter(|entry| entry.is_live() && entry.allows_user(user_id))
+            .map(|entry| entry.definition())
+            .collect())
+    }
     async fn get_tool(&self, name: &str) -> anyhow::Result<Option<ToolDefinition>> {
         // Check code-backed executors first
-        if let Some(executor) = self.executors.read().unwrap().get(name) {
+        if let Some(executor) = self
+            .executors
+            .read()
+            .unwrap()
+            .get(name)
+            .filter(|entry| entry.is_live())
+        {
             return Ok(Some(executor.definition()));
         }
 
         Ok(None)
     }
 
-    async fn execute(&self, call: ToolCall, ctx: &ToolContext) -> anyhow::Result<ToolResult> {
-        let call_id = call.call_id.clone();
-        let tool_name = call.tool_name.clone();
-
-        // Publish start event
-        if let Some(event_bus) = self.event_bus.as_ref() {
-            event_bus.publish(ServerEvent::ToolCallStarted {
-                call_id: call_id.clone(),
-                tool_name: tool_name.clone(),
-                source: ctx.source.clone(),
-            });
-        }
-
-        let start = std::time::Instant::now();
-
-        // Execute
-        let executor = self.executors.read().unwrap().get(&call.tool_name).cloned();
-        let result = if let Some(executor) = executor {
-            executor.execute(call.arguments, ctx).await
-        } else {
-            Ok(ToolResult {
-                call_id: call_id.clone(),
-                success: false,
-                output: serde_json::json!({"error": format!("unknown tool: {}", call.tool_name)}),
-                display: Some(format!("Unknown tool: {}", call.tool_name)),
-            })
-        };
-
-        let duration_ms = start.elapsed().as_millis() as u64;
-
-        // Publish completion event
-        if let Some(event_bus) = self.event_bus.as_ref() {
-            event_bus.publish(ServerEvent::ToolCallCompleted {
-                call_id: call_id.clone(),
-                tool_name,
-                success: result.as_ref().map_or(false, |r| r.success),
-                duration_ms,
-            });
-        }
-
-        result.map(|mut result| {
-            if result.call_id.is_empty() {
-                result.call_id = call_id;
-            }
-            result
-        })
-    }
-
-    async fn register_plugin_tool(&self, tool: ToolDefinition) -> anyhow::Result<()> {
-        anyhow::bail!(
-            "metadata-only plugin tool '{}' is not executable; register a code-backed ToolExecutor with register_tool_executor",
-            tool.name
-        )
+    async fn execute(&self, _call: ToolCall, _ctx: &ToolContext) -> anyhow::Result<ToolResult> {
+        anyhow::bail!("tools must execute through the durable Execution service")
     }
 
     async fn register_tool_executor(
         &self,
         owner_source: &str,
-        executor: Arc<dyn ToolExecutor>,
+        executor: Arc<ToolEntry>,
     ) -> anyhow::Result<()> {
         let definition = executor.definition();
         if definition.source != owner_source {
@@ -614,64 +589,68 @@ impl ToolRegistry for BuiltinToolRegistry {
             );
         }
 
-        if let Some(db) = &self.db {
-            let now = Utc::now();
-            let artifact = ArtifactRef::tool(definition.name.clone());
-            let existing = tool::Entity::find()
-                .filter(tool::Column::Name.eq(&definition.name))
-                .one(db)
-                .await?;
-
-            match existing {
-                Some(row) => {
-                    let preserve_catalog = preserve_existing_tool_catalog(&row, &definition);
-                    let mut active: tool::ActiveModel = row.into();
-                    active.description = Set(definition.description.clone());
-                    active.parameters = Set(definition.parameters.clone());
-                    active.source = Set(definition.source.clone());
-                    active.require_confirmation = Set(definition.require_confirmation);
-                    active.required_role = Set(definition.required_role.clone());
-                    set_tool_catalog(&mut active, &definition, preserve_catalog);
-                    active.enabled = Set(true);
-                    active.updated_at = Set(now);
-                    active.update(db).await?;
-                }
-                None => {
-                    let catalog = tool_catalog_fields(&definition);
-                    tool::ActiveModel {
-                        id: Set(Uuid::new_v4()),
-                        name: Set(definition.name.clone()),
-                        description: Set(definition.description.clone()),
-                        parameters: Set(definition.parameters.clone()),
-                        source: Set(definition.source.clone()),
-                        require_confirmation: Set(definition.require_confirmation),
-                        required_role: Set(definition.required_role.clone()),
-                        routing_keywords: Set(catalog.routing_keywords),
-                        routing_examples: Set(catalog.routing_examples),
-                        routing_text: Set(catalog.routing_text),
-                        routing_embedding: Set(None),
-                        enabled: Set(true),
-                        created_at: Set(now),
-                        updated_at: Set(now),
-                    }
-                    .insert(db)
-                    .await?;
-                }
-            }
-            self.artifacts()?
-                .upsert_artifact_in(db, &artifact, &definition.source)
-                .await?;
+        if let Some(existing) = self.executors.read().unwrap().get(definition.name.as_str()) {
+            anyhow::ensure!(
+                existing.definition().source == owner_source,
+                "tool name is owned by another source"
+            );
         }
+        self.persist_tool_definition(&definition).await?;
 
         self.executors
             .write()
             .unwrap()
-            .insert(definition.name.clone(), executor);
+            .insert(definition.name.to_string(), executor);
         tracing::info!(
             tool = %definition.name,
             source = %definition.source,
             "registered code-backed tool executor"
         );
+        Ok(())
+    }
+
+    async fn replace_source_tools(
+        &self,
+        owner: &str,
+        entries: Vec<Arc<ToolEntry>>,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            owner.starts_with("mcp:") || owner.starts_with("wasm:"),
+            "managed source namespace required"
+        );
+        anyhow::ensure!(entries.len() <= 128, "tool catalog entry budget");
+        let mut names = std::collections::HashSet::new();
+        {
+            let catalog = self.executors.read().unwrap();
+            for entry in &entries {
+                let definition = entry.definition();
+                anyhow::ensure!(
+                    definition.source == owner && names.insert(definition.name.to_string()),
+                    "duplicate tool or source mismatch"
+                );
+                if let Some(existing) = catalog.get(definition.name.as_str()) {
+                    anyhow::ensure!(
+                        existing.definition().source == owner,
+                        "tool name is owned by another source"
+                    );
+                }
+            }
+        }
+        for entry in &entries {
+            self.persist_tool_definition(&entry.definition()).await?;
+        }
+        let mut catalog = self.executors.write().unwrap();
+        let old_names = catalog
+            .values()
+            .filter(|entry| entry.definition().source == owner)
+            .map(|entry| entry.definition().name.to_string())
+            .collect::<Vec<_>>();
+        for name in old_names {
+            catalog.remove(&name);
+        }
+        for entry in entries {
+            catalog.insert(entry.definition().name.to_string(), entry);
+        }
         Ok(())
     }
 
@@ -810,58 +789,31 @@ impl ToolRegistry for BuiltinToolRegistry {
 /// Get current date/time
 pub struct GetCurrentTime;
 
-#[async_trait]
-impl ToolExecutor for GetCurrentTime {
-    fn implementation_revision(&self) -> Option<String> {
-        Some("alia.builtin.GetCurrentTime".into())
-    }
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "get_current_time".to_string(),
-            description: "Get the current date and time. Optionally specify a timezone."
-                .to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "timezone": {
-                        "type": "string",
-                        "description": "IANA timezone name (e.g., 'America/New_York', 'Asia/Tokyo'). Defaults to UTC."
-                    },
-                    "format": {
-                        "type": "string",
-                        "enum": ["iso8601", "human", "unix"],
-                        "description": "Output format. Defaults to 'human'."
-                    }
-                }
-            }),
-            routing_hints: Vec::new(),
-            source: "builtin".to_string(),
-            require_confirmation: false,
-            required_role: None,
-        }
+impl GetCurrentTime {
+    pub fn entry(self) -> anyhow::Result<Arc<ToolEntry>> {
+        let revision = "alia.builtin.GetCurrentTime";
+        ToolEntry::from_tool(self, "builtin".to_string(), revision, false, None)
     }
 
-    async fn execute(
+    pub async fn execute(
         &self,
-        arguments: serde_json::Value,
+        arguments: GetCurrentTimeArgs,
         _ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
-        let format = arguments
-            .get("format")
-            .and_then(|v| v.as_str())
-            .unwrap_or("human");
-        let timezone = parse_time_tool_timezone(arguments.get("timezone"))?;
+        let format = arguments.format.unwrap_or(TimeFormat::Human);
+        let timezone = parse_time_tool_timezone(arguments.timezone.as_deref())?;
 
         let now = Utc::now();
         let local_now = now.with_timezone(&timezone);
 
         let time_str = match format {
-            "iso8601" => local_now.to_rfc3339(),
-            "unix" => now.timestamp().to_string(),
-            _ => local_now.format("%Y-%m-%d %H:%M:%S %Z (%:z)").to_string(),
+            TimeFormat::Iso8601 => local_now.to_rfc3339(),
+            TimeFormat::Unix => now.timestamp().to_string(),
+            TimeFormat::Human => local_now.format("%Y-%m-%d %H:%M:%S %Z (%:z)").to_string(),
         };
 
         Ok(ToolResult {
+            presentation: None,
             call_id: String::new(), // Will be filled by caller
             success: true,
             output: serde_json::json!({
@@ -877,15 +829,46 @@ impl ToolExecutor for GetCurrentTime {
     }
 }
 
-fn parse_time_tool_timezone(value: Option<&serde_json::Value>) -> anyhow::Result<Tz> {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GetCurrentTimeArgs {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<TimeFormat>,
+}
+
+impl rig_core::tool::Tool for GetCurrentTime {
+    const NAME: &'static str = "get_current_time";
+    type Args = GetCurrentTimeArgs;
+    type Output = rig_core::tool::ToolOutput;
+    type Error = rig_core::tool::ToolExecutionError;
+    fn description(&self) -> String {
+        "Get the current date and time. Optionally specify a timezone.".to_string()
+    }
+    fn parameters(&self) -> serde_json::Value {
+        crate::tools::entry::parameters::<Self::Args>()
+    }
+    async fn call(
+        &self,
+        context: &mut rig_core::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
+        let invocation = context
+            .require::<ToolContext>()
+            .map_err(crate::tools::entry::tool_error)?;
+        self.execute(args, &invocation)
+            .await
+            .map_err(crate::tools::entry::tool_error)?
+            .publish(context)
+    }
+}
+
+fn parse_time_tool_timezone(value: Option<&str>) -> anyhow::Result<Tz> {
     let Some(raw) = value else {
         return Ok(chrono_tz::UTC);
     };
-    let Some(timezone) = raw
-        .as_str()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
+    let Some(timezone) = Some(raw.trim()).filter(|value| !value.is_empty()) else {
         anyhow::bail!("timezone must be an IANA timezone string, for example 'Asia/Shanghai'");
     };
 
@@ -901,186 +884,27 @@ fn parse_time_tool_timezone(value: Option<&serde_json::Value>) -> anyhow::Result
     })
 }
 
-/// Fetch a public HTTP(S) URL.
-#[cfg(feature = "tools-http")]
-pub struct FetchUrl;
-
-#[cfg(feature = "tools-http")]
-#[async_trait]
-impl ToolExecutor for FetchUrl {
-    fn implementation_revision(&self) -> Option<String> {
-        Some("alia.builtin.FetchUrl".into())
-    }
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "fetch".to_string(),
-            description: "Fetch a public HTTP(S) URL and return bounded response text. Local/private network addresses are blocked.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "Public http:// or https:// URL to fetch"
-                    },
-                    "max_bytes": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": FETCH_HARD_MAX_BYTES,
-                        "description": "Maximum response bytes to read. Defaults to 65536 and is capped at 1048576."
-                    },
-                    "timeout_sec": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": FETCH_HARD_TIMEOUT_SEC,
-                        "description": "Request timeout in seconds. Defaults to 10 and is capped at 30."
-                    },
-                    "headers": {
-                        "type": "object",
-                        "additionalProperties": {"type": "string"},
-                        "description": "Optional request headers. Do not include secrets."
-                    }
-                },
-                "required": ["url"]
-            }),
-            routing_hints: Vec::new(),
-            source: "builtin".to_string(),
-            require_confirmation: false,
-            required_role: None,
-        }
-    }
-
-    async fn execute(
-        &self,
-        arguments: serde_json::Value,
-        _ctx: &ToolContext,
-    ) -> anyhow::Result<ToolResult> {
-        let raw_url = required_str(&arguments, "url")?;
-        let url = reqwest::Url::parse(raw_url)
-            .map_err(|error| anyhow::anyhow!("invalid url: {error}"))?;
-        validate_fetch_url(&url).await?;
-
-        let max_bytes = arguments
-            .get("max_bytes")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(FETCH_DEFAULT_MAX_BYTES as u64)
-            .clamp(1, FETCH_HARD_MAX_BYTES as u64) as usize;
-        let timeout_sec = arguments
-            .get("timeout_sec")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(FETCH_DEFAULT_TIMEOUT_SEC)
-            .clamp(1, FETCH_HARD_TIMEOUT_SEC);
-
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(timeout_sec))
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent("alia-server builtin fetch/0.1")
-            .build()?;
-        let mut request = client.get(url.clone());
-
-        if let Some(headers) = arguments
-            .get("headers")
-            .and_then(serde_json::Value::as_object)
-        {
-            for (name, value) in headers {
-                let Some(value) = value.as_str() else {
-                    anyhow::bail!("header '{name}' must be a string");
-                };
-                request = request.header(name, value);
-            }
-        }
-
-        let response = request.send().await?;
-        let status = response.status();
-        let final_url = response.url().to_string();
-        let content_type = response
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .map(ToOwned::to_owned);
-        let mut bytes = Vec::with_capacity(max_bytes.min(8192));
-        let mut stream = response.bytes_stream();
-        let mut truncated = false;
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            let remaining = max_bytes.saturating_sub(bytes.len());
-            if chunk.len() > remaining {
-                bytes.extend_from_slice(&chunk[..remaining]);
-                truncated = true;
-                break;
-            }
-            bytes.extend_from_slice(&chunk);
-            if bytes.len() >= max_bytes {
-                truncated = true;
-                break;
-            }
-        }
-
-        let text = String::from_utf8_lossy(&bytes).to_string();
-        let display = if status.is_success() {
-            format!("Fetched {final_url} ({status}, {} bytes)", bytes.len())
-        } else {
-            format!("Fetched {final_url} with HTTP status {status}")
-        };
-
-        Ok(ToolResult {
-            call_id: String::new(),
-            success: status.is_success(),
-            output: serde_json::json!({
-                "url": raw_url,
-                "final_url": final_url,
-                "status": status.as_u16(),
-                "content_type": content_type,
-                "text": text,
-                "bytes_read": bytes.len(),
-                "truncated": truncated,
-            }),
-            display: Some(display),
-        })
-    }
-}
-
 /// Evaluate a basic arithmetic expression.
 pub struct Calculate;
 
-#[async_trait]
-impl ToolExecutor for Calculate {
-    fn implementation_revision(&self) -> Option<String> {
-        Some("alia.builtin.Calculate".into())
-    }
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "calculate".to_string(),
-            description:
-                "Evaluate a basic arithmetic expression using +, -, *, /, ^, and parentheses."
-                    .to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "expression": {
-                        "type": "string",
-                        "description": "Arithmetic expression to evaluate, for example '(2 + 3) * 4'."
-                    }
-                },
-                "required": ["expression"]
-            }),
-            routing_hints: Vec::new(),
-            source: "builtin".to_string(),
-            require_confirmation: false,
-            required_role: None,
-        }
+impl Calculate {
+    pub fn entry(self) -> anyhow::Result<Arc<ToolEntry>> {
+        let revision = "alia.builtin.Calculate";
+        ToolEntry::from_tool(self, "builtin".to_string(), revision, false, None)
     }
 
-    async fn execute(
+    pub async fn execute(
         &self,
-        arguments: serde_json::Value,
+        arguments: CalculateArgs,
         _ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
-        let expression = required_str(&arguments, "expression")?;
+        let expression = arguments.expression.trim();
+        anyhow::ensure!(!expression.is_empty(), "expression is required");
         let result = eval_arithmetic(expression)?;
         let display = format_number(result);
 
         Ok(ToolResult {
+            presentation: None,
             call_id: String::new(),
             success: true,
             output: serde_json::json!({
@@ -1090,6 +914,39 @@ impl ToolExecutor for Calculate {
             }),
             display: Some(display),
         })
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CalculateArgs {
+    #[schemars(length(min = 1, max = 4096))]
+    pub expression: String,
+}
+
+impl rig_core::tool::Tool for Calculate {
+    const NAME: &'static str = "calculate";
+    type Args = CalculateArgs;
+    type Output = rig_core::tool::ToolOutput;
+    type Error = rig_core::tool::ToolExecutionError;
+    fn description(&self) -> String {
+        "Evaluate a basic arithmetic expression using +, -, *, /, ^, and parentheses.".to_string()
+    }
+    fn parameters(&self) -> serde_json::Value {
+        crate::tools::entry::parameters::<Self::Args>()
+    }
+    async fn call(
+        &self,
+        context: &mut rig_core::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
+        let invocation = context
+            .require::<ToolContext>()
+            .map_err(crate::tools::entry::tool_error)?;
+        self.execute(args, &invocation)
+            .await
+            .map_err(crate::tools::entry::tool_error)?
+            .publish(context)
     }
 }
 
@@ -1104,49 +961,22 @@ impl MemorySearch {
     }
 }
 
-#[async_trait]
-impl ToolExecutor for MemorySearch {
-    fn implementation_revision(&self) -> Option<String> {
-        Some("alia.builtin.MemorySearch".into())
-    }
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "memory_search".to_string(),
-            description: "Search the user's memory for relevant information.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query to find relevant memories"
-                    },
-                    "max_results": {
-                        "type": "integer",
-                        "description": "Maximum number of results to return. Defaults to 5."
-                    },
-                    "layers": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Memory layers to search: 'core', 'episodic', 'procedural'. Defaults to all."
-                    }
-                },
-                "required": ["query"]
-            }),
-            routing_hints: Vec::new(),
-            source: "builtin".to_string(),
-            require_confirmation: false,
-            required_role: None,
-        }
+impl MemorySearch {
+    pub fn entry(self) -> anyhow::Result<Arc<ToolEntry>> {
+        let revision = "alia.builtin.MemorySearch";
+        ToolEntry::from_tool(self, "builtin".to_string(), revision, false, None)
     }
 
-    async fn execute(
+    pub async fn execute(
         &self,
-        arguments: serde_json::Value,
+        arguments: MemorySearchArgs,
         ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
-        let query = required_str(&arguments, "query")?;
+        let query = arguments.query.trim();
+        anyhow::ensure!(!query.is_empty(), "query is required");
         let Some(memory) = &self.memory else {
             return Ok(ToolResult {
+                presentation: None,
                 call_id: String::new(),
                 success: false,
                 output: serde_json::json!({"error": "memory_backend_unavailable"}),
@@ -1164,6 +994,7 @@ impl ToolExecutor for MemorySearch {
             // an extension of that context; no unversioned memory text is
             // copied into this execution receipt.
             return Ok(ToolResult {
+                presentation: None,
                 call_id: String::new(),
                 success: true,
                 output: serde_json::json!({"context_read_requested": true}),
@@ -1171,12 +1002,17 @@ impl ToolExecutor for MemorySearch {
             });
         }
 
-        let max_results = arguments
-            .get("max_results")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(5)
-            .clamp(1, 20) as u32;
-        let layers = parse_memory_layers(arguments.get("layers"))?;
+        let max_results = arguments.max_results.unwrap_or(5);
+        anyhow::ensure!(
+            (1..=20).contains(&max_results),
+            "max_results must be between 1 and 20"
+        );
+        let layers = arguments.layers.map(|layers| {
+            layers
+                .iter()
+                .map(|layer| normalize_memory_layer(layer.trim()))
+                .collect()
+        });
         let opts = RetrievalOpts {
             max_results: Some(max_results),
             min_similarity: None,
@@ -1210,6 +1046,7 @@ impl ToolExecutor for MemorySearch {
         };
 
         Ok(ToolResult {
+            presentation: None,
             call_id: String::new(),
             success: true,
             output: serde_json::json!({
@@ -1219,6 +1056,44 @@ impl ToolExecutor for MemorySearch {
             }),
             display: Some(display),
         })
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MemorySearchArgs {
+    #[schemars(length(min = 1, max = 4096))]
+    pub query: String,
+    #[schemars(range(min = 1, max = 20))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_results: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layers: Option<Vec<String>>,
+}
+
+impl rig_core::tool::Tool for MemorySearch {
+    const NAME: &'static str = "memory_search";
+    type Args = MemorySearchArgs;
+    type Output = rig_core::tool::ToolOutput;
+    type Error = rig_core::tool::ToolExecutionError;
+    fn description(&self) -> String {
+        "Search the user's memory for relevant information.".to_string()
+    }
+    fn parameters(&self) -> serde_json::Value {
+        crate::tools::entry::parameters::<Self::Args>()
+    }
+    async fn call(
+        &self,
+        context: &mut rig_core::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
+        let invocation = context
+            .require::<ToolContext>()
+            .map_err(crate::tools::entry::tool_error)?;
+        self.execute(args, &invocation)
+            .await
+            .map_err(crate::tools::entry::tool_error)?
+            .publish(context)
     }
 }
 
@@ -1233,53 +1108,22 @@ impl MemoryStore {
     }
 }
 
-#[async_trait]
-impl ToolExecutor for MemoryStore {
-    fn implementation_revision(&self) -> Option<String> {
-        Some("alia.builtin.MemoryStore".into())
-    }
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "memory_store".to_string(),
-            description: "Store information only when the user explicitly asks the assistant to remember it. Do not store secrets, identifiers, health details, religious views, or political views from chat; sensitive memories must be added by the user in the memory UI/API.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "content": {
-                        "type": "string",
-                        "description": "The information to remember"
-                    },
-                    "layer": {
-                        "type": "string",
-                        "enum": ["core", "preference", "relationship", "episodic", "procedural"],
-                        "description": "Memory layer to store in. Defaults to 'episodic'."
-                    },
-                    "importance": {
-                        "type": "number",
-                        "description": "Importance score from 0.0 to 1.0. Defaults to 0.5."
-                    },
-                    "node_type": {
-                        "type": "string",
-                        "description": "Memory node type, for example 'fact', 'preference', or 'event'. Defaults to 'fact'."
-                    }
-                },
-                "required": ["content"]
-            }),
-            routing_hints: Vec::new(),
-            source: "builtin".to_string(),
-            require_confirmation: false,
-            required_role: None,
-        }
+impl MemoryStore {
+    pub fn entry(self) -> anyhow::Result<Arc<ToolEntry>> {
+        let revision = "alia.builtin.MemoryStore";
+        ToolEntry::from_tool(self, "builtin".to_string(), revision, false, None)
     }
 
-    async fn execute(
+    pub async fn execute(
         &self,
-        arguments: serde_json::Value,
+        arguments: MemoryStoreArgs,
         ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
-        let content = required_str(&arguments, "content")?.trim().to_string();
+        let content = arguments.content.trim().to_string();
+        anyhow::ensure!(!content.is_empty(), "content is required");
         if let Some(sensitive) = detect_sensitive_memory(&content) {
             return Ok(ToolResult {
+                presentation: None,
                 call_id: String::new(),
                 success: false,
                 output: serde_json::json!({
@@ -1293,6 +1137,7 @@ impl ToolExecutor for MemoryStore {
         }
         let Some(memory) = &self.memory else {
             return Ok(ToolResult {
+                presentation: None,
                 call_id: String::new(),
                 success: false,
                 output: serde_json::json!({"error": "memory_backend_unavailable"}),
@@ -1301,23 +1146,20 @@ impl ToolExecutor for MemoryStore {
         };
 
         let layer = arguments
-            .get("layer")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("episodic")
-            .trim()
-            .to_lowercase();
-        let layer = normalize_memory_layer(&layer);
-        let importance = arguments
-            .get("importance")
-            .and_then(serde_json::Value::as_f64)
-            .unwrap_or(0.5)
-            .clamp(0.0, 1.0) as f32;
+            .layer
+            .unwrap_or(MemoryLayer::Episodic)
+            .as_str()
+            .to_owned();
+        let importance = arguments.importance.unwrap_or(0.5);
+        anyhow::ensure!(
+            (0.0..=1.0).contains(&importance),
+            "importance must be between zero and one"
+        );
         let node_type = arguments
-            .get("node_type")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("fact")
+            .node_type
+            .unwrap_or_else(|| "fact".into())
             .trim()
-            .to_string();
+            .to_owned();
         let mut incoming = MemoryNode::new(
             layer.clone(),
             node_type.clone(),
@@ -1338,6 +1180,7 @@ impl ToolExecutor for MemoryStore {
         let action = upsert_tool_memory(memory.as_ref(), ctx, &incoming).await?;
 
         Ok(ToolResult {
+            presentation: None,
             call_id: String::new(),
             success: true,
             output: serde_json::json!({
@@ -1357,6 +1200,46 @@ impl ToolExecutor for MemoryStore {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryStoreArgs {
+    #[schemars(length(min = 1, max = 65536))]
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layer: Option<MemoryLayer>,
+    #[schemars(range(min = 0, max = 1))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub importance: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_type: Option<String>,
+}
+
+impl rig_core::tool::Tool for MemoryStore {
+    const NAME: &'static str = "memory_store";
+    type Args = MemoryStoreArgs;
+    type Output = rig_core::tool::ToolOutput;
+    type Error = rig_core::tool::ToolExecutionError;
+    fn description(&self) -> String {
+        "Store information only when the user explicitly asks the assistant to remember it. Do not store secrets, identifiers, health details, religious views, or political views from chat; sensitive memories must be added by the user in the memory UI/API.".to_string()
+    }
+    fn parameters(&self) -> serde_json::Value {
+        crate::tools::entry::parameters::<Self::Args>()
+    }
+    async fn call(
+        &self,
+        context: &mut rig_core::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
+        let invocation = context
+            .require::<ToolContext>()
+            .map_err(crate::tools::entry::tool_error)?;
+        self.execute(args, &invocation)
+            .await
+            .map_err(crate::tools::entry::tool_error)?
+            .publish(context)
+    }
+}
+
 /// Delete information from memory when the user explicitly asks to forget it.
 pub struct MemoryForget {
     memory: Option<Arc<MemoryService>>,
@@ -1368,46 +1251,20 @@ impl MemoryForget {
     }
 }
 
-#[async_trait]
-impl ToolExecutor for MemoryForget {
-    fn implementation_revision(&self) -> Option<String> {
-        Some("alia.builtin.MemoryForget".into())
-    }
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "memory_forget".to_string(),
-            description: "Forget/delete saved user memories only when the user explicitly asks to forget something. Provide either an exact memory id, or a text query describing the memory to forget.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "string",
-                        "description": "Exact memory id to delete when known."
-                    },
-                    "query": {
-                        "type": "string",
-                        "description": "Text query describing the memory to forget."
-                    },
-                    "max_results": {
-                        "type": "integer",
-                        "description": "Maximum matching memories to delete. Defaults to 1, maximum 10."
-                    }
-                }
-            }),
-            routing_hints: Vec::new(),
-            source: "builtin".to_string(),
-            require_confirmation: false,
-            required_role: None,
-        }
+impl MemoryForget {
+    pub fn entry(self) -> anyhow::Result<Arc<ToolEntry>> {
+        let revision = "alia.builtin.MemoryForget";
+        ToolEntry::from_tool(self, "builtin".to_string(), revision, false, None)
     }
 
-    async fn execute(
+    pub async fn execute(
         &self,
-        arguments: serde_json::Value,
+        arguments: MemoryForgetArgs,
         ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
         let Some(memory) = &self.memory else {
             return Ok(ToolResult {
+                presentation: None,
                 call_id: String::new(),
                 success: false,
                 output: serde_json::json!({"error": "memory_backend_unavailable"}),
@@ -1415,14 +1272,7 @@ impl ToolExecutor for MemoryForget {
             });
         };
 
-        #[derive(serde::Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Selection {
-            id: Option<String>,
-            query: Option<String>,
-            max_results: Option<u32>,
-        }
-        let selection: Selection = serde_json::from_value(arguments)?;
+        let selection = arguments;
         anyhow::ensure!(
             selection.id.is_some() ^ selection.query.is_some(),
             "provide exactly one memory id or query"
@@ -1443,6 +1293,7 @@ impl ToolExecutor for MemoryForget {
             anyhow::ensure!(!id.trim().is_empty(), "memory id must not be empty");
             let Some(node) = memory.get(ctx.user_id, id.trim()).await? else {
                 return Ok(ToolResult {
+                    presentation: None,
                     call_id: String::new(),
                     success: false,
                     output: serde_json::json!({"error": "memory_not_found", "id": id}),
@@ -1474,6 +1325,7 @@ impl ToolExecutor for MemoryForget {
         let deleted_count = memory.forget_many_guarded(&context, &targets).await?;
         let ids: Vec<_> = targets.iter().map(|(id, _)| id.as_str()).collect();
         Ok(ToolResult {
+            presentation: None,
             call_id: String::new(),
             success: true,
             output: serde_json::json!({
@@ -1489,6 +1341,44 @@ impl ToolExecutor for MemoryForget {
                 .into(),
             ),
         })
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryForgetArgs {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    #[schemars(range(min = 1, max = 10))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_results: Option<u32>,
+}
+
+impl rig_core::tool::Tool for MemoryForget {
+    const NAME: &'static str = "memory_forget";
+    type Args = MemoryForgetArgs;
+    type Output = rig_core::tool::ToolOutput;
+    type Error = rig_core::tool::ToolExecutionError;
+    fn description(&self) -> String {
+        "Forget/delete saved user memories only when the user explicitly asks to forget something. Provide either an exact memory id, or a text query describing the memory to forget.".to_string()
+    }
+    fn parameters(&self) -> serde_json::Value {
+        crate::tools::entry::parameters::<Self::Args>()
+    }
+    async fn call(
+        &self,
+        context: &mut rig_core::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
+        let invocation = context
+            .require::<ToolContext>()
+            .map_err(crate::tools::entry::tool_error)?;
+        self.execute(args, &invocation)
+            .await
+            .map_err(crate::tools::entry::tool_error)?
+            .publish(context)
     }
 }
 
@@ -1589,123 +1479,43 @@ impl ScheduleTask {
     }
 }
 
-#[async_trait]
-impl ToolExecutor for ScheduleTask {
-    fn implementation_revision(&self) -> Option<String> {
-        Some("alia.builtin.ScheduleTask".into())
-    }
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "schedule_task".to_string(),
-            description:
-                "Create a scheduled task to run at a specific time or on a recurring schedule."
-                    .to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "Name of the scheduled task"
-                    },
-                    "schedule_type": {
-                        "type": "string",
-                        "enum": ["cron", "once", "interval", "condition"],
-                        "description": "Type of schedule"
-                    },
-                    "cron_expression": {
-                        "type": "string",
-                        "description": "Cron expression for recurring tasks (e.g., '0 9 * * *' for daily at 9am)"
-                    },
-                    "run_at": {
-                        "type": "string",
-                        "description": "ISO 8601 datetime for one-time tasks"
-                    },
-                    "every_sec": {
-                        "type": "integer",
-                        "description": "Interval in seconds for recurring tasks"
-                    },
-                    "poll_interval_sec": {
-                        "type": "integer",
-                        "description": "Polling interval in seconds for condition schedules"
-                    },
-                    "conditions": {
-                        "type": ["array", "object"],
-                        "description": "Optional condition expression. Arrays are AND; objects can use all/any/not, sensor, time_range, event_field, or plugin-defined types."
-                    },
-                    "action": {
-                        "type": "object",
-                        "description": "Action to execute when triggered"
-                    }
-                },
-                "required": ["name", "schedule_type", "action"]
-            }),
-            routing_hints: Vec::new(),
-            source: "builtin".to_string(),
-            require_confirmation: true,
-            required_role: None,
-        }
+impl ScheduleTask {
+    pub fn entry(self) -> anyhow::Result<Arc<ToolEntry>> {
+        let revision = "alia.builtin.ScheduleTask";
+        ToolEntry::from_tool(self, "builtin".to_string(), revision, true, None)
     }
 
-    async fn execute(
+    pub async fn execute(
         &self,
-        arguments: serde_json::Value,
+        arguments: ScheduleTaskArgs,
         ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
-        let name = arguments
-            .get("name")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("name is required"))?;
-        let schedule_type = arguments
-            .get("schedule_type")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("schedule_type is required"))?;
-        let action = arguments
-            .get("action")
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("action is required"))?;
-
+        let name = arguments.name.trim().to_owned();
+        anyhow::ensure!(!name.is_empty(), "name is required");
         let task = ScheduledTask {
             id: Uuid::new_v4(),
             user_id: ctx.user_id,
             name: name.to_string(),
             enabled: true,
             schedule: ScheduleConfig {
-                schedule_type: schedule_type.to_string(),
-                cron_expression: arguments
-                    .get("cron_expression")
-                    .and_then(|v| v.as_str())
-                    .map(ToOwned::to_owned),
-                run_at: arguments
-                    .get("run_at")
-                    .and_then(|v| v.as_str())
-                    .map(ToOwned::to_owned),
-                every_sec: arguments
-                    .get("every_sec")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u32),
-                poll_interval_sec: arguments
-                    .get("poll_interval_sec")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u32),
+                schedule_type: arguments.schedule_type.as_str().to_owned(),
+                cron_expression: arguments.cron_expression,
+                run_at: arguments.run_at,
+                every_sec: arguments.every_sec,
+                poll_interval_sec: arguments.poll_interval_sec,
             },
             conditions: arguments
-                .get("conditions")
-                .cloned()
+                .conditions
                 .unwrap_or_else(|| serde_json::json!([])),
-            action,
-            cooldown_sec: arguments
-                .get("cooldown_sec")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0) as u32,
-            max_retries: arguments
-                .get("max_retries")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0) as u32,
+            action: serde_json::Value::Object(arguments.action),
+            cooldown_sec: arguments.cooldown_sec.unwrap_or(0),
+            max_retries: arguments.max_retries.unwrap_or(0),
             created_by: ctx.source.clone(),
         };
         let task_id = self.scheduler.create_task(task.clone()).await?;
 
         Ok(ToolResult {
+            presentation: None,
             call_id: String::new(),
             success: true,
             output: serde_json::json!({
@@ -1719,37 +1529,52 @@ impl ToolExecutor for ScheduleTask {
     }
 }
 
-fn required_str<'a>(arguments: &'a serde_json::Value, name: &str) -> anyhow::Result<&'a str> {
-    arguments
-        .get(name)
-        .and_then(serde_json::Value::as_str)
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("{name} is required"))
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScheduleTaskArgs {
+    #[schemars(length(min = 1, max = 256))]
+    pub name: String,
+    pub schedule_type: ScheduleType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cron_expression: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub every_sec: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub poll_interval_sec: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<serde_json::Value>,
+    pub action: serde_json::Map<String, serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cooldown_sec: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u32>,
 }
 
-fn parse_memory_layers(value: Option<&serde_json::Value>) -> anyhow::Result<Option<Vec<String>>> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-
-    let layers = match value {
-        serde_json::Value::Array(values) => values
-            .iter()
-            .filter_map(serde_json::Value::as_str)
-            .map(|layer| normalize_memory_layer(layer.trim()))
-            .collect::<Vec<_>>(),
-        serde_json::Value::String(layer) => vec![normalize_memory_layer(layer.trim())],
-        _ => anyhow::bail!("layers must be a string or an array of strings"),
-    };
-
-    let layers = layers
-        .into_iter()
-        .filter(|layer| !layer.is_empty())
-        .collect::<Vec<_>>();
-    if layers.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(layers))
+impl rig_core::tool::Tool for ScheduleTask {
+    const NAME: &'static str = "schedule_task";
+    type Args = ScheduleTaskArgs;
+    type Output = rig_core::tool::ToolOutput;
+    type Error = rig_core::tool::ToolExecutionError;
+    fn description(&self) -> String {
+        "Create a scheduled task to run at a specific time or on a recurring schedule.".to_string()
+    }
+    fn parameters(&self) -> serde_json::Value {
+        crate::tools::entry::parameters::<Self::Args>()
+    }
+    async fn call(
+        &self,
+        context: &mut rig_core::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
+        let invocation = context
+            .require::<ToolContext>()
+            .map_err(crate::tools::entry::tool_error)?;
+        self.execute(args, &invocation)
+            .await
+            .map_err(crate::tools::entry::tool_error)?
+            .publish(context)
     }
 }
 
@@ -1792,84 +1617,6 @@ fn memory_query_terms(query: &str) -> Vec<String> {
         .collect()
 }
 
-#[cfg(feature = "tools-http")]
-async fn validate_fetch_url(url: &reqwest::Url) -> anyhow::Result<()> {
-    match url.scheme() {
-        "http" | "https" => {}
-        scheme => {
-            anyhow::bail!("unsupported url scheme '{scheme}'; only http and https are allowed")
-        }
-    }
-
-    if !url.username().is_empty() || url.password().is_some() {
-        anyhow::bail!("credentials in fetch URLs are not allowed");
-    }
-
-    let host = url
-        .host_str()
-        .ok_or_else(|| anyhow::anyhow!("url host is required"))?;
-    let normalized_host = host.trim_end_matches('.').to_ascii_lowercase();
-    if normalized_host == "localhost" || normalized_host.ends_with(".localhost") {
-        anyhow::bail!("localhost URLs are not allowed");
-    }
-    if let Ok(ip) = normalized_host.parse::<IpAddr>() {
-        ensure_public_ip(ip)?;
-        return Ok(());
-    }
-
-    let port = url
-        .port_or_known_default()
-        .ok_or_else(|| anyhow::anyhow!("url port could not be inferred"))?;
-    let addresses = lookup_host((host, port)).await?;
-    let mut saw_address = false;
-    for address in addresses {
-        saw_address = true;
-        ensure_public_ip(address.ip())?;
-    }
-    if !saw_address {
-        anyhow::bail!("url host did not resolve");
-    }
-
-    Ok(())
-}
-
-#[cfg(feature = "tools-http")]
-fn ensure_public_ip(ip: IpAddr) -> anyhow::Result<()> {
-    let blocked = match ip {
-        IpAddr::V4(ip) => {
-            ip.is_private()
-                || ip.is_loopback()
-                || ip.is_link_local()
-                || ip.is_broadcast()
-                || ip.is_multicast()
-                || ip.is_unspecified()
-                || ip.octets()[0] == 0
-        }
-        IpAddr::V6(ip) => {
-            ip.is_loopback()
-                || ip.is_multicast()
-                || ip.is_unspecified()
-                || is_ipv6_unique_local(ip)
-                || is_ipv6_unicast_link_local(ip)
-        }
-    };
-
-    if blocked {
-        anyhow::bail!("fetch blocked non-public address {ip}");
-    }
-    Ok(())
-}
-
-#[cfg(feature = "tools-http")]
-fn is_ipv6_unique_local(ip: std::net::Ipv6Addr) -> bool {
-    (ip.segments()[0] & 0xfe00) == 0xfc00
-}
-
-#[cfg(feature = "tools-http")]
-fn is_ipv6_unicast_link_local(ip: std::net::Ipv6Addr) -> bool {
-    (ip.segments()[0] & 0xffc0) == 0xfe80
-}
-
 fn eval_arithmetic(expression: &str) -> anyhow::Result<f64> {
     let mut parser = ArithmeticParser::new(expression);
     let value = parser.parse_expression()?;
@@ -1900,14 +1647,16 @@ mod catalog_tests {
 
     fn definition() -> ToolDefinition {
         ToolDefinition {
-            name: "memory_store".to_string(),
-            description: "Store information to memory".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "content": {"type": "string"}
-                }
-            }),
+            function: rig_core::completion::ToolDefinition::new(
+                rig_core::message::ToolName::new("memory_store".to_string()).unwrap(),
+                "Store information to memory".to_string(),
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "content": {"type": "string"}
+                    }
+                }),
+            ),
             routing_hints: vec!["favorite".to_string()],
             source: "builtin".to_string(),
             require_confirmation: false,
@@ -1919,7 +1668,7 @@ mod catalog_tests {
         let now = Utc::now();
         tool::Model {
             id: Uuid::new_v4(),
-            name: definition.name.clone(),
+            name: definition.name.to_string(),
             description: definition.description.clone(),
             parameters: definition.parameters.clone(),
             source: definition.source.clone(),
@@ -1971,7 +1720,7 @@ mod catalog_tests {
         assert!(!preserve_existing_tool_catalog(
             &tool::Model {
                 id: Uuid::new_v4(),
-                name: definition.name.clone(),
+                name: definition.name.to_string(),
                 description: "Store information to memory".to_string(),
                 parameters: definition.parameters.clone(),
                 source: definition.source.clone(),
@@ -2178,30 +1927,49 @@ pub fn to_openai_functions(tools: &[ToolDefinition]) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// Parse OpenAI function call response into ToolCall
-pub fn parse_openai_tool_call(function_call: &serde_json::Value) -> anyhow::Result<ToolCall> {
-    let name = function_call
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing function name"))?;
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum TimeFormat {
+    Iso8601,
+    Human,
+    Unix,
+}
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum MemoryLayer {
+    Core,
+    Preference,
+    Relationship,
+    Episodic,
+    Procedural,
+}
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ScheduleType {
+    Cron,
+    Once,
+    Interval,
+    Condition,
+}
 
-    let arguments_str = function_call
-        .get("arguments")
-        .and_then(|v| v.as_str())
-        .unwrap_or("{}");
-
-    let arguments: serde_json::Value = serde_json::from_str(arguments_str)
-        .map_err(|e| anyhow::anyhow!("invalid function arguments JSON: {e}"))?;
-
-    let call_id = function_call
-        .get("id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    Ok(ToolCall {
-        tool_name: name.to_string(),
-        arguments,
-        call_id,
-    })
+impl MemoryLayer {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Core => "core",
+            Self::Preference => "preference",
+            Self::Relationship => "relationship",
+            Self::Episodic => "episodic",
+            Self::Procedural => "procedural",
+        }
+    }
+}
+impl ScheduleType {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Cron => "cron",
+            Self::Once => "once",
+            Self::Interval => "interval",
+            Self::Condition => "condition",
+        }
+    }
 }

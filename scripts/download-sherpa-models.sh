@@ -33,6 +33,12 @@ fi
 
 MODELS_DIR="${MODELS_DIR:-$ROOT_DIR/config/models}"
 
+case "${1:-}" in
+  "") [[ $# -eq 0 ]] || exit 1 ;;
+  --vad-only) [[ $# -eq 1 ]] || exit 1 ;;
+  *) echo "Usage: $0 [--vad-only]" >&2; exit 1 ;;
+esac
+
 KWS_NAME="sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20"
 KWS_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/${KWS_NAME}.tar.bz2"
 
@@ -51,8 +57,26 @@ fetch() {
     return
   fi
   echo "Downloading $url"
-  curl -L --fail --retry 3 --output "$dest" "$url"
+  local partial="$dest.partial.$$"
+  if ! curl -L --fail --retry 3 --output "$partial" "$url"; then
+    rm -f "$partial"
+    return 1
+  fi
+  mv "$partial" "$dest"
 }
+
+# R1 supplies wake events; only its existing host VAD needs a model.
+if [[ "${1:-}" == --vad-only ]]; then
+  if [[ -s "$VAD_TARGET/$VAD_MODEL" ]]; then
+    echo "Using existing $VAD_TARGET/$VAD_MODEL"
+    exit 0
+  fi
+  mkdir -p "$VAD_TARGET" "$DOWNLOAD_DIR"
+  fetch "$VAD_URL" "$DOWNLOAD_DIR/$VAD_MODEL"
+  cp "$DOWNLOAD_DIR/$VAD_MODEL" "$VAD_TARGET/$VAD_MODEL"
+  echo "VAD ready: $VAD_TARGET/$VAD_MODEL"
+  exit 0
+fi
 
 extract() {
   local archive="$1"

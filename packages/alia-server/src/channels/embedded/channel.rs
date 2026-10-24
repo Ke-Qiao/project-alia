@@ -22,7 +22,7 @@ use tonic::Request;
 use tonic::transport::Channel;
 
 use alia_proto::binding::device_binding_client::DeviceBindingClient;
-use alia_proto::body::body_control_client::BodyControlClient;
+use alia_proto::motion::motion_control_client::MotionControlClient;
 use alia_proto::playback::playback_client::PlaybackClient;
 use alia_proto::plugin::plugin_manager_client::PluginManagerClient;
 use alia_proto::sensor::embedded_sensor_client::EmbeddedSensorClient;
@@ -31,14 +31,14 @@ use alia_proto::settings::embedded_settings_client::EmbeddedSettingsClient;
 use crate::auth::load_server_keypair;
 use crate::config::ServerSection;
 use crate::event::{EventBus, ServerEvent};
+use crate::modules::embodiment::sensors::SensorRegistry;
 use crate::modules::platform::background::{BackgroundStart, OwnedBackground};
 use crate::modules::platform::lifecycle::ModuleHealth;
 use crate::modules::platform::lifecycle::ModuleLifecycle;
-use crate::modules::platform::sensors::SensorRegistry;
 
 use super::auth::auth_request_with_signing_key;
-use super::body::{BodyDeliveryStore, EmbeddedBodyRuntime, SignedBodyClient};
 use super::direct_response::{direct_response_rule_from_json, direct_response_rule_to_json};
+use super::motion::{EmbeddedMotionRuntime, MotionDeliveryStore, SignedMotionClient};
 use super::sensor::{
     EmbeddedSensorReadProvider, embedded_sensor_command_response_to_json,
     embedded_sensor_definition_to_json, embedded_sensor_reading_to_json, embedded_sensor_remote_id,
@@ -54,7 +54,7 @@ const SENSOR_SYNC_INTERVAL_SEC: u64 = 30;
 mod lifecycle_tests;
 
 #[cfg(test)]
-mod body_pin_tests {
+mod motion_pin_tests {
     use super::*;
 
     fn config() -> EmbeddedChannelConfig {
@@ -74,27 +74,27 @@ mod body_pin_tests {
     }
 
     #[test]
-    fn body_pin_is_optional_but_partial_malformed_and_wrong_length_pins_are_rejected() {
+    fn motion_pin_is_optional_but_partial_malformed_and_wrong_length_pins_are_rejected() {
         let mut config = config();
-        assert!(config.body_device_pin().unwrap().is_none());
+        assert!(config.motion_device_pin().unwrap().is_none());
         config.expected_device_id = Some("trusted-device".into());
-        assert!(config.body_device_pin().is_err());
+        assert!(config.motion_device_pin().is_err());
         config.expected_device_public_key = Some("not base64".into());
-        assert!(config.body_device_pin().is_err());
+        assert!(config.motion_device_pin().is_err());
         config.expected_device_public_key =
             Some(base64::engine::general_purpose::STANDARD.encode([7; 31]));
-        assert!(config.body_device_pin().is_err());
+        assert!(config.motion_device_pin().is_err());
         let key = SigningKey::from_bytes(&[7; 32]).verifying_key().to_bytes();
         config.expected_device_public_key =
             Some(base64::engine::general_purpose::STANDARD.encode(key));
         assert_eq!(
-            config.body_device_pin().unwrap(),
+            config.motion_device_pin().unwrap(),
             Some(("trusted-device".into(), key.to_vec()))
         );
     }
 
     #[tokio::test]
-    async fn unsigned_binding_status_cannot_populate_a_body_pin_or_replace_its_configured_key() {
+    async fn unsigned_binding_status_cannot_populate_a_motion_pin_or_replace_its_configured_key() {
         let mut config = config();
         let pinned = SigningKey::from_bytes(&[7; 32]).verifying_key().to_bytes();
         config.expected_device_id = Some("trusted-device".into());
@@ -102,7 +102,7 @@ mod body_pin_tests {
             Some(base64::engine::general_purpose::STANDARD.encode(pinned));
         let mut channel = EmbeddedChannel::new(config.clone(), EventBus::new(2));
         channel.signing_key = Some(SigningKey::from_bytes(&[8; 32]));
-        *channel.body_client.write().await = Some(BodyControlClient::new(
+        *channel.motion_client.write().await = Some(MotionControlClient::new(
             Channel::from_static("http://127.0.0.1:1").connect_lazy(),
         ));
         let impostor = SigningKey::from_bytes(&[9; 32]).verifying_key().to_bytes();
@@ -110,27 +110,27 @@ mod body_pin_tests {
             .remember_bound_device("trusted-device".into(), pinned.to_vec())
             .await
             .unwrap();
-        assert!(channel.body_runtime.has_pinned_transport().await);
+        assert!(channel.motion_runtime.has_pinned_transport().await);
         channel
             .remember_bound_device("trusted-device".into(), impostor.to_vec())
             .await
             .unwrap();
-        assert!(!channel.body_runtime.has_pinned_transport().await);
+        assert!(!channel.motion_runtime.has_pinned_transport().await);
         assert_eq!(
-            channel.config.body_device_pin().unwrap(),
+            channel.config.motion_device_pin().unwrap(),
             Some(("trusted-device".into(), pinned.to_vec()))
         );
-        let capability = channel.body_runtime.capabilities().await.unwrap();
+        let capability = channel.motion_runtime.capabilities().await.unwrap();
         assert!(capability["command_protocol"].is_null());
         assert_eq!(capability["capabilities"]["small_nod"]["supported"], false);
         channel
             .remember_bound_device("other-device".into(), pinned.to_vec())
             .await
             .unwrap();
-        assert!(!channel.body_runtime.has_pinned_transport().await);
+        assert!(!channel.motion_runtime.has_pinned_transport().await);
         assert_eq!(
-            channel.config.body_device_pin().unwrap(),
-            config.body_device_pin().unwrap()
+            channel.config.motion_device_pin().unwrap(),
+            config.motion_device_pin().unwrap()
         );
     }
 }
@@ -142,7 +142,7 @@ pub struct EmbeddedChannelConfig {
     pub owner_user_id: Option<uuid::Uuid>,
     pub expected_device_id: Option<String>,
     pub expected_device_public_key: Option<String>,
-    pub approved_animations: Vec<alia_core::body::BodyAnimationAsset>,
+    pub approved_animations: Vec<alia_core::embodiment::motion::MotionAnimationAsset>,
     pub endpoint: String,
     pub discovery_service_name: String,
     pub discovery_timeout_sec: u64,
@@ -152,26 +152,26 @@ pub struct EmbeddedChannelConfig {
 }
 
 impl EmbeddedChannelConfig {
-    fn body_device_pin(&self) -> anyhow::Result<Option<(String, Vec<u8>)>> {
+    fn motion_device_pin(&self) -> anyhow::Result<Option<(String, Vec<u8>)>> {
         match (&self.expected_device_id, &self.expected_device_public_key) {
             (None, None) => Ok(None),
             (Some(device_id), Some(encoded_key)) => {
                 anyhow::ensure!(
                     !device_id.trim().is_empty() && device_id.len() <= 256,
-                    "invalid pinned body device ID"
+                    "invalid pinned motion device ID"
                 );
                 let key = base64::engine::general_purpose::STANDARD
                     .decode(encoded_key)
-                    .context("invalid pinned body device public key base64")?;
+                    .context("invalid pinned motion device public key base64")?;
                 let bytes: [u8; 32] = key
                     .as_slice()
                     .try_into()
-                    .context("body device pin must be a 32-byte Ed25519 key")?;
+                    .context("motion device pin must be a 32-byte Ed25519 key")?;
                 ed25519_dalek::VerifyingKey::from_bytes(&bytes)
-                    .context("invalid pinned body Ed25519 key")?;
+                    .context("invalid pinned motion Ed25519 key")?;
                 Ok(Some((device_id.clone(), key)))
             }
-            _ => anyhow::bail!("body device ID and public key pins must be configured together"),
+            _ => anyhow::bail!("motion device ID and public key pins must be configured together"),
         }
     }
 }
@@ -247,8 +247,8 @@ pub struct EmbeddedChannel {
     binding_client: Arc<RwLock<Option<DeviceBindingClient<Channel>>>>,
     settings_client: Arc<RwLock<Option<EmbeddedSettingsClient<Channel>>>>,
     sensor_client: Arc<RwLock<Option<EmbeddedSensorClient<Channel>>>>,
-    body_client: Arc<RwLock<Option<BodyControlClient<Channel>>>>,
-    body_runtime: EmbeddedBodyRuntime,
+    motion_client: Arc<RwLock<Option<MotionControlClient<Channel>>>>,
+    motion_runtime: EmbeddedMotionRuntime,
     sensor_registry: Arc<RwLock<Option<Arc<SensorRegistry>>>>,
     discovered_candidate: Arc<RwLock<Option<DiscoveryCandidate>>>,
     discovery_cancel: CancellationToken,
@@ -273,8 +273,8 @@ impl EmbeddedChannel {
             ConnectionStatus::Reconnecting { attempt: 0 }
         };
 
-        let body_runtime =
-            EmbeddedBodyRuntime::new(config.id.clone(), config.approved_animations.clone());
+        let motion_runtime =
+            EmbeddedMotionRuntime::new(config.id.clone(), config.approved_animations.clone());
         Self {
             config,
             runtime: None,
@@ -288,8 +288,8 @@ impl EmbeddedChannel {
             binding_client: Arc::new(RwLock::new(None)),
             settings_client: Arc::new(RwLock::new(None)),
             sensor_client: Arc::new(RwLock::new(None)),
-            body_client: Arc::new(RwLock::new(None)),
-            body_runtime,
+            motion_client: Arc::new(RwLock::new(None)),
+            motion_runtime,
             sensor_registry: Arc::new(RwLock::new(None)),
             discovered_candidate: Arc::new(RwLock::new(None)),
             discovery_cancel: CancellationToken::new(),
@@ -580,7 +580,8 @@ impl EmbeddedChannel {
                     *self.binding_client.write().await = Some(binding_client.clone());
                     *self.settings_client.write().await =
                         Some(EmbeddedSettingsClient::new(channel.clone()));
-                    *self.body_client.write().await = Some(BodyControlClient::new(channel.clone()));
+                    *self.motion_client.write().await =
+                        Some(MotionControlClient::new(channel.clone()));
                     let sensor_client = EmbeddedSensorClient::new(channel);
                     *self.sensor_client.write().await = Some(sensor_client.clone());
                     *self.status.write().await = ConnectionStatus::Connected;
@@ -726,8 +727,8 @@ impl EmbeddedChannel {
             .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
     }
 
-    pub(crate) async fn set_body_delivery_store(&self, store: Arc<dyn BodyDeliveryStore>) {
-        self.body_runtime.set_store(store).await;
+    pub(crate) async fn set_motion_delivery_store(&self, store: Arc<dyn MotionDeliveryStore>) {
+        self.motion_runtime.set_store(store).await;
     }
 
     async fn sync_embedded_sensors(&self) -> anyhow::Result<usize> {
@@ -808,17 +809,17 @@ impl EmbeddedChannel {
         *self.device_id.write().await = Some(device_id);
         *self.device_public_key.write().await = Some(device_public_key);
         if let (Some(client), Some(signing_key), Some(reported_id), Some(reported_key)) = (
-            self.body_client.read().await.clone(),
+            self.motion_client.read().await.clone(),
             self.signing_key.clone(),
             self.device_id.read().await.clone(),
             self.device_public_key.read().await.clone(),
         ) {
-            match self.config.body_device_pin() {
+            match self.config.motion_device_pin() {
                 Ok(Some((device_id, device_public_key)))
                     if device_id == reported_id && device_public_key == reported_key =>
                 {
-                    self.body_runtime
-                        .set_client(SignedBodyClient::new(
+                    self.motion_runtime
+                        .set_client(SignedMotionClient::new(
                             client,
                             signing_key,
                             self.default_server_id.clone(),
@@ -827,10 +828,10 @@ impl EmbeddedChannel {
                         )?)
                         .await;
                 }
-                Ok(None) => self.body_runtime.revoke().await,
+                Ok(None) => self.motion_runtime.revoke().await,
                 outcome => {
-                    self.body_runtime.revoke().await;
-                    tracing::warn!(channel_id = %self.config.id, detail = ?outcome, "body control disabled: device status does not match the configured trusted pin");
+                    self.motion_runtime.revoke().await;
+                    tracing::warn!(channel_id = %self.config.id, detail = ?outcome, "motion control disabled: device status does not match the configured trusted pin");
                 }
             }
         }
@@ -849,7 +850,7 @@ impl EmbeddedChannel {
             self.remember_bound_device(status.device_id, status.device_public_key)
                 .await?;
         } else {
-            self.body_runtime.revoke().await;
+            self.motion_runtime.revoke().await;
         }
         Ok(())
     }
@@ -867,10 +868,13 @@ impl ModuleLifecycle for EmbeddedChannel {
             .clone()
             .context("embedded channel runtime dependencies not configured")?;
         self.account_database = Some(runtime.db.clone());
-        let body_delivery =
-            crate::modules::body_delivery::BodyDeliveryRepository::new(runtime.db.clone());
-        body_delivery.recover_expired().await?;
-        self.set_body_delivery_store(Arc::new(body_delivery)).await;
+        let motion_delivery =
+            crate::modules::embodiment::motion_delivery::MotionDeliveryRepository::new(
+                runtime.db.clone(),
+            );
+        motion_delivery.recover_expired().await?;
+        self.set_motion_delivery_store(Arc::new(motion_delivery))
+            .await;
         *self.sensor_registry.write().await = Some(runtime.sensors.clone());
         let keypair = load_server_keypair(&runtime.server_keypair_path)?;
         self.server_public_key = keypair.public_key_bytes().to_vec();
@@ -908,13 +912,13 @@ impl ModuleLifecycle for EmbeddedChannel {
         self.spawn_discovery_loop(&mut background);
         self.spawn_connection_loop(&mut background);
         self.spawn_sensor_sync_loop(&mut background);
-        self.body_runtime.start(&mut background)?;
+        self.motion_runtime.start(&mut background)?;
         background.commit();
         Ok(())
     }
 
     async fn stop(&self) -> anyhow::Result<()> {
-        self.body_runtime.request_stop();
+        self.motion_runtime.request_stop();
         self.discovery_cancel.cancel();
         let mut errors = Vec::new();
         if let Err(error) = self.background.stop().await {
@@ -933,8 +937,8 @@ impl ModuleLifecycle for EmbeddedChannel {
         self.binding_client.write().await.take();
         self.settings_client.write().await.take();
         self.sensor_client.write().await.take();
-        self.body_client.write().await.take();
-        self.body_runtime.revoke().await;
+        self.motion_client.write().await.take();
+        self.motion_runtime.revoke().await;
         self.discovered_candidate.write().await.take();
         *self.status.write().await = ConnectionStatus::Disconnected {
             since: Utc::now(),
@@ -1283,6 +1287,8 @@ impl ChannelAdapter for EmbeddedChannel {
                         "state": plugin.state,
                         "description": plugin.description,
                         "capabilities": plugin.capabilities,
+                        "asset_sha256": plugin.asset_sha256,
+                        "instance_id": plugin.instance_id,
                     })).collect::<Vec<_>>(),
                 }))
             }
@@ -1290,7 +1296,7 @@ impl ChannelAdapter for EmbeddedChannel {
                 let name = action.params["name"]
                     .as_str()
                     .ok_or_else(|| anyhow::anyhow!("install_plugin requires 'name' param"))?;
-                let version = action.params["version"].as_str().unwrap_or("");
+                let version = required_action_str(&action.params, "version")?;
                 let zip_base64 = action.params["zip_base64"]
                     .as_str()
                     .ok_or_else(|| anyhow::anyhow!("install_plugin requires 'zip_base64' param"))?;
@@ -1309,6 +1315,7 @@ impl ChannelAdapter for EmbeddedChannel {
                 Ok(serde_json::json!({
                     "success": resp.success,
                     "message": resp.message,
+                    "asset_sha256": resp.asset_sha256,
                 }))
             }
             "uninstall_plugin" => {
@@ -1335,9 +1342,22 @@ impl ChannelAdapter for EmbeddedChannel {
                     .ok_or_else(|| anyhow::anyhow!("start_plugin requires 'name' param"))?;
                 let mut client = self.plugin_client().await?;
                 let resp = client
-                    .start_plugin(self.auth_request(alia_proto::plugin::StartPluginRequest {
-                        name: name.to_string(),
-                    })?)
+                    .start_plugin(
+                        self.auth_request(alia_proto::plugin::StartPluginRequest {
+                            name: name.to_string(),
+                            expected_asset_sha256: action.params["expected_asset_sha256"]
+                                .as_str()
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!(
+                                        "start_plugin requires reviewed expected_asset_sha256"
+                                    )
+                                })?
+                                .to_owned(),
+                            allow_trusted_native: action.params["allow_trusted_native"]
+                                .as_bool()
+                                .unwrap_or(false),
+                        })?,
+                    )
                     .await?
                     .into_inner();
                 Ok(serde_json::json!({
@@ -1365,13 +1385,21 @@ impl ChannelAdapter for EmbeddedChannel {
                 let plugin = action.params["plugin"].as_str().ok_or_else(|| {
                     anyhow::anyhow!("send_plugin_command requires 'plugin' param")
                 })?;
-                let command_action = action.params["action"].as_str().unwrap_or("");
-                let payload = action.params["payload"].as_str().unwrap_or("{}");
+                let command_id = required_action_str(&action.params, "command_id")?;
+                let instance_id = required_action_str(&action.params, "instance_id")?;
+                let command_action = required_action_str(&action.params, "action")?;
+                let payload = match action.params.get("payload") {
+                    None => "{}",
+                    Some(value) => value
+                        .as_str()
+                        .context("send_plugin_command requires string 'payload' when provided")?,
+                };
                 let mut client = self.plugin_client().await?;
                 let resp = client
                     .send_command(self.auth_request(alia_proto::plugin::PluginCommandRequest {
                         plugin_name: plugin.to_string(),
-                        command_id: uuid::Uuid::new_v4().to_string(),
+                        command_id: command_id.to_owned(),
+                        instance_id: instance_id.to_owned(),
                         action: command_action.to_string(),
                         payload_json: payload.as_bytes().to_vec(),
                     })?)
@@ -1380,6 +1408,14 @@ impl ChannelAdapter for EmbeddedChannel {
                 Ok(serde_json::json!({
                     "success": resp.success,
                     "message": resp.message,
+                    "state": resp.state,
+                    "instance_id": resp.instance_id,
+                    "command_id": resp.command_id,
+                    "result": if resp.result_json.is_empty() {
+                        serde_json::Value::Null
+                    } else {
+                        serde_json::from_slice::<serde_json::Value>(&resp.result_json)?
+                    },
                 }))
             }
             "binding_status" => {
@@ -1487,7 +1523,7 @@ impl ChannelAdapter for EmbeddedChannel {
                 if resp.success {
                     *self.device_id.write().await = None;
                     *self.device_public_key.write().await = None;
-                    self.body_runtime.revoke().await;
+                    self.motion_runtime.revoke().await;
                 }
                 Ok(serde_json::json!({
                     "success": resp.success,
@@ -1661,10 +1697,10 @@ impl ChannelAdapter for EmbeddedChannel {
                     .into_inner();
                 Ok(volume_settings_to_json(resp))
             }
-            "expression_capabilities" => self.body_runtime.capabilities().await,
-            "execute_expression" => self.body_runtime.submit(action.params).await,
-            "cancel_expression" => self.body_runtime.observe(action.params, true).await,
-            "observe_expression" => self.body_runtime.observe(action.params, false).await,
+            "expression_capabilities" => self.motion_runtime.capabilities().await,
+            "execute_expression" => self.motion_runtime.submit(action.params).await,
+            "cancel_expression" => self.motion_runtime.observe(action.params, true).await,
+            "observe_expression" => self.motion_runtime.observe(action.params, false).await,
             "list_direct_responses" => {
                 let mut client = self.settings_client().await?;
                 let resp = client

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use alia_core::body::{BodyBackend, BodyEnd, BodySubmissionBoundary};
+use alia_core::embodiment::motion::{MotionBackend, MotionEnd, MotionSubmissionBoundary};
 use anyhow::{Context, Result, bail, ensure};
 use uuid::Uuid;
 
@@ -36,7 +36,7 @@ pub(super) fn run(
     {
         let mut state = shared.lock();
         if state.stopping {
-            startup_permit.cancel("body startup cancelled by shutdown");
+            startup_permit.cancel("motion startup cancelled by shutdown");
         }
         state.active = Some(ActiveWork::Startup(startup_permit.clone()));
     }
@@ -48,7 +48,7 @@ pub(super) fn run(
         let startup = if state.ready {
             Ok(())
         } else {
-            Err("body startup cancelled".into())
+            Err("motion startup cancelled".into())
         };
         shared.startup.send_replace(Some(startup));
     }
@@ -109,7 +109,7 @@ impl Driver<'_> {
     fn command(&mut self, work: QueuedCommand) -> Result<()> {
         let record = work.record;
         if let Some(reason) = record.permit.reason() {
-            return record.finish(BodyEnd::Cancelled { reason });
+            return record.finish(MotionEnd::Cancelled { reason });
         }
         // Current software targets are known only to this writer. Expand every
         // action now, before the first write, so a late invalid animation or
@@ -119,23 +119,23 @@ impl Driver<'_> {
             &mut self.mapper.clone(),
             self.previous
                 .as_deref()
-                .context("body startup has no complete submitted target")?,
+                .context("motion startup has no complete submitted target")?,
             &work.prepared.actions,
         ) {
             Ok(frames) => frames,
             Err(error) => {
-                return record.finish(BodyEnd::Rejected {
-                    reason: bounded_reason(&format!("body preflight: {error:#}")),
+                return record.finish(MotionEnd::Rejected {
+                    reason: bounded_reason(&format!("motion preflight: {error:#}")),
                 });
             }
         };
         for frame in frames {
             if !self.pace(&record.permit) {
-                return record.finish(BodyEnd::Cancelled {
+                return record.finish(MotionEnd::Cancelled {
                     reason: record
                         .permit
                         .reason()
-                        .unwrap_or_else(|| "body command cancelled".into()),
+                        .unwrap_or_else(|| "motion command cancelled".into()),
                 });
             }
             record.update(|progress| {
@@ -144,17 +144,17 @@ impl Driver<'_> {
             let write = self.submit(&frame.angles, &record.permit);
             self.record_submission(&record, &frame, &write)?;
             if let Some(error) = write.error {
-                record.finish(BodyEnd::Failed {
+                record.finish(MotionEnd::Failed {
                     reason: bounded_reason(&error),
                 })?;
-                bail!("body native write failed; writer sealed: {error}");
+                bail!("motion native write failed; writer sealed: {error}");
             }
             if write.cancelled || record.permit.reason().is_some() {
-                record.finish(BodyEnd::Cancelled {
+                record.finish(MotionEnd::Cancelled {
                     reason: record
                         .permit
                         .reason()
-                        .unwrap_or_else(|| "body native submission cancelled".into()),
+                        .unwrap_or_else(|| "motion native submission cancelled".into()),
                 })?;
                 ensure!(
                     write.uncertain_channels.is_empty(),
@@ -164,10 +164,10 @@ impl Driver<'_> {
             }
             ensure!(
                 write.fully_submitted(self.config.servo_count),
-                "body backend returned incomplete submission without an error or cancellation"
+                "motion backend returned incomplete submission without an error or cancellation"
             );
         }
-        record.finish(BodyEnd::Submitted)
+        record.finish(MotionEnd::Submitted)
     }
 
     fn record_submission(
@@ -196,13 +196,13 @@ impl Driver<'_> {
         })
     }
 
-    fn backend(&self, write: &ServoWrite) -> BodyBackend {
-        BodyBackend {
+    fn backend(&self, write: &ServoWrite) -> MotionBackend {
+        MotionBackend {
             instance_id: self.instance,
             boundary: match write.boundary {
-                ServoBoundary::SerialHostWrite => BodySubmissionBoundary::SerialHostWrite,
-                ServoBoundary::I2cRegisterWrite => BodySubmissionBoundary::I2cRegisterWrite,
-                ServoBoundary::Simulated => BodySubmissionBoundary::Simulated,
+                ServoBoundary::SerialHostWrite => MotionSubmissionBoundary::SerialHostWrite,
+                ServoBoundary::I2cRegisterWrite => MotionSubmissionBoundary::I2cRegisterWrite,
+                ServoBoundary::Simulated => MotionSubmissionBoundary::Simulated,
             },
             channels: self.config.servo_count as u32,
         }
@@ -224,7 +224,7 @@ impl Driver<'_> {
             &mut self.mapper.clone(),
             self.previous
                 .as_deref()
-                .context("body startup has no complete submitted target")?,
+                .context("motion startup has no complete submitted target")?,
             &[vec![face.rotation]],
         )?;
         for frame in frames {
@@ -257,7 +257,7 @@ impl Driver<'_> {
     fn center_at_startup(&mut self, permit: &Permit) -> Result<bool> {
         ensure!(
             self.config.calibration_confirmed,
-            "body startup requires confirmed mechanism calibration"
+            "motion startup requires confirmed mechanism calibration"
         );
         let target = vec![self.config.center_angle; self.config.servo_count];
         self.mapper.validate_angles(&target)?;
@@ -271,19 +271,19 @@ impl Driver<'_> {
         self.retain_known_channels(&target, &write);
         ensure!(
             write.error.is_none(),
-            "body startup native write failed: {}",
+            "motion startup native write failed: {}",
             write.error.as_deref().unwrap_or_default()
         );
         ensure!(
             write.uncertain_channels.is_empty(),
-            "body startup left unknown native effects"
+            "motion startup left unknown native effects"
         );
         if write.cancelled || permit.reason().is_some() {
             return Ok(false);
         }
         ensure!(
             write.fully_submitted(self.config.servo_count),
-            "body startup native write has incomplete evidence"
+            "motion startup native write has incomplete evidence"
         );
         Ok(true)
     }
@@ -293,7 +293,7 @@ impl Driver<'_> {
             .servo
             .submit_frame(angles, &|| permit.reason().is_some());
         // Never catch up after slow I/O or jump directly between commands. The
-        // speed budget applies between submitted body and face targets after
+        // speed budget applies between submitted motion and face targets after
         // the startup target, never from an assumed physical starting angle.
         self.next_write = Instant::now() + self.interval;
         result
@@ -328,8 +328,8 @@ fn validate_write(write: &ServoWrite, count: usize) -> Result<()> {
     {
         let entry = seen
             .get_mut(channel as usize)
-            .context("body backend reported an invalid channel")?;
-        ensure!(!*entry, "body backend duplicated native channel evidence");
+            .context("motion backend reported an invalid channel")?;
+        ensure!(!*entry, "motion backend duplicated native channel evidence");
         *entry = true;
     }
     Ok(())

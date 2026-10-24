@@ -87,21 +87,20 @@ impl ModuleLifecycle for DelayedLlm {
         "context_barrier_llm"
     }
 }
-#[async_trait]
-impl LlmAdapter for DelayedLlm {
-    async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
-        self.prompts.lock().unwrap().push(messages.to_vec());
-        if self.block_once.swap(false, Ordering::SeqCst) {
-            self.entered.add_permits(1);
-            self.release.acquire().await.unwrap().forget();
-        }
-        Ok("A generated reply from this context.".into())
-    }
-    async fn chat_stream(
-        &self,
-        _: &[ChatMessage],
-    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
-        anyhow::bail!("barrier test must use buffered generation")
+impl DelayedLlm {
+    fn service(self: &Arc<Self>) -> Arc<LlmService> {
+        let fixture = self.clone();
+        Arc::new(LlmService::test_text("DelayedLlm", move |messages| {
+            let fixture = fixture.clone();
+            async move {
+                fixture.prompts.lock().unwrap().push(messages.to_vec());
+                if fixture.block_once.swap(false, Ordering::SeqCst) {
+                    fixture.entered.add_permits(1);
+                    fixture.release.acquire().await.unwrap().forget();
+                }
+                Ok("A generated reply from this context.".into())
+            }
+        }))
     }
 }
 
@@ -116,9 +115,9 @@ async fn clear_or_policy_change_during_model_call_rejects_old_output_and_allows_
                 prompts: Mutex::default(),
             });
             let modules = Arc::get_mut(&mut fixture.modules).unwrap();
-            modules.llm = llm.clone();
-            modules.minor_llm = llm.clone();
-            modules.major_llm = llm.clone();
+            modules.llm = llm.service();
+            modules.minor_llm = llm.service();
+            modules.major_llm = llm.service();
             let turn = owned_turn(&fixture, 41);
             let generation = generate(&fixture, &turn, "This old source must not be reintroduced.");
             let revoke = async {

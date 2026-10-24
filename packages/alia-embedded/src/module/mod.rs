@@ -11,10 +11,13 @@ pub mod lifecycle;
 pub mod motion;
 pub mod noop;
 pub mod playback_session;
+pub mod r1;
 pub mod registry;
 pub mod sensor;
 #[cfg(feature = "sherpa-onnx")]
 pub mod sherpa;
+#[cfg(feature = "sherpa-onnx")]
+pub mod silero;
 pub mod speech;
 pub mod traits;
 pub mod vision;

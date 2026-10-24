@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use alia_server::modules::memory::MemoryService;
-use alia_server::providers::adapter::{ToolContext, ToolDefinition, ToolExecutor};
-#[cfg(feature = "tools-http")]
-use alia_server::tools::builtin::FetchUrl;
+use alia_server::providers::adapter::{ToolContext, ToolDefinition};
 use alia_server::tools::builtin::{
-    Calculate, GetCurrentTime, MemoryForget, MemorySearch, MemoryStore, parse_openai_tool_call,
-    to_openai_functions,
+    Calculate, GetCurrentTime, MemoryForget, MemorySearch, MemoryStore, to_openai_functions,
 };
+#[cfg(feature = "tools-http")]
+use alia_server::tools::fetch;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -28,7 +27,10 @@ async fn test_get_current_time() {
     };
 
     let result = tool
-        .execute(serde_json::json!({"format": "iso8601"}), &ctx)
+        .execute(
+            serde_json::from_value(serde_json::json!({"format": "iso8601"})).unwrap(),
+            &ctx,
+        )
         .await
         .unwrap();
 
@@ -58,7 +60,10 @@ async fn test_get_current_time_uses_iana_timezone() {
 
     let result = tool
         .execute(
-            serde_json::json!({"format": "human", "timezone": "Asia/Shanghai"}),
+            serde_json::from_value(
+                serde_json::json!({"format": "human", "timezone": "Asia/Shanghai"}),
+            )
+            .unwrap(),
             &ctx,
         )
         .await
@@ -94,7 +99,8 @@ async fn test_get_current_time_rejects_invalid_timezone() {
 
     let error = tool
         .execute(
-            serde_json::json!({"format": "human", "timezone": "Shanghai"}),
+            serde_json::from_value(serde_json::json!({"format": "human", "timezone": "Shanghai"}))
+                .unwrap(),
             &ctx,
         )
         .await
@@ -121,7 +127,10 @@ async fn test_calculate_expression() {
     };
 
     let result = tool
-        .execute(serde_json::json!({"expression": "(2 + 3) * 4 - 2^3"}), &ctx)
+        .execute(
+            serde_json::from_value(serde_json::json!({"expression": "(2 + 3) * 4 - 2^3"})).unwrap(),
+            &ctx,
+        )
         .await
         .unwrap();
 
@@ -147,7 +156,10 @@ async fn test_calculate_rejects_division_by_zero() {
     };
 
     let result = tool
-        .execute(serde_json::json!({"expression": "1 / 0"}), &ctx)
+        .execute(
+            serde_json::from_value(serde_json::json!({"expression": "1 / 0"})).unwrap(),
+            &ctx,
+        )
         .await;
 
     assert!(result.is_err());
@@ -156,7 +168,7 @@ async fn test_calculate_rejects_division_by_zero() {
 #[cfg(feature = "tools-http")]
 #[test]
 fn test_fetch_definition() {
-    let definition = FetchUrl.definition();
+    let definition = fetch::tool().unwrap().definition();
     assert_eq!(definition.name, "fetch");
     assert!(!definition.require_confirmation);
     assert_eq!(definition.parameters["required"][0], "url");
@@ -165,9 +177,11 @@ fn test_fetch_definition() {
 #[test]
 fn test_to_openai_functions() {
     let tools = vec![ToolDefinition {
-        name: "test_tool".to_string(),
-        description: "A test tool".to_string(),
-        parameters: serde_json::json!({"type": "object"}),
+        function: rig_core::completion::ToolDefinition::new(
+            rig_core::message::ToolName::new("test_tool".to_string()).unwrap(),
+            "A test tool".to_string(),
+            serde_json::json!({"type": "object"}),
+        ),
         routing_hints: Vec::new(),
         source: "builtin".to_string(),
         require_confirmation: false,
@@ -181,7 +195,7 @@ fn test_to_openai_functions() {
 
 #[test]
 fn memory_forget_schema_is_openai_compatible() {
-    let definition = MemoryForget::new(None).definition();
+    let definition = MemoryForget::new(None).entry().unwrap().definition();
 
     assert_eq!(definition.parameters["type"], "object");
     for key in ["oneOf", "anyOf", "allOf", "enum", "not"] {
@@ -192,20 +206,6 @@ fn memory_forget_schema_is_openai_compatible() {
     }
     assert!(definition.parameters["properties"]["id"].is_object());
     assert!(definition.parameters["properties"]["query"].is_object());
-}
-
-#[test]
-fn test_parse_openai_tool_call() {
-    let call_json = serde_json::json!({
-        "id": "call_123",
-        "name": "get_current_time",
-        "arguments": "{\"format\": \"human\"}"
-    });
-
-    let call = parse_openai_tool_call(&call_json).unwrap();
-    assert_eq!(call.tool_name, "get_current_time");
-    assert_eq!(call.call_id, "call_123");
-    assert_eq!(call.arguments["format"], "human");
 }
 
 #[tokio::test]
@@ -231,11 +231,12 @@ async fn memory_store_and_search_use_memory_system() {
 
     let stored = store
         .execute(
-            serde_json::json!({
+            serde_json::from_value(serde_json::json!({
                 "content": "KeQiao likes tsukuyomi",
                 "layer": "core",
                 "importance": 1.0
-            }),
+            }))
+            .unwrap(),
             &ctx,
         )
         .await
@@ -246,10 +247,11 @@ async fn memory_store_and_search_use_memory_system() {
 
     let found = search
         .execute(
-            serde_json::json!({
+            serde_json::from_value(serde_json::json!({
                 "query": "tsukuyomi",
                 "layers": ["core"]
-            }),
+            }))
+            .unwrap(),
             &ctx,
         )
         .await
@@ -285,11 +287,12 @@ async fn memory_store_blocks_sensitive_chat_memory() {
 
     let result = store
         .execute(
-            serde_json::json!({
+            serde_json::from_value(serde_json::json!({
                 "content": "The user's API key is sk-live-12345678901234567890abcdef.",
                 "layer": "core",
                 "importance": 1.0
-            }),
+            }))
+            .unwrap(),
             &ctx,
         )
         .await
@@ -327,9 +330,17 @@ async fn old_memory_tool_cannot_recreate_or_update_memories_after_clear() {
     };
     let original =
         serde_json::json!({"content": "The user prefers concise replies.", "layer": "preference"});
-    store.execute(original.clone(), &old).await.unwrap();
+    store
+        .execute(serde_json::from_value(original.clone()).unwrap(), &old)
+        .await
+        .unwrap();
     memory.clear(old.user_id).await.unwrap();
-    assert!(store.execute(original.clone(), &old).await.is_err());
+    assert!(
+        store
+            .execute(serde_json::from_value(original.clone()).unwrap(), &old)
+            .await
+            .is_err()
+    );
     assert!(
         memory
             .list(old.user_id, Default::default())
@@ -345,12 +356,15 @@ async fn old_memory_tool_cannot_recreate_or_update_memories_after_clear() {
         request_id: Uuid::new_v4(),
         ..old.clone()
     };
-    store.execute(original, &fresh).await.unwrap();
-    assert!(store.execute(serde_json::json!({"content": "The user prefers detailed replies.", "layer": "preference"}), &old).await.is_err());
+    store
+        .execute(serde_json::from_value(original).unwrap(), &fresh)
+        .await
+        .unwrap();
+    assert!(store.execute(serde_json::from_value(serde_json::json!({"content": "The user prefers detailed replies.", "layer": "preference"})).unwrap(), &old).await.is_err());
     let saved = memory.list(old.user_id, Default::default()).await.unwrap();
     assert_eq!(saved.len(), 1);
     assert_eq!(saved[0].content, "The user prefers concise replies.");
-    let update = store.execute(serde_json::json!({"content": "The user prefers detailed replies.", "layer": "preference"}), &fresh).await.unwrap();
+    let update = store.execute(serde_json::from_value(serde_json::json!({"content": "The user prefers detailed replies.", "layer": "preference"})).unwrap(), &fresh).await.unwrap();
     assert_eq!(update.output["action"], "updated");
     let saved = memory.list(old.user_id, Default::default()).await.unwrap();
     assert_eq!(saved.len(), 1);
@@ -378,7 +392,8 @@ async fn ai_memory_tool_requires_a_persisted_source_message() {
     };
     let error = store
         .execute(
-            serde_json::json!({"content":"The user likes green tea."}),
+            serde_json::from_value(serde_json::json!({"content":"The user likes green tea."}))
+                .unwrap(),
             &context,
         )
         .await
@@ -416,18 +431,22 @@ async fn memory_forget_deletes_matching_memory() {
 
     store
         .execute(
-            serde_json::json!({
+            serde_json::from_value(serde_json::json!({
                 "content": "The user likes short summaries.",
                 "layer": "preference",
                 "importance": 0.8
-            }),
+            }))
+            .unwrap(),
             &ctx,
         )
         .await
         .unwrap();
 
     let result = forget
-        .execute(serde_json::json!({"query": "short summaries"}), &ctx)
+        .execute(
+            serde_json::from_value(serde_json::json!({"query": "short summaries"})).unwrap(),
+            &ctx,
+        )
         .await
         .unwrap();
 
@@ -473,7 +492,10 @@ async fn memory_forget_batch_has_one_privacy_transition_and_rejects_old_request(
     let forget = MemoryForget::new(Some(memory.clone()));
     let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
     let result = forget
-        .execute(serde_json::json!({"query":"tea", "max_results":2}), &ctx)
+        .execute(
+            serde_json::from_value(serde_json::json!({"query":"tea", "max_results":2})).unwrap(),
+            &ctx,
+        )
         .await
         .unwrap();
     assert_eq!(result.output["selected"], 2);
@@ -498,7 +520,10 @@ async fn memory_forget_batch_has_one_privacy_transition_and_rejects_old_request(
         .unwrap();
     assert!(
         forget
-            .execute(serde_json::json!({"query":"coffee"}), &ctx)
+            .execute(
+                serde_json::from_value(serde_json::json!({"query":"coffee"})).unwrap(),
+                &ctx
+            )
             .await
             .is_err()
     );

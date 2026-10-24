@@ -2,6 +2,10 @@ pub mod voice {
     tonic::include_proto!("alia.voice.v2");
 }
 
+pub mod capture {
+    tonic::include_proto!("alia.capture.v1");
+}
+
 pub mod playback {
     tonic::include_proto!("alia.playback.v3");
 }
@@ -12,8 +16,8 @@ pub mod binding {
     tonic::include_proto!("alia.binding");
 }
 
-pub mod body {
-    tonic::include_proto!("alia.body.v1");
+pub mod motion {
+    tonic::include_proto!("alia.motion.v1");
 }
 
 pub mod plugin {

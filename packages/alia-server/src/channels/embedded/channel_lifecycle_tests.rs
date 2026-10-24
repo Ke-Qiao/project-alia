@@ -19,6 +19,53 @@ fn channel() -> EmbeddedChannel {
     )
 }
 
+#[tokio::test]
+async fn plugin_command_rejects_non_string_payload_before_connecting() {
+    let channel = channel();
+    // A valid action reaches the stopped-client guard; no network is started.
+    channel.discovery_cancel.cancel();
+    let mut params = serde_json::json!({
+        "plugin": "echo",
+        "instance_id": "original-instance",
+        "command_id": "original-command",
+        "action": "echo",
+    });
+    for payload in [
+        serde_json::json!({"value": 1}),
+        serde_json::json!([1]),
+        serde_json::json!(1),
+        serde_json::json!(true),
+        serde_json::Value::Null,
+    ] {
+        params["payload"] = payload;
+        let error = channel
+            .execute_action(ChannelAction {
+                name: "send_plugin_command".into(),
+                params: params.clone(),
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "send_plugin_command requires string 'payload' when provided"
+        );
+    }
+    for payload in [None, Some(serde_json::json!(r#"{"value":1}"#))] {
+        params.as_object_mut().unwrap().remove("payload");
+        if let Some(payload) = payload {
+            params["payload"] = payload;
+        }
+        let error = channel
+            .execute_action(ChannelAction {
+                name: "send_plugin_command".into(),
+                params: params.clone(),
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), "embedded channel is stopping");
+    }
+}
+
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn sensor_sync_waits_for_background_owner_cancellation() {
     let channel = channel();

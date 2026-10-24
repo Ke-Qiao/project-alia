@@ -537,16 +537,16 @@ impl DeliveryService {
             tokio::time::Instant::now() + Duration::from_secs(OBSERVATION_SECONDS as u64);
         let mut adapter_returned = false;
         let mut terminal_error = None;
-        let reason = loop {
+        let reason = 'observation: {
             tokio::select! {biased;
-             _=self.stop.cancelled()=>break "server shutdown".to_string(),
-             _=cancel.cancelled()=>break "response cancelled".to_string(),
-             _=tokio::time::sleep_until(deadline)=>break "absolute observation deadline".to_string(),
+             _=self.stop.cancelled()=>break 'observation "server shutdown".to_string(),
+             _=cancel.cancelled()=>break 'observation "response cancelled".to_string(),
+             _=tokio::time::sleep_until(deadline)=>break 'observation "absolute observation deadline".to_string(),
              result=AssertUnwindSafe(&mut delivery).catch_unwind()=>{heartbeat.take();match result{
               Ok(Ok(report))=>{
                adapter_returned=true;
                if report.progress.is_none() {
-                break "observation ended without a final checkpoint".to_string();
+                break 'observation "observation ended without a final checkpoint".to_string();
                }
                if matches!(report.observation_end, ObservationEnd::Unknown { .. })
                 && report.progress.as_ref().is_some_and(|progress| progress.end().is_none()) {
@@ -558,15 +558,15 @@ impl DeliveryService {
                   self.record_failure(format!("last delivery observation: {error}"));
                  }
                 }
-                break "transport observation ended before a device terminal checkpoint".to_string();
+                break 'observation "transport observation ended before a device terminal checkpoint".to_string();
                }
                match self.finish_report(&observer,report).await {
                 Ok(record) if record.status!=DeliveryStatus::Unknown=>return Ok(record),
-                Ok(_)=>break "observation ended without trustworthy completion".to_string(),
-                Err(error)=>{self.record_failure(format!("delivery terminal persistence: {error}"));let reason=format!("terminal evidence unavailable: {error}");terminal_error=Some(error);break reason;}
+                Ok(_)=>break 'observation "observation ended without trustworthy completion".to_string(),
+                Err(error)=>{self.record_failure(format!("delivery terminal persistence: {error}"));let reason=format!("terminal evidence unavailable: {error}");terminal_error=Some(error);break 'observation reason;}
                }
               },
-              Ok(Err(error))=>{adapter_returned=true;break format!("delivery transport failed: {error:#}");},
+              Ok(Err(error))=>{adapter_returned=true;break 'observation format!("delivery transport failed: {error:#}");},
               Err(_)=>{
                adapter_cancel.cancel();self.record_failure("delivery adapter panicked; original future quarantined with dependencies".into());
                // Retain the future and pinned channel on panic. Their cleanup semantics
@@ -575,7 +575,7 @@ impl DeliveryService {
                std::future::pending::<()>().await;unreachable!();
               }
              }},
-             error=async {heartbeat.as_mut().unwrap().await}=>break format!("delivery lease unavailable: {error}"),
+             error=async {heartbeat.as_mut().unwrap().await}=>break 'observation format!("delivery lease unavailable: {error}"),
             }
         };
         drop(heartbeat); // Release a paused lease transaction before cleanup DB work.

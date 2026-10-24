@@ -2,7 +2,7 @@
 
 Project Alia uses a Rust server modular monolith and an embedded realtime voice
 runtime. The server owns canonical Memory and Context, Interaction, Companion,
-Execution, Delivery, persistence, model selection, and APIs. Embedded owns local
+Execution, Embodiment, Delivery, persistence, model selection, and APIs. Embedded owns local
 audio I/O, wake word detection, scoped cues, device binding, and native playback.
 The current targets are a macOS server and Raspberry Pi 5 with 8 GB RAM;
 existing Linux ARM64 validation supports the server portability work.
@@ -20,18 +20,21 @@ graph LR
         Ingress["API / channels"] <--> Interaction
         Interaction <--> Memory["Memory / Context"]
         Interaction <--> Execution
+        Execution --> Embodiment["Embodiment: sensors / motion / operations"]
         Interaction --> Delivery
         Bootstrap["Bootstrap assembly"] -.-> Interaction
     end
     Ingress <-->|"VoiceSession v2"| Embedded["alia-embedded<br/>Pi 5 voice runtime"]
-    Delivery <-->|"Playback v3 / Body v1"| Embedded
+    Delivery <-->|"Playback v3"| Embedded
+    Embodiment <-->|"Motion v1 / sensor interfaces"| Embedded
     Memory --- Postgres[("PostgreSQL")]
     Execution --- Postgres
+    Embodiment --- Postgres
     Delivery --- Postgres
     Interaction -.-> Models["LLM / TTS / embedding<br/>provider services"]
     Ingress -.-> STT["Server STT provider"]
     Ingress -.-> Turn["Server Easy-Turn<br/>turn evidence"]
-    Embedded --- LocalModels["sherpa-onnx<br/>wake word / VAD"]
+    Embedded --- LocalModels["Sherpa wake word / Rust Silero VAD<br/>shared ONNX Runtime"]
     Embedded --- Audio["Microphone / speaker"]
 ```
 
@@ -45,7 +48,7 @@ models only supply inputs to it.
 | Path | Role |
 | --- | --- |
 | `packages/alia-server` | Bootstrap, domain services, API and channel adapters, provider integrations, registries, and PostgreSQL persistence. |
-| `packages/alia-embedded` | Continuous capture, wake word, VAD evidence, scoped voice/cue mixing, typed Body execution, binding, discovery, and sensors. |
+| `packages/alia-embedded` | Continuous capture, wake word, VAD evidence, scoped voice/cue mixing, typed Motion execution, binding, discovery, and sensors. |
 | `packages/alia-frontend` | Existing Expo/React Native UI; web/iOS/Android improvements are deferred. |
 | `crates/alia-core` | Shared types and contracts for the server and embedded runtime. |
 | `crates/proto` | Shared protobuf definitions and generated gRPC code. |
@@ -64,6 +67,11 @@ models only supply inputs to it.
 - Execution records authorized tool effects; Delivery records canonical response
   and media facts. Generation success, transport acceptance, and physical
   completion remain different facts.
+- Embodiment owns sensor observations, bounded Motion delivery, and persistent
+  physical operations. Expression generates expressive plans; independent
+  operations retain their own identity beyond response completion. Trusted
+  adapters receive Execution-authorized commands and return device evidence.
+  The foundation has no default robot or ROS transport.
 - Easy-Turn stays server-side and supplies bounded evidence. Server policy
   decides turn transitions, temporary yield, and explicit pause/resume.
 - Embedded opens a continuous VoiceSession after wake word and keeps uploading
@@ -80,17 +88,15 @@ assembly in `bootstrap` with lifecycle/task ownership in `modules/platform`.
 The old paths have no compatibility facade. Default Shadow and persisted
 policies remain unchanged.
 
-This is a completed ownership slice, not the end of the architecture refactor.
-Fixed conversation, cache, persona, router, skills, insights, and sensor services
-still live under `providers`, and some non-Memory contracts remain grouped in
-`providers/adapter.rs`. Context/Companion/Delivery transaction boundaries and
-the broad startup `ModuleContext` need separate review. See the
-[server architecture](../../packages/alia-server/docs/architecture.md) and
-[current checklist](../refactor/checklists/layering-2026-10-08.md) for precise
-ownership and validation status.
+Conversation, cache, persona, router and skills now live under Interaction;
+Insights remains under Platform. Sensors and the former Body delivery owner
+live under Embodiment. The Body namespace and protocol have been replaced by
+Motion, with a database migration that preserves historical evidence. See the
+[Embodiment contract](embodiment.md) for the adapter boundary, state semantics,
+and coordinated Server / Embedded upgrade requirements.
 
 Future edge model execution and deploying server plus embedded on one machine
-remain possible directions, not completed deployment modes. This round adds no
-new Cargo feature, dependency, process, platform, model runtime, or hardware
-action. Generic embedded adaptation, frontend improvements, acoustic AEC and
-physical Body validation remain deferred as recorded in the refactor handoffs.
+remain possible directions, not completed deployment modes. The Embodiment
+foundation adds no ROS dependency, separate process or hardware action.
+Concrete robot adapters, frontend improvements, acoustic AEC and
+physical Motion validation remain deferred as recorded in the refactor handoffs.

@@ -1,7 +1,7 @@
 use crate::channels::adapter::ChannelAdapter;
 use crate::{
     modules::interaction::routing::RouteDecision,
-    providers::adapter::{ChatMessage, LlmToolCall, ToolDefinition, ToolResult},
+    providers::adapter::{ChatMessage, ToolCall, ToolDefinition, ToolResult},
 };
 use serde_json::Value;
 
@@ -318,7 +318,7 @@ pub(super) fn debug_component_tool_selection(
 pub(super) fn debug_component_tool_calls(
     enabled: bool,
     depth: u32,
-    calls: &[LlmToolCall],
+    calls: &[ToolCall],
     channel: Option<(&str, &str)>,
 ) {
     if !enabled {
