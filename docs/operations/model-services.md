@@ -70,6 +70,12 @@ Qwen embedding 文件为 639,150,592 bytes，SHA 与所选 revision 一致；LM 
 
 进入真人窗口前还须落实：真实库和原身份／备份；Mac 服务账户及模型启动顺序（Magpie／LM Studio embedding → CPU Easy-Turn／独占 Juno → Server）；Pi 可达 endpoint 与设备 pin／owner；随后成套部署并验实际 Alia TTS adapter、讲话／模型／播放／打断恢复／取消下一轮、换气长句和 Start／Stop。此前 Juno 只验直接 HTTP。实际升级恢复、24 小时混合负载、AEC 和具体插件仍保留独立门槛。
 
+## Mac 常驻材料与本机盘点补充（2026-10-25）
+
+只读核查确认现有模型资产与服务归当前 `ke-qiao` 用户。当前 Magpie／LM Studio 可达、Instant 已加载；embedding 未加载，独占 Juno 19880 和 Easy-Turn 8091 尚未运行。现有共享 Juno 9880 保留。已准备用户 LaunchAgent、独立 Juno 运行 YAML、无推理／无加载的就绪检查和 Server 启动前检查；本轮没有安装或启动这些材料。目录／健康检查不替代真实调用、权重驻留字节或生产整链验收。
+
+详见[服务材料](../../run/mac-production-readiness-20261025/services/README.md)和[本机数据／常驻方式](server-embedded.md#本机数据与常驻准备盘点2026-10-25)。首轮建议当前用户登录会话：模型先就绪，Server 显式启动且不自动重试；无人登录开机方案尚未实施。LM Studio 敏感请求日志当前开启，关闭日志和显式预加载的候选设置只准备、未应用。两套既有 PG 都停止，Rust 卷映射5433、历史Python卷5432；生产账号与SQL身份应从停服数据的隔离副本核对，不新建空库绕过。
+
 ## Embedded Models
 
 Embedded keeps local audio intelligence in the existing Rust host:

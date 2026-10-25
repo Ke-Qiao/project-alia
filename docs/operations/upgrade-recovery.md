@@ -8,6 +8,8 @@
 
 生产候选配置、覆盖关系、Settings PATCH 和只读 SQL 已准备，并在 Mac ARM64＋专属 PostgreSQL 17.10／pgvector 0.8.2 中完成一次合成数据演练。运行时代码仍为软件候选 `6123691`，本轮只增加操作材料与验证证据，未切换生产配置／数据库，也未部署 Pi 或启用音频。完整结果见 [summary.json](../../run/production-config-20261025/summary.json)。
 
+后续只读盘点找到了两套保留的 OrbStack PG17 数据：当前 Rust 项目 `project-alia_pgdata`／宿主5433，历史 Python 卷／5432；compose 和旧 Server 配置存在端口漂移。两者仍停止，未读取实际 SQL。进入生产恢复前先按[本机盘点](server-embedded.md#本机数据与常驻准备盘点2026-10-25)确认权威数据，优先用停服副本隔离查询；不要直接 compose up、新建空库或把历史 fixture 账号写成生产 owner。
+
 ### 配置与身份准备
 
 - 使用新目录中的[待部署配置](../../run/production-config-20261025/config/server.production.pending.toml)，逐项填实服务账户、私有目录、数据库、原账号、设备和网络身份。当前文件保留 loopback、关闭 discovery／channel、DB port 1 和空 JWT 的准备状态，**不可直接部署**。[隔离配置](../../run/production-config-20261025/config/server.isolated.toml)用于派生无设备演练，不是生产启动结果。

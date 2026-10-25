@@ -1,12 +1,56 @@
 # Server 与 Embedded 无前端操作入口
 
-更新：2026-10-25。部署目标为 Mac Server、Pi 5 / 8 GB Embedded，Easy-Turn 位于 Server。Pi 的 Ubuntu 24.04.4 / aarch64 和 R1 分阶段采播基线已有记录；本轮复用这些结果，准备候选版本后的生产安装与真实模型验收。服务账户／路径、模型方案、常驻启停和实际升级恢复仍待下一轮落实。以下指向当前 CLI/REST；Web/iOS/Android 不参与本轮安装或验收。
+更新：2026-10-25。部署目标为 Mac Server、Pi 5 / 8 GB Embedded，Easy-Turn 位于 Server。Pi 的 Ubuntu 24.04.4 / aarch64 和 R1 分阶段采播基线已有记录；本轮复用这些结果。模型方案、有限组件和配置／SQL 隔离演练已完成；本机既有数据与身份、Mac 服务材料见下节，实际生产启停／升级恢复仍待授权窗口。以下指向当前 CLI/REST；Web/iOS/Android 不参与本轮安装或验收。
 
 当前硬件/部署输入、只读核对与R02/R03→R05门槛集中在 [部署资料清单](hardware-deployment-readiness.md)。
 
 当前软件产物／平台证据和真实模型端点／版本／部署待确认项见[软件发布记录](software-release.md)。Linux noop通过不代表当前Mac部署或真实模型链已验收。
 
 Harness／Embodiment 版本切换使用[成套升级与失败恢复步骤](upgrade-recovery.md)：双端协议、数据库迁移、插件 grant 和 Appraisal pin 必须一起核对。
+
+## 本机数据与常驻准备盘点（2026-10-25）
+
+本次只读盘点，没有启动数据库、加载模型、安装服务、接触 Pi 或音频；没有新建或覆盖生产数据。[盘点与材料汇总](../../run/mac-production-readiness-20261025/summary.json)保留容器／数据元信息、身份公钥指纹、服务状态、检查结果与原文件摘要。它补充前轮的合成 SQL 演练，不能当作已读取真实数据库。
+
+### PostgreSQL 实际位置
+
+在 PATH、Homebrew 已安装目录、Postgres.app 和已查 launchd 目录中未发现 native PostgreSQL；实际已有两套 **OrbStack Docker、Linux ARM64、PostgreSQL 17.10**。这不是全磁盘不存在其他安装的证明。
+
+| 项目 | 当前 Rust 项目关联数据 | 历史 Python 数据 |
+| --- | --- | --- |
+| 既有容器 | `alia-postgres`，ID 前缀 `905470a16802` | `alia-python-postgres`，ID 前缀 `7365984e79e5` |
+| 数据卷 | `project-alia_pgdata`，约 179.7 MB | `alia_python_postgres-data`，约 49.72 MB |
+| 已创建容器的宿主端口 | **5433 → 5432** | **5432 → 5432** |
+| 最近停止 | 2026-10-14，正常 shutdown／exit 0 | 2026-07-02，正常 shutdown／exit 0 |
+| 容器 seed user／database | `alia`／`alia` | `alia`／`alia` |
+
+两容器均停止，5432／5433 当前拒绝连接；只读取得 `PG_VERSION=17`、`global/pg_control` 等元信息，复核控制文件摘要未变。seed 值不证明当前 SQL 账号／密码；现有配置凭据与两套 seed 都匹配，不能据此决定数据归属。image 固定为 `sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3`，详见 [PG 盘点](../../run/mac-production-readiness-20261025/postgres/summary.json)。
+
+当前 Rust 卷在引擎内的路径为 `/var/lib/docker/volumes/project-alia_pgdata/_data`，Mac 可从 `/Users/ke-qiao/OrbStack/docker/volumes/project-alia_pgdata` 查看；底层 VM 映像位于 `/Users/ke-qiao/Library/Group Containers/HUAQ24HBR6.dev.orbstack/data/data.img.raw`。这是存储定位，不代表可用 macOS 原生 postgres 直接打开，也不能把复制运行中的 VM 映像当作一致备份。
+
+**存在三处端口漂移：**旧 Server base／settings 指向 localhost:5432，当前 `docker-compose.yml` 也声明 5432，但已创建 Rust 容器实际是 5433，历史 Python 容器占用的映射才是 5432。不要直接 `compose up` 重建或新建空库来解决连不上。两容器当前 HostIp 为空、数据库监听 `*`；直接启动会恢复其原发布范围，不能假定只监听回环。
+
+建议下一轮先以 **`project-alia_pgdata` 的停服隔离副本**为首选核对对象，原卷、原容器和 Python 历史卷均保留；明确授权后再准备一致副本，仅在回环／隔离网络启动副本并执行[只读目录查询](../../run/mac-production-readiness-20261025/postgres/01-readonly-catalog.sql)。确认表结构后才执行[账号／政策查询](../../run/mac-production-readiness-20261025/postgres/02-readonly-rust-identities.sql)，不启动 Alia 来代替查询，不触发自动迁移。实际账号、schema journal、embedding pin 和 Companion mode 未取得之前，生产目标仍未绑定。数据库启动自身会写运行状态／WAL，因此本轮“只读盘点”未执行这一步。
+
+### 已有身份与不能沿用的 fixture
+
+`alia-main` 的 `config/server.key` 有效，64 bytes、0600，公钥 SHA-256 为 `f1e259198c2ea443ed83a0ae2d35b7c8d76b4ee6a0f8690fa152a4acfbff95a4`。以保留原 Server 身份为默认，不生成替代密钥。只在内存派生公钥，未调用会 chmod 的应用 key loader，未保存私钥原值。
+
+本机旧 `config/device.key` 对应 `alia-embedded-b40503784388`，但旧 Embedded TOML 含退休字段、`provisioned=false`；旧 SQLite 只有音量设置，没有 `binding_state`，也没有 R1 claim。10 月 21 日 Pi noop 和 10 月 24 日 R1 任务使用独立验证身份，不能升级为生产账号或绑定。现有 `pi-living-room` 仍缺 owner UUID、设备 pin 和可达 endpoint；后续从权威 SQL 与实际 Pi 持久状态核对。33 个配置／key／状态文件前后未变，见[身份报告](../../run/mac-production-readiness-20261025/identity/inventory.json)。
+
+### Mac 常驻方式的选择
+
+当前资产与进程都归 `ke-qiao`（UID 501），因此首轮建议沿用该用户的**登录会话服务**。已观察到 Magpie 127.0.0.1:3425、LM Studio 127.0.0.1:1234 和共享 GPT-SoVITS `*:9880`；独占 Juno 19880、Easy-Turn 8091 尚未运行。Magpie 的现有 tray LaunchAgent 处于 not running，但网关另有活动 PID，不能把 tray job 状态当作网关状态。
+
+LM Studio 的 HTTP autoStartOnLaunch 已开，而桌面 enableLocalService 关闭；当前目录存在模型不等于已加载，也不证明无人登录开机可用。当前 Instant 已加载、embedding 未加载；JIT 与自动卸载前一个 JIT 模型的设置仍在。部署候选要求显式预加载两个选定实例，并检查 native `loaded_instances`／上下文，不仅 GET `/v1/models`。现有 `logSensitiveData=true`、verbose=true 应在获准应用设置时关闭；本轮只记录并准备变更，不修改原设置。
+
+待安装的 Easy-Turn／独占 Juno／Server LaunchAgent、独立 Juno YAML、只读就绪检查及首次启动顺序见[服务材料](../../run/mac-production-readiness-20261025/services/README.md)。复用已有 Magpie／LM Studio 管理入口，不重复创建会竞争相同端口的服务。保留共享 9880，Juno 新配置只使用 19880；上游会写 YAML，运行副本必须在私有目录，不能指向旧共享配置或证据原件。
+
+材料验证：3 份 plist lint、就绪判断 13 个 fixture 用例、Server 的 7 个拒绝／exec 拦截用例通过，均未启动服务。首次只读 HTTP 观察保留在 [readiness-current.json](../../run/mac-production-readiness-20261025/services/readiness-current.json)；[最终判定](../../run/mac-production-readiness-20261025/services/readiness-final.json)结合该观察与最终只读策略检查，未重复整套 HTTP，Juno 的实际 job／PID／YAML／权重分支因服务未运行而未执行。当前整套 ready 为 false，不能把静态通过写成服务已就绪。
+
+首轮模型 jobs 按登录启动准备，Server 由操作者在就绪检查通过后显式启动。launchd 没有这些应用的依赖排序，Server 使用 `RunAtLoad=false`、全部新 job 使用 `KeepAlive=false`；保留首次失败，不自动重启求绿。下方系统 LaunchDaemon 模板仅描述 Server 的系统域运行方式，**不能证明整套 GUI 模型栈在无人登录时可用**。若选择开机无人登录运行，须另行落实 headless 模型服务、资产／凭据权限、OrbStack 启动和冷启动验收，不能直接混用两种运行域。
+
+尚需拍板的是：是否以 Rust 项目既有卷为首选进入隔离副本 SQL 核对；首轮采用当前用户登录会话还是要求无人登录开机；是否应用会影响其他客户端的共享 LM Studio 日志／预加载策略。后者是本候选的运行策略，不是所有 LM Studio 配置都必须满足的通用要求；另建独立服务需单独确定范围。本轮三项均未应用。模型选择、参考文本和保留 `alia-main` 密钥无需重选；真实账号／设备归属先自动核对权威数据，只有多候选或冲突时再集中确认。
 
 ## Mac 与 Pi 的安装和常驻入口
 
