@@ -13,7 +13,7 @@ not evidence that a service is installed or permission to start or probe it.
 
 用户已选择 Magpie 的本地 Qwen3.8 27B 作为 minor、DeepSeek Flash 作为 major，并授权其余按推荐处理。minor 的标准高思考版与 Instant 由业务需求选择：采用 **Instant、关闭思考**，适配路由／分类原 5 秒和记忆捕获原 3 秒期限；复杂任务沿用 major 升级路径。512K 是该服务的上下文配置，不提高 Alia 的上下文、输出、并发或期限预算。本节替代先前的模型待选清单；软件候选 `6123691516fae1c2b0e813652eaa1104c33da9af` 及归档保持独立。
 
-选型阶段只读核对了 Magpie 0.1.1436／LM Studio 目录和资产。随后用户授权下载、独立配置与有限 Mac 组件预检，结果见下节；没有切换生产配置或 SQL，没有接触 Pi／麦克风／播放。目录、组件与生产整链证据分别记录。
+选型阶段只读核对了 Magpie 0.1.1436／LM Studio 目录和资产。随后用户授权下载、独立配置与有限 Mac 组件预检，结果见下节；随后完成独立配置与合成数据库 profile 切换／恢复演练，见[升级恢复](upgrade-recovery.md#选定-embedding-的切换与隔离恢复2026-10-25)。没有切换生产配置或 SQL，没有接触 Pi／麦克风／播放。目录、组件、隔离数据与生产整链证据分别记录。
 
 | 项目 | 已确认 | 历史候选／已盘点资产 | 下一轮待提供或核对 |
 | --- | --- | --- | --- |
@@ -34,7 +34,7 @@ Instant 的本地 hub 清单实际指向 `orcarouter/Qwen3.8-27B-Uncensored-MLX-
 
 已生成[独立组件配置](../../run/model-preflight-20261025/config/server.components.toml)，由当前 Rust `ServerConfig` 和 adapter factory 实际加载通过，启用真实模型但没有 channels／discovery／后台计划任务；旧可选角色绑定未带入。配置目录没有 `.d` 或 `settings.toml`，子进程清除继承的 ALIA／数据库／模型密钥覆盖，仅注入本地 embedding token。数据库故意指向 loopback:1，**本文件用于直接组件检查，不能启动生产 Server**；未读取或变更生产 SQL policy。先前[选型片段](../../run/model-plan-20261025/model-sections.toml)保留为历史。生产组装仍须核对 base／`.d`／环境／settings／SQL 的有效值，省略可选角色不会删除深合并中的旧值。
 
-当前资产、参考文本、独立组件配置与有限预检已具备。下一步准备生产有效配置及 SQL embedding profile 切换／投影重建，明确真实用户／设备身份和有限现场窗口，然后在 Mac Server＋Pi Embedded 上集中验收：**生产启动 → 讲话 → 模型处理 → 回复播放 → 打断／恢复 → 取消与下一轮对话**。该轮包含正常换气长句、系统 Start／Stop、生产单次初始化后的真人语音；复用已通过的插拔、方向拾音、试听和静默恢复基线，不把 fixture 音频算成真人语音通过。
+当前资产、参考文本、有限组件预检和独立生产候选配置已具备；SQL 切换／Memory 投影重建与前后数据还原已在合成隔离库验证。待部署配置仍关闭入口，真实生产数据库、账号／设备／网络身份和服务账户托管尚须核对，不能直接启动。下一步填实这些绑定、取得一致备份并安排现场窗口，然后在 Mac Server＋Pi Embedded 上集中验收：**生产启动 → 讲话 → 模型处理 → 回复播放 → 打断／恢复 → 取消与下一轮对话**。该轮包含正常换气长句、系统 Start／Stop、生产单次初始化后的真人语音；复用已通过的插拔、方向拾音、试听和静默恢复基线，不把 fixture 音频算成真人语音通过。
 
 实际部署后另做升级／恢复及至少 24 小时混合负载，覆盖断网、模型超时、进程退出、设备重连、内存／线程／句柄／队列与日志磁盘上界。验收前固定记录上界与观察方式，不以放宽原期限或并发求绿。AEC 等商家确认后独立验证；具体首版 MCP 服务和第三方插件按实际目标验证，通用框架回归不代替它们。V01／V02 历史根因继续开放，扩大无人值守主动运行前再处理对应条件；ROS、执行器现场、固件重写和其他平台不因模型接入自动恢复。
 
@@ -57,6 +57,18 @@ Qwen embedding 文件为 639,150,592 bytes，SHA 与所选 revision 一致；LM 
 参考素材遵循用户最新说明，文件名就是文本。先前选中的 `audio (3).wav` 已被替代；用户纠正前已完成一次本地 Whisper 文件转写，原始记录保留且不用于最终配置，之后没有重跑。最初读取其完整 token JSON 遇到无效 UTF-8 的解析错误也保留，不当作 Whisper 推理失败或参考文本依据。首版 VoiceSession 仍没有独立 Whisper。
 
 所有调用使用非敏感合成文本或既有离线音频，推理阶段顺序执行；同机模型驻留与资源快照不等于并发负载或资源上界验收。本轮自建 Easy-Turn 18091、Juno 19880 已停止，仅卸载本轮新增 embedding 实例；原 Magpie／Instant 和 9880 上既有 TTS 保留。没有麦克风、播放、UART、Pi 部署或生产数据库写入。V01／V02、Companion shadow、AEC 和长稳门槛不因这些组件结果改变。
+
+## 生产配置与隔离 SQL 出口（2026-10-25）
+
+[待部署单文件配置](../../run/production-config-20261025/config/server.production.pending.toml)和[隔离配置](../../run/production-config-20261025/config/server.isolated.toml)经实际 Rust loader、SettingsRegistry 和 factory／profile preview 通过。采用已确认模型／原期限，关闭未验的后台计划、Insights 与自动 motion，Companion 仍以 SQL shadow 核对为准；无具体首版插件接入。配置不是已部署状态，数据库 port 1、空 JWT 和 disabled channel 保留到真实绑定落实。
+
+本轮复现旧 settings 会把本地 Qwen／1024 覆盖成 OpenAI／1536，因此新目录不继承冲突层。选定 profile 为 `alia.embedding.d07c6780f61ebf58ba106d7e1cee0a5cfd4405ba6e2c4c62f04690811978aa19`，endpoint 精确为 `http://localhost:1234/v1`。正常 Settings 保存会落盘环境注入的 token；生产 `settings.toml` 必须作为私有凭据文件管理，不能因主 TOML 无 key 就视作无 secret。
+
+[隔离结果](../../run/production-config-20261025/summary.json)覆盖新配置不覆盖旧 SQL pin、stale CAS 409、合法 profile 切换、3 条合成记忆重建、同维 endpoint 身份隔离与显式回切、缺失投影重启修复，以及切换前后各 67 表的实际备份／还原核对。旧 1536 维为 fixture，新 1024 维调用固定本地模型；canonical 内容不变，private_runtime 无投影。Cache 没有旧 active 数据的自动 backfill，不能合称所有向量重建完成。
+
+操作 payload、只读 SQL、原期限、部分成功判定和前向回切／成套恢复边界集中在[升级恢复入口](upgrade-recovery.md#选定-embedding-的切换与隔离恢复2026-10-25)。旧配置指向的 localhost:5432 当前拒绝连接；本轮未读生产 SQL，也没有证明真实账号／绑定、Companion 状态或生产数据量。恢复副本仅只读核验，主隔离库验证重启补建；没有部署或启用音频。
+
+进入真人窗口前还须落实：真实库和原身份／备份；Mac 服务账户及模型启动顺序（Magpie／LM Studio embedding → CPU Easy-Turn／独占 Juno → Server）；Pi 可达 endpoint 与设备 pin／owner；随后成套部署并验实际 Alia TTS adapter、讲话／模型／播放／打断恢复／取消下一轮、换气长句和 Start／Stop。此前 Juno 只验直接 HTTP。实际升级恢复、24 小时混合负载、AEC 和具体插件仍保留独立门槛。
 
 ## Embedded Models
 

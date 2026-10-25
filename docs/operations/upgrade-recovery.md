@@ -1,8 +1,58 @@
 # Server／Embedded 成套升级与失败恢复
 
-更新：2026-10-25。本页是现有软件改动的成套升级步骤，对应 [S03](../todo.md)。10 月 20 日完成的全 noop 双进程生命周期和隔离备份／还原演练保留原范围；后续 R1 变更补充于下表，不把旧演练写成新版实际部署通过。实际产物和验证见[软件发布记录](software-release.md)。R1 当前阶段已收口；真实模型方案确定后集中做完整语音链验收，AEC 等商家确认后单独验证，ROS 和 R03 仍暂缓。
+更新：2026-10-25。本页是现有软件改动的成套升级步骤，对应 [S03](../todo.md)。10 月 20 日完成的全 noop 双进程生命周期和隔离备份／还原演练保留原范围；后续 R1 变更补充于下表，不把旧演练写成新版实际部署通过。实际产物和验证见[软件发布记录](software-release.md)。R1 当前阶段已收口；真实模型方案与有限组件、配置／SQL 隔离演练已具备，待真实部署条件落实后集中做完整语音链验收；AEC 等商家确认后单独验证，ROS 和 R03 仍暂缓。
 
 新安装的版本目录、Mac LaunchDaemon／Pi systemd 模板、配对和日志入口见[无前端部署操作](server-embedded.md#mac-与-pi-的安装和常驻入口)。这些是待部署材料；本轮没有将候选包切换到 Pi 或现有服务。
+
+## 选定 embedding 的切换与隔离恢复（2026-10-25）
+
+生产候选配置、覆盖关系、Settings PATCH 和只读 SQL 已准备，并在 Mac ARM64＋专属 PostgreSQL 17.10／pgvector 0.8.2 中完成一次合成数据演练。运行时代码仍为软件候选 `6123691`，本轮只增加操作材料与验证证据，未切换生产配置／数据库，也未部署 Pi 或启用音频。完整结果见 [summary.json](../../run/production-config-20261025/summary.json)。
+
+### 配置与身份准备
+
+- 使用新目录中的[待部署配置](../../run/production-config-20261025/config/server.production.pending.toml)，逐项填实服务账户、私有目录、数据库、原账号、设备和网络身份。当前文件保留 loopback、关闭 discovery／channel、DB port 1 和空 JWT 的准备状态，**不可直接部署**。[隔离配置](../../run/production-config-20261025/config/server.isolated.toml)用于派生无设备演练，不是生产启动结果。
+- base → 排序 `.d` 深合并 → 环境覆盖／补空 → 持久 settings → SQL policy 的区别见[配置说明](../../run/production-config-20261025/config/configuration-notes.md)。不得把旧 `server.d`／`settings.toml` 整体复制到新目录；本轮实际 preview 证明，旧 settings 会把选定的本地 1024 维 adapter 改回 OpenAI `text-embedding-3-small`／1536，而期望 role 文字还可能显示 `local_embedding`。生产副本应逐键保留必要业务设置、剔除冲突模型键，不能全量删除旧策略。
+- GPT-SoVITS 初始装配早于末尾 settings 热应用，base 必须直接指向 Alia 独占 `127.0.0.1:19880`，不能靠晚到的覆盖避免误连旧共享实例。Companion 是每用户 SQL 政策，开放前核对实际 revision／shadow，不能由 TOML 默认值推定。
+- 精确固定 embedding descriptor：provider=`openai`、endpoint=`http://localhost:1234/v1`、model=`text-embedding-qwen3-embedding-0.6b`、dimensions=`1024`、revision=`request-config.v1`、cosine/vector；Rust 得到的 ID 为 `alia.embedding.d07c6780f61ebf58ba106d7e1cee0a5cfd4405ba6e2c4c62f04690811978aa19`。`localhost` 与 `127.0.0.1` 是不同请求身份；SQL pin 不包含实际权重字节，仍须另核对已固定 GGUF／LM Studio 资产。
+- 受控环境注入的 provider token 会在正常 Settings PATCH 后由应用保存到私有 `settings.toml`。该文件也属于密钥文件：新文件 0600，父目录 0700，备份仅存受控私有位置；不要归档完整 Settings GET。本轮只保存临时私有文件摘要，原件已删除。
+
+### 切换与观察
+
+1. 在原入口隔离、写入者归属清楚并完成停服点备份后，核对实际数据库及[只读 profile 概况](../../run/production-config-20261025/sql/inspect-profile.sql)。当前旧配置指向 `localhost:5432/alia`，本轮探测为连接拒绝；**真实生产 SQL 当前 pin、数据量和账号尚未取得**，不以合成库替代。
+2. 用原管理员 GET `/api/v1/settings` 取得 ETag，然后 PATCH 同端点，带最新 `If-Match`，提交[三字段 payload](../../run/production-config-20261025/config/embedding-switch.patch.json)：
+
+   ```json
+   {
+     "core.providers.llm.openai.base_url": "http://localhost:1234/v1",
+     "core.profiles.llm.embedding.model": "text-embedding-qwen3-embedding-0.6b",
+     "core.profiles.llm.embedding.dimensions": 1024
+   }
+   ```
+
+   即使当前文件已经是这些值，也须显式执行已审阅的 profile transition。不要直接 SQL UPDATE pin、删除 descriptor 或改 policy version。descriptor 登记与 Memory／Cache 两个 pin 的 CAS 同事务；已有库仅启动新配置不会自动切 pin。
+3. 同时检查 HTTP 状态、`success`、`context_policy_version`、`module_reports`、`applied`、`ignored_runtime`、`errors`，再核对 SQL、adapter preview 和持久设置。SQL 提交先于模块 apply／文件保存；HTTP 200 `success=false` 或请求超时不能证明没有改变。409 应重新读取、审阅后再操作；部分成功时入口继续关闭，针对原意图修复并读回，不通过重启或恢复旧 settings 猜测状态。
+4. 保持 Memory 可读，使用原 worker 重建；不靠禁用 Memory／设置 pause 隔离入口。canonical 行就是持久工作来源，没有独立 job 表要迁移。每批 16、inline／后台共享并发 2，inline 2 秒、后台 30 秒、DB 2 秒、扫完等 30 秒，均保持原值。旧投影保留并按当前 profile／revision／输入摘要隔离，规范内容更新会使旧投影失效。
+5. 运行[缺投影查询](../../run/production-config-20261025/sql/missing-projections.sql)并逐类解释差额。SQL 候选还须经过 Rust 的敏感文本、来源根／撤销、长度等准入，不能要求所有 canonical 行都有向量；健康状态 available 也不代表全库完成。核对可重建记录的维度、revision、输入摘要及实际 `profiled_vector` 检索，私有／撤销记录保持排除。
+
+**Memory 重建不等于 Cache 全量重建。** 旧 active Cache 没有后台 backfill；其新向量由原 pending Insights review→approve 流程逐步生成。切换后旧内容／向量保留，但旧 ContextLease／profile 不可复用；不能重标 pin 或清空内容制造完成。本轮初次语音配置关闭 Insights，故不承诺自动补齐旧缓存。
+
+### 本轮实际演练与恢复边界
+
+| 检查 | 实际结果 |
+| --- | --- |
+| 新配置＋旧 SQL 身份 | 仍保留旧 pin，非空 canonical 关键词查询可用，不混用旧向量 |
+| Settings CAS | 预设错误版本收到 409 且 policy 不变；合法 PATCH 成功，Memory／Cache pin 同步 |
+| 原 worker 重建 | 3 条可投影合成记忆在 30.251 秒内取得选定 1024 维投影；4 条 canonical（含 1 条 private_runtime）不变，私有记录无投影；seed fixture 记录其文本未发送 |
+| 同维 endpoint／前向回切 | localhost→127.0.0.1 生成独立 profile，不借用旧向量；用新 ETag PATCH 回选定 localhost profile，保留 canonical 并复用有效投影 |
+| 重启补建 | 正常停服后仅删除独占演练库的一条投影；重启原 worker 在 104ms 观察内补齐，持久设置胜过故意陈旧的 base，SQL pin 保留 |
+| 切换前备份／还原 | 源库 67 表、121 行、33 条 migration journal；恢复新库逐表行数和稳定 JSON 摘要一致 |
+| 切换后备份／还原 | 源库 67 表、126 行、33 条 journal；恢复新库逐表一致；两次均另核对 owner／ACL、public schema／扩展版本、序列值及 is_called |
+
+旧 1536 维来自本轮确定性 fixture，只有新 1024 维调用固定本地模型；同维回切并未启动历史 Nomic 或云端 OpenAI。前后恢复分母独立，不相加。两次都在任务连接归零后执行 `pg_dump -Fc`、`pg_restore --exit-on-error --single-transaction`，没有关闭 owner／ACL 检查。owner／ACL 检查覆盖 public 关系和 namespace，不是全部 DDL／函数权限或集群角色恢复验证。恢复副本做了只读核验；重启补建是在原隔离库验证，**没有启动恢复库、旧二进制或真实生产数据**。原始记录见 [rehearsal.json](../../run/production-config-20261025/rehearsal.json)、[transition](../../run/production-config-20261025/sql/transition/result.json)、[前备份](../../run/production-config-20261025/database/before-restore.json)、[后备份](../../run/production-config-20261025/database/after-restore.json)。
+
+若只需退回旧 embedding 配置，优先保留当前数据库与 canonical 增量，在旧服务仍可用时，以最新 ETag PATCH 经核对的旧完整 descriptor，再由原 worker 补缺；这不是倒退 policy version，也不能复活已删除内容或撤权。需要退回旧应用 schema／二进制时仍遵守下文成套恢复规则：有新业务／外部效果先保留增量并前向修复；**数据库迁移后不能只换回旧二进制**。
+
+本轮未改变生产、模型资产或软件候选；自建 PG／临时凭据目录已删除，新增 embedding 实例已卸载，原 Instant 保留。准备阶段一次 sandbox `lms ps` 查询超时 exit 1，原始错误保留，随后认证 HTTP 目录核对成功；它不是推理失败，不能据此解释历史 V01／V02。两个配置解析、两份只读 SQL、有限切换／重建及两次恢复均通过；未重复完整 workspace 或前轮已通过的组件调用。
 
 ## 本次升级边界
 
