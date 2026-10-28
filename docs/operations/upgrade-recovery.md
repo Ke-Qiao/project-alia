@@ -6,9 +6,13 @@
 
 ## 新生产数据来源决定（2026-10-28）
 
-用户已决定弃用并删除两套旧 PostgreSQL，**不从旧库或备份恢复新生产初始数据**；执行状态及准确范围见[当前部署决定](server-embedded.md#当前部署决定2026-10-28)。用户随后明确授权临时启动引擎；两套容器和专属数据卷已删除并核验不存在，OrbStack 已恢复停止，尚未初始化新库。首轮采用 `ke-qiao` 登录会话；minor 更换待定。
+用户已决定弃用并删除两套旧 PostgreSQL，**不从旧库或备份恢复新生产初始数据**；执行状态及准确范围见[当前部署决定](server-embedded.md#当前部署决定2026-10-28)。用户随后明确授权临时启动引擎；两套容器和专属数据卷已删除并核验不存在，OrbStack 已恢复停止，尚未初始化新库。首轮采用 `ke-qiao` 登录会话；minor 已定官方 DeepSeek Flash＋none。
 
 因此下面 10 月 25 日“检查旧库 pin → 显式切换 → 重建历史投影”的步骤保留为已演练的未来迁移流程，不再作为本次新库首次启动的必经步骤。新库应使用选定的本地 1024 维 embedding，首次迁移／bootstrap 后核对实际 SQL descriptor、Memory／Cache pin、新管理员 UUID 和 Companion shadow；不导入旧账号或测试 fixture。保留 `alia-main` 密钥不等于保留已删数据库里的应用账号／绑定。
+
+新空库流程已在独立 PostgreSQL17.10／pgvector0.8.2 中用冻结 Mac release 实际验证：33 个 migration journal checksum 与源码逐项一致；Memory／Cache 均直接初始化到选定的本地 Qwen1024 descriptor、policy version1；四张 canonical／cache／projection 表为空；真实 HTTP 首个注册为 admin、第二个为 user，两用户 Companion shadow revision1。正常关闭后同身份重启，登录、角色、shadow、profile、journal 和空表保持，两个进程均 exit0、DB其他连接归零，临时容器／网络／私有状态清理，OrbStack恢复停止。见[结果](../../run/fresh-start-20261028/database/summary.json)。没有模型调用；health 中 embedding 因故意不提供真实凭据而 unhealthy，不能作为模型就绪证据。
+
+两次准备失败保留：internal Docker 网络没有按请求发布宿主端口，Server尚未启动；修正为独立bridge＋明确loopback发布。随后新隔离配置关闭两项routing开关，被校验器在 **33条迁移提交后**拒绝；改为开启noop minor路由，不更改应用、期限或断言。后者再次说明启动失败不表示数据库迁移未发生，不归入V01／V02。最终成功没有覆盖首次日志；本轮不重复旧profile切换／备份恢复演练。
 
 本次不使用旧备份作为数据来源，不取消未来上线后的备份与恢复要求。新业务开始后仍须建立一致恢复点；迁移后不能只换回旧二进制，真实升级恢复和 24 小时验收仍未完成。
 

@@ -11,7 +11,7 @@ not evidence that a service is installed or permission to start or probe it.
 
 ## 当前决定与 adapter 核查（2026-10-28）
 
-用户要求更换 **minor，新模型尚未指定**。此前 Instant 的选型、资产和组件结果保留为历史，不能作为替换后 minor 的验证；major 仍为 Magpie `deepseek/deepseek-flash`，本地 Qwen embedding／1024、CPU Easy-Turn、独占 Juno 和参考文本保持。`default` 仍复用 major；省略 `memory_capture` 的 minor fallback 将跟随新 minor，`sentence_expression` 仍使用确定性规则。Mac 端采用 `ke-qiao` 登录后的用户会话；本节不授权启动服务或安装常驻任务。
+用户已将 **minor 改为 Magpie 官方 DeepSeek Flash Instant**。本机目录没有独立 Instant ID，实际固定 `deepseek/deepseek-flash`、`chat_completions`、`provider_specific.reasoning_effort="none"`；不用 `auto/` 或第三方同名路由。major 原本也是该完整路由与 none，两角色仍保留独立 profile、1024／4096 输出预算，`default` 复用 major；省略 `memory_capture` 使用 minor fallback，`sentence_expression` 继续确定性规则。旧本地 Instant 不再是 Alia 启动依赖，既有资产／实例未因此删除或卸载。本地 Qwen embedding／1024、CPU Easy-Turn、独占 Juno、参考文本及 `ke-qiao` 登录会话保持。路由分类与记忆提取现在也调用 DeepSeek；本地 embedding 不代表全部会话／记忆内容只在本机。
 
 当前已经使用纯 Rust 库：`LlmService` 复用锁定的 Rig 0.44.0 fork `c2ff3e30e6b8d84fc6759eab030656a42cae14ca`，无需增加 adapter 框架。以下是[实际构造代码](../../packages/alia-server/src/providers/llm/service.rs)已接通的聊天协议，不是对任意远端模型的兼容承诺。
 
@@ -25,6 +25,20 @@ not evidence that a service is installed or permission to start or probe it.
 四路默认构建启用，[现有 HTTP fixture](../../packages/alia-server/src/providers/llm/service/http_tests.rs)覆盖流终止、工具参数／身份、预算、取消和协议请求格式，已包含在软件候选回归中。本轮只读核查，未重跑回归或发起模型请求。原生工具继续进入 Execution；新 minor 仍须在原路由 5 秒、记忆捕获 3 秒期限下验证，不放宽预算。若经 Magpie 的 Chat 兼容入口访问其他厂商模型，Alia 一侧仍选择 `openai`／`chat_completions`。
 
 用户已澄清“system One”为口误并撤回，不列为待确认项或新增适配。Embedding 与聊天协议分开：当前真实 [embedding factory](../../packages/alia-server/src/bootstrap/factory.rs)仅接 OpenAI-compatible `/embeddings`，会拒绝 Anthropic／Gemini embedding provider；已选本地 Qwen 路径不变。
+
+## 新 minor 与新库准备验证（2026-10-28）
+
+[本轮汇总](../../run/fresh-start-20261028/summary.json)分别固定配置、有限模型调用、隔离新库与启动材料证据，不合并为生产整链通过。
+
+[当前独立配置](../../run/fresh-start-20261028/config/server.production.pending.toml)、[组件配置](../../run/fresh-start-20261028/config/server.components.toml)均经原 Rust loader／factory 检查；运行软件仍为 `6123691`，没有改生产代码或依赖。生产配置保留 DB port 1、空 JWT、无 channel／discovery，不能直接启动生产。[Magpie 目录证据](../../run/fresh-start-20261028/config/magpie-deepseek-catalog-v2.json)支持官方路由和 none 参数；目录标签不能固定可变供应商 alias 的权重版本，也不把其他原生 endpoint 标签当作本轮实测。
+
+使用原 Rust `LlmService` 诊断和原提示词，各一次新 minor 请求通过：路由分类 **788.167ms／原 5 秒**，瞬时问候的记忆捕获 **854.765ms／原 3 秒**，得到期望的 JSON；[完整结果](../../run/fresh-start-20261028/minor/summary.json)保留原始响应，没有重试。两个样本不代表业务语料准确率、并发／长上下文／断网表现或 p95；记忆样本只覆盖不应写入的瞬时问候。
+
+核对本机 provider 元数据时发生一次凭据输出失误：DeepSeek key 曾误入工具结果和新建本地 JSON；本地 JSON 已脱敏，未提交或修改原凭据，旧工具输出无法撤回。用户已确认在 Magpie 更新 key，之后才执行上述请求；没有读取或记录新 key。仅保留[不含原值的事件记录](../../run/fresh-start-20261028/config/credential-handling-incident.json)。
+
+此前只通过直接 HTTP 的 Juno 本轮已补齐 **Alia `create_tts`／`GptSovitsTts.init`／stream adapter**：独占19880，固定权重和文件名参考文本，一次真实合成通过；init **484.084ms**、首块 **5892.716ms**、全流 **6773.710ms**，7块／304684bytes，结束后编码预算为0。原总60秒／idle10秒不变，没有第二次求绿、播放或试听；这仍不是 Delivery／Pi／声学整链。原始流和[adapter结果](../../run/fresh-start-20261028/juno/adapter-result.json)保留，临时诊断代码不进入生产实现。任务19880已停止、原9880和源码／权重／参考文件保持；关闭时上游 `resource_tracker` 报告1个待清理semaphore，原警告保留，未测OS资源上界或通过重跑抹去。
+
+新的 [Mac 服务材料](../../run/fresh-start-20261028/services/README.md)只要求 LM Studio 的选定 embedding 驻留，不再要求旧本地聊天实例或强制两模型 JIT 策略；敏感日志／登录设置仍未应用。15 项 ready fixture、3 份 plist、最终13项 Server gate／凭据FILE／exec拦截检查和停服日志轮转检查分别留证；它们不等于已安装、模型整套已就绪或运行中日志有硬上界。新空库真实发布二进制的首次启动／同身份重启结果见[新库入口](upgrade-recovery.md#新生产数据来源决定2026-10-28)。
 
 ## 历史模型选择与输入清单（2026-10-25）
 

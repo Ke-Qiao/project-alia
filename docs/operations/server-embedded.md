@@ -14,7 +14,13 @@ Harness／Embodiment 版本切换使用[成套升级与失败恢复步骤](upgra
 
 **两套旧容器和专属数据卷已删除并核验不存在。** 用户明确授权临时启动 OrbStack 后，核对完整容器 ID、停止状态和数据卷独占关系，使用非强制删除；其他 53 个容器、48 个数据卷及网络清单保持不变，初始化脚本源目录保留。未新建备份或生产库，配置、密钥、模型和历史证据未纳入删除。引擎启动期间 `astrbot` 按既有 `always` 策略自动运行，随后已随 OrbStack 恢复停止；未改变该策略。操作、删除后检查和 `Stopped` 状态见[完成记录](../../run/deployment-decisions-20261028/deletion-approved/result.json)。此前启动审批阻断及首次过窄挂载断言保留为历史；后者发生在任何删除前，按实际只读 init bind／独占数据卷核对后继续。
 
-首轮运行域已确认采用 **`ke-qiao` 登录后的 macOS 用户会话**，不再是待选项；已有 LaunchAgent 材料继续适用，但尚未安装。minor 用户要求更换，准确模型／协议待定，旧 Instant 绑定及其就绪检查只能作为历史模板，确定新 minor 后须同步配置和检查。共享 LM Studio 日志／预加载策略仍未获准应用；保留 `alia-main` 密钥、已选 major、embedding、Easy-Turn 与 Juno。macOS 登录用户不自动等于 Alia 应用管理员账号。
+首轮运行域采用 **`ke-qiao` 登录后的 macOS 用户会话**。minor 已改为官方 `deepseek/deepseek-flash`＋none，独立输出预算保留；[新配置](../../run/fresh-start-20261028/config/server.production.pending.toml)与[新服务材料](../../run/fresh-start-20261028/services/README.md)已同步，旧 Instant 驻留不再是就绪条件。只保留 local embedding 的精确实例与 context8192 要求，不自动改共享 JIT。保留 `alia-main` 密钥、major、embedding、Easy-Turn 与 Juno；共享隐私／登录设置和 LaunchAgent 尚未应用。macOS 登录不自动创建 Alia 管理员。
+
+新生产 PostgreSQL 使用[独立 manifest](../../run/fresh-start-20261028/postgres-production/compose.yaml)：固定已验 ARM64 image 内容 ID、仅 loopback5432、新 external 卷 `alia-production-pgdata`、同一私有密码文件、首次 restart=no 和 Docker 日志轮转。manifest 已解析并静态核对，卷／密码／生产数据库均未创建；不使用含开发密码及宽监听的旧 compose 直接开生产。完整首次激活步骤见[数据库准备](../../run/fresh-start-20261028/postgres-production/README.md)。
+
+启动材料补齐了新库凭据连接：Server gate 从与 Compose 相同的私有 `postgres-password` 文件读取，复用 owner／权限／非symlink检查，按镜像 FILE 的尾LF语义处理并URL转义，仅向子进程注入固定loopback数据库DSN；清除外部继承值，不打印原值。最终13项 gate／特殊字符／权限／exec拦截检查通过，3份plist、15项ready fixture通过。另以6份合成日志验证系统newsyslog停服轮转，固定保留5个归档；首次count配置错误及修正保留。这不构成在线日志硬上界，也未安装任务或创建生产凭据。
+
+[隔离新库验证](../../run/fresh-start-20261028/database/summary.json)已使用冻结 Mac 发布二进制完成首次启动、HTTP 注册管理员／普通用户、默认 shadow、选定 embedding 双 pin 与同身份重启。隔离账号／key 全部为临时测试身份，清理后不可迁作生产；生产本人首位管理员须在首次受控 loopback 窗口登记，密码在本机设置，不发入对话。真实 Pi 的 owner／设备 pin／网络仍待现场绑定。本轮只在隔离环境运行 Server，未创建生产服务或启用音频。
 
 ## 本机数据与常驻准备盘点（2026-10-25）
 
