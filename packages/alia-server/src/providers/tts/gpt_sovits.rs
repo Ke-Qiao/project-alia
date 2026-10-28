@@ -891,16 +891,23 @@ impl ModuleLifecycle for GptSovitsTts {
             ));
         }
 
-        // Try to connect to GPT-SoVITS server
+        // The GET handler normalizes languages before validating parameters.
+        // Supply them, but leave text empty and omit reference audio so this
+        // reachability probe is rejected before synthesis can start.
         match self
             .client
             .get(&config.endpoint)
+            .query(&[
+                ("text", ""),
+                ("text_lang", config.default_profile.text_lang.as_str()),
+                ("prompt_lang", config.default_profile.prompt_lang.as_str()),
+            ])
             .timeout(std::time::Duration::from_secs(5))
             .send()
             .await
         {
             Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 400 => {
-                // 400 is expected without proper parameters
+                // 400 is expected from the intentionally incomplete request.
                 match config.weight_state {
                     WeightState::PreloadedUnverified => ModuleHealth::Degraded(
                         "GPT-SoVITS reachable; preloaded model identity is unverified".into(),

@@ -19,6 +19,81 @@ use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
+async fn health_supplies_languages_without_synthesis_inputs_and_rejects_server_errors() {
+    use axum::{extract::Query, http::StatusCode, routing::get};
+    use std::sync::atomic::AtomicBool;
+    use tokio::sync::Mutex;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/tts", listener.local_addr().unwrap());
+    let queries = Arc::new(Mutex::new(Vec::new()));
+    let recorded = queries.clone();
+    let fail = Arc::new(AtomicBool::new(false));
+    let remote_fail = fail.clone();
+    let router = Router::new().route(
+        "/tts",
+        get(move |Query(query): Query<BTreeMap<String, String>>| {
+            let recorded = recorded.clone();
+            let remote_fail = remote_fail.clone();
+            async move {
+                // Match upstream's language normalization before validation:
+                // omitted language parameters cause 500, not the expected 400.
+                let missing_language =
+                    !query.contains_key("text_lang") || !query.contains_key("prompt_lang");
+                recorded.lock().await.push(query);
+                if missing_language || remote_fail.load(Ordering::SeqCst) {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                } else {
+                    StatusCode::BAD_REQUEST
+                }
+            }
+        }),
+    );
+    let stop = CancellationToken::new();
+    let shutdown = stop.clone();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(shutdown.cancelled_owned())
+            .await
+            .unwrap();
+    });
+    let mut config = test_config();
+    config.endpoint = endpoint;
+    config.default_profile.text_lang = "zh".into();
+    config.default_profile.prompt_lang = "en".into();
+    config.default_profile.ref_audio_path = Some("must-not-be-sent.wav".into());
+    config.default_profile.prompt_text = Some("must not be sent".into());
+    let tts = GptSovitsTts {
+        client: Client::builder().no_proxy().build().unwrap(),
+        config: Arc::new(RwLock::new(config)),
+        weight_gate: Arc::new(RwLock::new(())),
+    };
+
+    assert!(matches!(
+        tts.health_check().await,
+        ModuleHealth::Degraded(_)
+    ));
+    tts.config.write().await.weight_state = WeightState::Acknowledged;
+    assert!(matches!(tts.health_check().await, ModuleHealth::Healthy));
+    fail.store(true, Ordering::SeqCst);
+    assert!(matches!(
+        tts.health_check().await,
+        ModuleHealth::Unhealthy(_)
+    ));
+    let expected = BTreeMap::from([
+        ("text".into(), "".into()),
+        ("text_lang".into(), "zh".into()),
+        ("prompt_lang".into(), "en".into()),
+    ]);
+    assert_eq!(*queries.lock().await, vec![expected; 3]);
+    stop.cancel();
+    tokio::time::timeout(Duration::from_secs(3), server)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
 async fn remote_weights_require_both_acknowledgements_and_retry_after_partial_failure() {
     use axum::{
         extract::{Path, Query},
