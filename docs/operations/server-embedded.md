@@ -1,12 +1,20 @@
 # Server 与 Embedded 无前端操作入口
 
-更新：2026-10-25。部署目标为 Mac Server、Pi 5 / 8 GB Embedded，Easy-Turn 位于 Server。Pi 的 Ubuntu 24.04.4 / aarch64 和 R1 分阶段采播基线已有记录；本轮复用这些结果。模型方案、有限组件和配置／SQL 隔离演练已完成；本机既有数据与身份、Mac 服务材料见下节，实际生产启停／升级恢复仍待授权窗口。以下指向当前 CLI/REST；Web/iOS/Android 不参与本轮安装或验收。
+更新：2026-10-28。部署目标为 Mac Server、Pi 5 / 8 GB Embedded，Easy-Turn 位于 Server。Pi 的 Ubuntu 24.04.4 / aarch64 和 R1 分阶段采播基线已有记录；本轮复用这些结果。模型方案、有限组件和配置／SQL 隔离演练已完成；本机既有数据与身份、Mac 服务材料见下节，实际生产启停／升级恢复仍待授权窗口。以下指向当前 CLI/REST；Web/iOS/Android 不参与本轮安装或验收。
 
 当前硬件/部署输入、只读核对与R02/R03→R05门槛集中在 [部署资料清单](hardware-deployment-readiness.md)。
 
 当前软件产物／平台证据和真实模型端点／版本／部署待确认项见[软件发布记录](software-release.md)。Linux noop通过不代表当前Mac部署或真实模型链已验收。
 
 Harness／Embodiment 版本切换使用[成套升级与失败恢复步骤](upgrade-recovery.md)：双端协议、数据库迁移、插件 grant 和 Appraisal pin 必须一起核对。
+
+## 当前部署决定（2026-10-28）
+
+用户决定**不以旧库或备份作为新生产数据来源，删除两套旧 PostgreSQL**：`alia-postgres`＋`project-alia_pgdata`、`alia-python-postgres`＋`alia_python_postgres-data`。此前“保留旧卷并查询停服副本”的建议已撤回；下方 10 月 25 日的元信息与只读证据仍作为历史保留。新库后续按全新部署准备，不继承旧账号、embedding pin 或 Companion 政策，也不把演练 fixture 账号当成生产 owner。首次初始化后须实际核对 schema、选定的 1024 维 profile 与 shadow 政策；空库没有历史记忆需要重建。
+
+**当前删除尚未执行**：10 月 28 日 Docker socket 不存在、OrbStack 状态为 stopped；自动审批拒绝启动引擎，原因是可能触发既有容器自动重启。已请求临时启动引擎的明确授权。获准后只核对并删除上述精确容器与专属卷，不使用 force／prune，不删镜像、其他数据、配置、身份密钥或历史证据。删除不制作新备份；不能承诺恢复被删除旧库的账号和业务内容。执行状态见[本轮决定](../../run/deployment-decisions-20261028/decisions.json)。本轮也未新建生产库。
+
+首轮运行域已确认采用 **`ke-qiao` 登录后的 macOS 用户会话**，不再是待选项；已有 LaunchAgent 材料继续适用，但尚未安装。minor 用户要求更换，准确模型／协议待定，旧 Instant 绑定及其就绪检查只能作为历史模板，确定新 minor 后须同步配置和检查。共享 LM Studio 日志／预加载策略仍未获准应用；保留 `alia-main` 密钥、已选 major、embedding、Easy-Turn 与 Juno。macOS 登录用户不自动等于 Alia 应用管理员账号。
 
 ## 本机数据与常驻准备盘点（2026-10-25）
 
@@ -50,7 +58,7 @@ LM Studio 的 HTTP autoStartOnLaunch 已开，而桌面 enableLocalService 关�
 
 首轮模型 jobs 按登录启动准备，Server 由操作者在就绪检查通过后显式启动。launchd 没有这些应用的依赖排序，Server 使用 `RunAtLoad=false`、全部新 job 使用 `KeepAlive=false`；保留首次失败，不自动重启求绿。下方系统 LaunchDaemon 模板仅描述 Server 的系统域运行方式，**不能证明整套 GUI 模型栈在无人登录时可用**。若选择开机无人登录运行，须另行落实 headless 模型服务、资产／凭据权限、OrbStack 启动和冷启动验收，不能直接混用两种运行域。
 
-尚需拍板的是：是否以 Rust 项目既有卷为首选进入隔离副本 SQL 核对；首轮采用当前用户登录会话还是要求无人登录开机；是否应用会影响其他客户端的共享 LM Studio 日志／预加载策略。后者是本候选的运行策略，不是所有 LM Studio 配置都必须满足的通用要求；另建独立服务需单独确定范围。本轮三项均未应用。模型选择、参考文本和保留 `alia-main` 密钥无需重选；真实账号／设备归属先自动核对权威数据，只有多候选或冲突时再集中确认。
+以上为 10 月 25 日盘点时的待选项；数据库来源和登录运行域已由上方 10 月 28 日决定替代。共享 LM Studio 策略仍待定，参考文本和保留 `alia-main` 密钥无需重选。
 
 ## Mac 与 Pi 的安装和常驻入口
 

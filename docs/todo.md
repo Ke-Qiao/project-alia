@@ -1,6 +1,6 @@
 # Project Alia TODO
 
-更新：2026-10-25。**R1 当前阶段已收口；本地软件候选与双平台软件验证已固定，真实模型方案、Mac 有限组件预检及配置／SQL 切换恢复的隔离演练已完成，生产部署和真人整链验收仍是下一轮。** 已完成的软件、分阶段现场结果和历史失败分别保留，不将它们合并成一次真实模型整链通过。本机两套既有 PG／身份与 Mac 常驻材料已只读盘点；待权威数据、身份／网络与运行方式落实后，集中验收一次“生产启动 → 讲话 → 模型处理 → 回复播放 → 打断／恢复 → 取消与下一轮对话”；原先零散的同轮长句／全部控制、生产初始化／真人语音组合缺口一并纳入。AEC 等商家确认后单独验证，固件继续暂缓。
+更新：2026-10-28。**R1 当前阶段已收口；本地软件候选与双平台软件验证已固定，既有模型的 Mac 有限组件预检及配置／SQL 切换恢复隔离演练已完成；minor 新选型待定，生产部署和真人整链验收仍是下一轮。** 已完成的软件、分阶段现场结果和历史失败分别保留，不将它们合并成一次真实模型整链通过。用户已决定弃用并删除两套旧 PG、不从备份初始化新生产，采用 `ke-qiao` 登录会话；删除因引擎启动审批暂未执行。待新库、minor、身份／网络与服务策略落实后，集中验收一次“生产启动 → 讲话 → 模型处理 → 回复播放 → 打断／恢复 → 取消与下一轮对话”；原先零散的同轮长句／全部控制、生产初始化／真人语音组合缺口一并纳入。AEC 等商家确认后单独验证，固件继续暂缓。
 
 最新实现：[架构概览](architecture/overview.md)、[Embodiment](architecture/embodiment.md)、[工具构建](concepts/skills-and-tools.md)、[MCP](operations/mcp-tools.md)、[WASM 插件](operations/wasm-plugins.md)。验证结果统一引用[软件发布记录](operations/software-release.md)，不将不同源码、平台或重复测试相加为项目完成率。
 
@@ -35,7 +35,7 @@ S01—S03 是 10 月 20 日的交付与部署出口，该轮没有新增生产�
 
 | ID | 任务与当前状态 | 恢复条件与完成标准 |
 | --- | --- | --- |
-| M01 | **资产、有限组件与配置／SQL 隔离演练通过；本机数据／服务材料已盘点，生产整链未验** | 所选 Magpie 聊天、本地 Qwen embedding／1024、CPU Easy-Turn 与独占 Juno 已固定，独立 Whisper 不进入 VoiceSession。Rust 既有 PG 卷映射5433，历史 Python 卷5432，两者停止；旧 compose／Server 配置端口漂移，先决定以 Rust 停服副本核对真实账号／journal／profile，不新建空库。保留 alia-main 密钥，历史 Pi fixture 不作生产绑定。Mac 登录会话 LaunchAgent／只读就绪检查已准备，尚未安装；运行域、关闭敏感请求日志、预加载及实际账号／Pi pin／网络待落实。随后集中验启动→讲话→模型→播放→打断恢复→取消下一轮，包含换气长句、Start／Stop、生产初始化后的真人语音。组件／隔离数据不算整链或长稳；路由单样本接近原5秒期限，Cache 无全量 backfill。复用 R1 基线，AEC 独立。见[本机盘点与决定](operations/server-embedded.md#本机数据与常驻准备盘点2026-10-25)、[模型出口](operations/model-services.md#生产配置与隔离-sql-出口2026-10-25)和[切换恢复](operations/upgrade-recovery.md#选定-embedding-的切换与隔离恢复2026-10-25)。 |
+| M01 | **旧模型组件与合成 SQL 演练已验；新生产采用空库方向、minor 更换待定** | 用户明确删除两套旧 PG，不用旧库或备份初始化；当前 OrbStack stopped，启动审批阻断，尚未删除或新建。首轮 `ke-qiao` 登录会话已确认，LaunchAgent 材料未安装；旧 Instant 不作新 minor 默认，待准确模型／协议后复用原 5 秒路由／3 秒 memory 检查。现有 Rig 已接通 OpenAI Chat／Responses、Anthropic、Gemini；“system One”待准确名称。major、本地 Qwen embedding／1024、CPU Easy-Turn、独占 Juno 和参考文本保留。下一步新库初始化核对账号／SQL profile／shadow，落实共享 LM Studio 策略与 Pi owner／pin／网络，然后集中验启动→讲话→模型→播放→打断恢复→取消下一轮、换气长句、Start／Stop 与初始化后真人语音。空库无历史投影需重建；已有切换恢复证据保留，Cache 无全量 backfill。复用 R1 基线，AEC 独立。见[当前部署决定](operations/server-embedded.md#当前部署决定2026-10-28)、[模型协议](operations/model-services.md)及[切换恢复](operations/upgrade-recovery.md)。 |
 | E01 | **ROS 与具体具身适配器暂缓**：Embodiment 地基已完成，默认没有实际物理适配器 | 用户指定首个设备、通信协议／ROS 版本和目标能力后，实现 `PhysicalAdapter`；核对设备身份、反馈、停止证据、迟到请求终结、断线／重启和共享执行器仲裁。先仿真再实机，沿用 Execution；不扩大 expression 的设备权限。见[接入契约](architecture/embodiment.md)。 |
 | R02-F | **R1 固件改造由用户明确暂缓**：新旧资料、镜像及两份不同虚拟机已核查，未找到匹配板端 SDK；未开发、构建或烧录新固件 | 用户明确恢复后，再取得匹配的最小板端应用 SDK／ABI，或满足契约的受支持常开模式，并补齐当前 1.9.6 恢复路径。核查与候选方案见[硬件记录](operations/hardware-deployment-readiness.md#r1-通用固件工作2026-10-21)，[商家资料清单](operations/r1-firmware-vendor-inputs.md)仅保留为参考，不继续调查或索取。 |
 | R02 | **当前软件接入与分阶段验证已收口；整体验收按条件恢复** | 真实模型整链统一归 M01；AEC 归 R02-AEC。其他方向／安装标定及长稳在实际部署时随 R05 明确范围，不默认重做已通过的 R1 基线。模块正常，R02-F 暂缓不阻断 Alia 主线；FYP ROS 验收不等于 Alia ROS 接入。见[硬件资料](operations/hardware-deployment-readiness.md)。 |

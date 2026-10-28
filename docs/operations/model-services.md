@@ -9,7 +9,26 @@ and noop lifecycle evidence from model deployment information that still needs
 confirmation. Example URLs and model names below are configuration examples,
 not evidence that a service is installed or permission to start or probe it.
 
-## 下一轮输入清单（2026-10-25）
+## 当前决定与 adapter 核查（2026-10-28）
+
+用户要求更换 **minor，新模型尚未指定**。此前 Instant 的选型、资产和组件结果保留为历史，不能作为替换后 minor 的验证；major 仍为 Magpie `deepseek/deepseek-flash`，本地 Qwen embedding／1024、CPU Easy-Turn、独占 Juno 和参考文本保持。`default` 仍复用 major；省略 `memory_capture` 的 minor fallback 将跟随新 minor，`sentence_expression` 仍使用确定性规则。Mac 端采用 `ke-qiao` 登录后的用户会话；本节不授权启动服务或安装常驻任务。
+
+当前已经使用纯 Rust 库：`LlmService` 复用锁定的 Rig 0.44.0 fork `c2ff3e30e6b8d84fc6759eab030656a42cae14ca`，无需增加 adapter 框架。以下是[实际构造代码](../../packages/alia-server/src/providers/llm/service.rs)已接通的聊天协议，不是对任意远端模型的兼容承诺。
+
+| 协议 | 现有配置与实现 | 边界 |
+| --- | --- | --- |
+| OpenAI Chat Completions | `type="openai"`、`api_family="chat_completions"` → Rig `.chat()` | 官方或兼容端点均须核对实际模型、流、工具与 JSON 行为 |
+| OpenAI Responses | `type="openai"`、`api_family="responses"` → Rig `.responses()` | 端点必须实际提供 Responses，不能仅凭 OpenAI-compatible 标签选用 |
+| Anthropic Messages | `type="anthropic"` → Rig 原生 Messages | API version 可配置；结构化输出需 `json_schema`，单独 `json_mode=true` 会拒绝 |
+| Gemini | `type="gemini"` → Rig 原生 Gemini | 已处理 `/v1beta` 与 JSON MIME；具体模型能力仍需组件验证 |
+
+四路默认构建启用，[现有 HTTP fixture](../../packages/alia-server/src/providers/llm/service/http_tests.rs)覆盖流终止、工具参数／身份、预算、取消和协议请求格式，已包含在软件候选回归中。本轮只读核查，未重跑回归或发起模型请求。原生工具继续进入 Execution；新 minor 仍须在原路由 5 秒、记忆捕获 3 秒期限下验证，不放宽预算。若经 Magpie 的 Chat 兼容入口访问其他厂商模型，Alia 一侧仍选择 `openai`／`chat_completions`。
+
+用户提到的 **“system One”尚缺准确产品、模型名或接口地址**，仓库和锁定 Rig provider 中没有同名入口，不据此新增适配。若指系统消息，现有 `role="system"` 已映射为 Rig `Message::system`；这不替代对该名称的确认。Embedding 与聊天协议分开：当前真实 [embedding factory](../../packages/alia-server/src/bootstrap/factory.rs)仅接 OpenAI-compatible `/embeddings`，会拒绝 Anthropic／Gemini embedding provider；已选本地 Qwen 路径不变。
+
+## 历史模型选择与输入清单（2026-10-25）
+
+以下 2026-10-25 各节保留当日决定、配置和验证证据；minor 选择以 2026-10-28 为准。旧配置不可直接作为当前生产配置。用户已撤回使用两个旧 PG 数据源／备份的方案，下面从旧库隔离副本核对身份的建议不再是执行入口。
 
 用户已选择 Magpie 的本地 Qwen3.8 27B 作为 minor、DeepSeek Flash 作为 major，并授权其余按推荐处理。minor 的标准高思考版与 Instant 由业务需求选择：采用 **Instant、关闭思考**，适配路由／分类原 5 秒和记忆捕获原 3 秒期限；复杂任务沿用 major 升级路径。512K 是该服务的上下文配置，不提高 Alia 的上下文、输出、并发或期限预算。本节替代先前的模型待选清单；软件候选 `6123691516fae1c2b0e813652eaa1104c33da9af` 及归档保持独立。
 
