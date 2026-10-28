@@ -4,10 +4,22 @@ Project Alia treats models as replaceable services behind provider adapters.
 This document lists the current service roles without going deep into provider
 installation details.
 
-The [software release record](software-release.md) separates verified binaries
-and noop lifecycle evidence from model deployment information that still needs
-confirmation. Example URLs and model names below are configuration examples,
-not evidence that a service is installed or permission to start or probe it.
+The [software release record](software-release.md) separates verified binaries,
+component checks and actual deployment evidence. The dated sections below retain
+their original scope; the current Mac installation is recorded first. Example
+URLs and model names alone are not evidence of deployment or acceptance.
+
+## Mac 模型服务正式启用（2026-10-28）
+
+用户已授权本机正式启用，使用 `ke-qiao` 登录会话。Easy-Turn／独占 Juno／Server三个用户LaunchAgent已安装到 `gui/501`；私有有效配置、Juno运行YAML和日志位于 `Library/Application Support/Alia`／`Library/Logs/Alia`，原准备配置与组件证据保留。首次启动使用冻结候选 `6123691`，实际健康检查发现下述TTS探测缺陷后，已切到最小修复版 `8481b0f` 并完成同身份重启；本轮结束时Mac服务保持运行，不增加provider框架。实际启停命令、身份和后续条件见[Mac正式启用](server-embedded.md#mac-正式启用2026-10-28)。
+
+本轮模型就绪检查已在实际安装下通过：Magpie目录包含官方 `deepseek/deepseek-flash`；LM Studio精确加载 `text-embedding-qwen3-embedding-0.6b`、context8192并应用回环／关闭敏感和verbose日志／登录服务策略；Easy-Turn8091核对固定CPU身份与单worker能力；Juno19880核对专属LaunchAgent、PID、监听、argv、运行YAML与固定磁盘权重。原共享9880实例保留，未改全局JIT或驱逐策略；模型资产仍依赖已固定的项目／GPT-SoVITS路径，不能清理为临时run文件。见[实际就绪结果](../../run/mac-activation-20261028/model-readiness-first.json)。
+
+这些检查没有发送模型推理，不重复此前已通过的新minor、embedding、Easy-Turn和Alia TTS adapter样本。目录与GET健康不证明DeepSeek上游当时可达、模型长期驻留、驻留tensor与磁盘字节相同或业务质量；同一角色预算、路由5秒、记忆3秒、Easy-Turn客户端5秒、TTS总60秒／idle10秒保持。真实Server首启、本人管理员、shadow、33项迁移和本地Qwen双pin已核对；原Server key保留，详见[生产记录](server-embedded.md#mac-正式启用2026-10-28)。
+
+本轮真实 `/health` 又发现独立的探测缺陷：原GPT-SoVITS检查GET `/tts`却不提供语言参数，引发上游500（`None.lower`）。这不是此前TTS合成样本失败。最小修复只补当前voice语言参数，仍用空text且不发送reference／prompt，在参数校验返回400，不启动合成；原5秒期限、权重身份门槛和500拒绝保持。双平台定向验证、发布构建及Mac实际重启通过，最终TTS／embedding为healthy、没有unhealthy模块；本人账号、SQL双pin和shadow保持。首错与正常退出记录保留，见[发布记录](software-release.md#mac-正式启用与健康检查修复2026-10-28)。整体degraded仅为3项LLM在线probe按配置关闭，不将它解释成云端失败或为健康全绿自动开启付费请求。
+
+当前 `channels=[]` 没有完整纯文本HTTP会话入口；`/api/v1/voice/chat` 即使只输入文字也会调用TTS，且不经过Interaction／路由／Execution或canonical memory。它不能代替无音频的本人会话验收，本轮不为这个检查扩展功能。下一步先准备Pi的无音频配置／身份核对，再通知用户进入真人整链窗口；换气长句、系统Start／Stop、生产初始化后真人讲话、取消下一轮、升级恢复与24小时故障负载仍未验。AEC及首版实际MCP／第三方插件保持独立门槛。
 
 ## 当前决定与 adapter 核查（2026-10-28）
 
@@ -22,7 +34,7 @@ not evidence that a service is installed or permission to start or probe it.
 | Anthropic Messages | `type="anthropic"` → Rig 原生 Messages | API version 可配置；结构化输出需 `json_schema`，单独 `json_mode=true` 会拒绝 |
 | Gemini | `type="gemini"` → Rig 原生 Gemini | 已处理 `/v1beta` 与 JSON MIME；具体模型能力仍需组件验证 |
 
-四路默认构建启用，[现有 HTTP fixture](../../packages/alia-server/src/providers/llm/service/http_tests.rs)覆盖流终止、工具参数／身份、预算、取消和协议请求格式，已包含在软件候选回归中。本轮只读核查，未重跑回归或发起模型请求。原生工具继续进入 Execution；新 minor 仍须在原路由 5 秒、记忆捕获 3 秒期限下验证，不放宽预算。若经 Magpie 的 Chat 兼容入口访问其他厂商模型，Alia 一侧仍选择 `openai`／`chat_completions`。
+四路默认构建启用，[现有 HTTP fixture](../../packages/alia-server/src/providers/llm/service/http_tests.rs)覆盖流终止、工具参数／身份、预算、取消和协议请求格式，已包含在软件候选回归中。协议核查本身只读，未重跑回归或发起模型请求；随后新 minor在原路由5秒、记忆捕获3秒内完成下节有限样本，不放宽预算。原生工具继续进入Execution。若经Magpie的Chat兼容入口访问其他厂商模型，Alia一侧仍选择 `openai`／`chat_completions`。
 
 用户已澄清“system One”为口误并撤回，不列为待确认项或新增适配。Embedding 与聊天协议分开：当前真实 [embedding factory](../../packages/alia-server/src/bootstrap/factory.rs)仅接 OpenAI-compatible `/embeddings`，会拒绝 Anthropic／Gemini embedding provider；已选本地 Qwen 路径不变。
 
@@ -30,7 +42,7 @@ not evidence that a service is installed or permission to start or probe it.
 
 [本轮汇总](../../run/fresh-start-20261028/summary.json)分别固定配置、有限模型调用、隔离新库与启动材料证据，不合并为生产整链通过。
 
-[当前独立配置](../../run/fresh-start-20261028/config/server.production.pending.toml)、[组件配置](../../run/fresh-start-20261028/config/server.components.toml)均经原 Rust loader／factory 检查；运行软件仍为 `6123691`，没有改生产代码或依赖。生产配置保留 DB port 1、空 JWT、无 channel／discovery，不能直接启动生产。[Magpie 目录证据](../../run/fresh-start-20261028/config/magpie-deepseek-catalog-v2.json)支持官方路由和 none 参数；目录标签不能固定可变供应商 alias 的权重版本，也不把其他原生 endpoint 标签当作本轮实测。
+[准备阶段独立配置](../../run/fresh-start-20261028/config/server.production.pending.toml)、[组件配置](../../run/fresh-start-20261028/config/server.components.toml)均经原 Rust loader／factory 检查；运行软件仍为 `6123691`，没有改生产代码或依赖。pending文件保留 DB port 1、空 JWT、无 channel／discovery，不能直接启动生产；实际安装另用私有有效配置，不覆盖这份准备证据。[Magpie 目录证据](../../run/fresh-start-20261028/config/magpie-deepseek-catalog-v2.json)支持官方路由和 none 参数；目录标签不能固定可变供应商 alias 的权重版本，也不把其他原生 endpoint 标签当作本轮实测。
 
 使用原 Rust `LlmService` 诊断和原提示词，各一次新 minor 请求通过：路由分类 **788.167ms／原 5 秒**，瞬时问候的记忆捕获 **854.765ms／原 3 秒**，得到期望的 JSON；[完整结果](../../run/fresh-start-20261028/minor/summary.json)保留原始响应，没有重试。两个样本不代表业务语料准确率、并发／长上下文／断网表现或 p95；记忆样本只覆盖不应写入的瞬时问候。
 
@@ -38,7 +50,7 @@ not evidence that a service is installed or permission to start or probe it.
 
 此前只通过直接 HTTP 的 Juno 本轮已补齐 **Alia `create_tts`／`GptSovitsTts.init`／stream adapter**：独占19880，固定权重和文件名参考文本，一次真实合成通过；init **484.084ms**、首块 **5892.716ms**、全流 **6773.710ms**，7块／304684bytes，结束后编码预算为0。原总60秒／idle10秒不变，没有第二次求绿、播放或试听；这仍不是 Delivery／Pi／声学整链。原始流和[adapter结果](../../run/fresh-start-20261028/juno/adapter-result.json)保留，临时诊断代码不进入生产实现。任务19880已停止、原9880和源码／权重／参考文件保持；关闭时上游 `resource_tracker` 报告1个待清理semaphore，原警告保留，未测OS资源上界或通过重跑抹去。
 
-新的 [Mac 服务材料](../../run/fresh-start-20261028/services/README.md)只要求 LM Studio 的选定 embedding 驻留，不再要求旧本地聊天实例或强制两模型 JIT 策略；敏感日志／登录设置仍未应用。15 项 ready fixture、3 份 plist、最终13项 Server gate／凭据FILE／exec拦截检查和停服日志轮转检查分别留证；它们不等于已安装、模型整套已就绪或运行中日志有硬上界。新空库真实发布二进制的首次启动／同身份重启结果见[新库入口](upgrade-recovery.md#新生产数据来源决定2026-10-28)。
+新的 [Mac 服务材料](../../run/fresh-start-20261028/services/README.md)只要求 LM Studio 的选定 embedding 驻留，不再要求旧本地聊天实例或强制两模型 JIT 策略；准备时敏感日志／登录设置尚未应用。15 项 ready fixture、3 份 plist、最终13项 Server gate／凭据FILE／exec拦截检查和停服日志轮转检查分别留证；它们不等于实际安装或运行中日志有硬上界。随后正式应用及实际就绪见本页首节；独立新空库首次启动／同身份重启的原隔离结果仍见[新库入口](upgrade-recovery.md#新生产数据来源决定2026-10-28)，不与生产结果混用。
 
 ## 历史模型选择与输入清单（2026-10-25）
 

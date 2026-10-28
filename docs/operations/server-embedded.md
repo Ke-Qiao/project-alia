@@ -1,6 +1,6 @@
 # Server 与 Embedded 无前端操作入口
 
-更新：2026-10-28。部署目标为 Mac Server、Pi 5 / 8 GB Embedded，Easy-Turn 位于 Server。Pi 的 Ubuntu 24.04.4 / aarch64 和 R1 分阶段采播基线已有记录；本轮复用这些结果。模型方案、有限组件和配置／SQL 隔离演练已完成；本机既有数据与身份、Mac 服务材料见下节，实际生产启停／升级恢复仍待授权窗口。以下指向当前 CLI/REST；Web/iOS/Android 不参与本轮安装或验收。
+更新：2026-10-28。部署目标为 Mac Server、Pi 5 / 8 GB Embedded，Easy-Turn 位于 Server。用户已授权 Mac 正式启用，采用 `ke-qiao` 登录会话、新生产库和本人管理员；实际状态见下节。Pi 的 Ubuntu 24.04.4 / aarch64 和 R1 分阶段采播基线继续复用，Pi 部署与真人语音仍待单独窗口。以下指向当前 CLI/REST；Web/iOS/Android 不参与本轮安装或验收。
 
 当前硬件/部署输入、只读核对与R02/R03→R05门槛集中在 [部署资料清单](hardware-deployment-readiness.md)。
 
@@ -8,19 +8,51 @@
 
 Harness／Embodiment 版本切换使用[成套升级与失败恢复步骤](upgrade-recovery.md)：双端协议、数据库迁移、插件 grant 和 Appraisal pin 必须一起核对。
 
+## Mac 正式启用（2026-10-28）
+
+本轮把已验证的Mac候选安装到 `/Users/ke-qiao/Library/Application Support/Alia`，首次使用 `releases/6123691`，健康检查修复后当前运行 `releases/8481b0f/alia-server`；私有配置、凭据和状态位于版本目录之外，日志位于 `/Users/ke-qiao/Library/Logs/Alia`。保留原 `alia-main` Server key字节，生成新库所需凭据与JWT；不导入演练账号、旧库或备份。脱敏安装与依赖证据见[本轮汇总](../../run/mac-activation-20261028/summary.json)，私有配置及凭据原值不进入仓库或报告。
+
+三个 `com.alia.easy-turn`、`com.alia.juno`、`com.alia.server` LaunchAgent 已安装到用户 `~/Library/LaunchAgents` 并登记在 `gui/501`。Easy-Turn 与 Juno 使用登录启动，Server 保留 `RunAtLoad=false`，全部 `KeepAlive=false`；这是受控的登录会话运行方式，不是无人登录开机服务或故障自动恢复承诺。共享 Magpie／LM Studio／9880 TTS 沿用原归属，不随 Alia 停止。
+
+LM Studio 已应用回环监听、关闭敏感／verbose 日志和登录服务设置，选定 Qwen embedding 的精确实例及 context8192 已加载；没有改共享 JIT 或驱逐策略。Easy-Turn8091、独占 Juno19880 的实际就绪检查通过，包含 Juno 的 LaunchAgent／PID／监听／运行 YAML／磁盘权重归属检查。新 `alia-production-pgdata` 卷使用固定 PostgreSQL17.10／pgvector 镜像，仅发布 `127.0.0.1:5432`，`vector`／`pgcrypto` 与最终 TCP 就绪已核对；不是从已删旧卷恢复。GET 就绪不等于真实推理、resident tensor 字节或持续驻留保证。
+
+冻结候选 `6123691` 首次启动后约5988ms提供HTTP，已注册首位 active管理员 `ke-qiao@alia.local`，UUID为 `a4b078c0-daf5-47f4-9303-e30af26eadb6`；Companion为shadow revision1。实际核对33项迁移与源码精确一致，Memory／Cache同时固定到选定Qwen1024 profile、policy version1，四张canonical／cache／projection表均为空，原Server key一致。迁移会另行登记3个静态seed profile；首个验证脚本误以为只应有1个profile而失败，原断言及修正保留，不能把额外seed视为旧库恢复或切换错误。
+
+实际 `/health` 暴露GPT-SoVITS旧就绪探测的问题：GET `/tts`缺少语言参数，服务返回500（`None.lower`）。Server随后正常停止，exit0、约161ms完成关闭，3000／3001关闭且生产DB连接归零。停服后建立私有 `backups/initial-20261028` 恢复点，在network-none／tmpfs独立PostgreSQL还原成功，67张public表的count与排序JSON摘要逐项一致，临时容器已删除，生产库未被替换或写入；见[恢复核验](../../run/mac-activation-20261028/restore-checkpoint.json)。
+
+修复提交 `8481b0faf1b92bb39905d84af13bad2cd731e70e` 的Mac发布二进制已独立安装并重启，约5219.626ms提供HTTP；本人UUID／admin／active、shadow revision1、33项迁移、Qwen双pin、四张空表与原Server key全部保持，仍不存在settings覆盖文件。TTS与embedding为healthy，没有unhealthy模块；整体degraded仅来自3项有意关闭在线probe的LLM状态，不为求全绿开启额外付费探测。见[安装身份](../../run/mac-activation-20261028/installed-fix.json)、[实际重启](../../run/mac-activation-20261028/fixed-restart.json)与[修复验证](software-release.md#mac-正式启用与健康检查修复2026-10-28)。本轮结束时Mac正式服务保持运行，未发起模型推理、采集、播放或Pi部署。
+
+首次顺序为：核对全新库和私有身份 → 模型就绪 → Server迁移与loopback监听 → 首位管理员注册 → 实际SQL profile／Companion shadow核对。不能要求新管理员在Server首启前已经存在，也不能把macOS登录名当成应用用户UUID。当前 `channels=[]`、discovery关闭，HTTP3000／gRPC3001都绑定回环；下一次修改Server channel须引用上述真实UUID，不使用演练owner。
+
+当前会话中的状态与受控启动入口如下；用 `ke-qiao` 执行，不使用 `sudo` 或 `system` 域：
+
+```sh
+launchctl print gui/501/com.alia.easy-turn
+launchctl print gui/501/com.alia.juno
+launchctl print gui/501/com.alia.server
+'/Users/ke-qiao/Developer/project-alia/services/easy-turn/.venv/bin/python' '/Users/ke-qiao/Library/Application Support/Alia/services/ready-check.py' --check
+launchctl kickstart gui/501/com.alia.server
+```
+
+仅在 Server 已停止、私有 base／settings 摘要已重新审阅且 ready通过后执行最后一行。正常停止先 `launchctl kill SIGTERM gui/501/com.alia.server`，核对该 PID退出、3000／3001关闭和日志收尾；如需停整个 Alia 模型组，再依次对 `com.alia.juno`、`com.alia.easy-turn` 发 SIGTERM并核对退出。只有确认停止后才 `launchctl bootout gui/501/LABEL` 卸载精确 job；重新登记使用 `launchctl bootstrap gui/501 ~/Library/LaunchAgents/对应文件.plist`，其中模型 job 会按 RunAtLoad立即启动。不要用按进程名杀进程或强制 kickstart掩盖未清理状态。生产 PostgreSQL在 Server停止后才可用其私有 compose执行 `stop postgres`；不因此停止共享 OrbStack 或其他容器。日志轮转沿用[停服维护步骤](../../run/fresh-start-20261028/services/README.md#停止日志与恢复)，运行中日志磁盘硬上界仍待验。
+
+当前没有供 `channels=[]` 使用的完整纯文本 HTTP 对话入口：`/api/v1/voice/chat` 仅传 text也会合成音频，且直接调用 default LLM，不经过 Interaction／路由／Execution／canonical memory；`/voice/chat/{channel_id}` 只有已注册非语音 channel才会跳过TTS。不能把它当作无音频完整会话检查，也不为本轮临时增加入口。
+
+下一步先通知用户准备 Pi，仅核对主机、设备／Server身份、实际管理员 owner UUID、可达 endpoint、候选产物和私有持久状态，在离线副本执行 `--check-config` 与目标 `systemd-analyze verify`；这一步不启动 Embedded，因为正常启动可能开启采播。完成双方配置审核后，再安排真人窗口启用设备，集中验启动→讲话→模型→播放→打断／恢复→取消与下一轮，包含换气长句、Start／Stop和生产初始化后的真人语音。实际升级／恢复、登录后恢复、进程退出恢复、24小时混合负载、AEC与具体插件仍分别保留验收门槛。
+
 ## 当前部署决定（2026-10-28）
 
 用户决定**不以旧库或备份作为新生产数据来源，删除两套旧 PostgreSQL**：`alia-postgres`＋`project-alia_pgdata`、`alia-python-postgres`＋`alia_python_postgres-data`。此前“保留旧卷并查询停服副本”的建议已撤回；下方 10 月 25 日的元信息与只读证据仍作为历史保留。新库后续按全新部署准备，不继承旧账号、embedding pin 或 Companion 政策，也不把演练 fixture 账号当成生产 owner。首次初始化后须实际核对 schema、选定的 1024 维 profile 与 shadow 政策；空库没有历史记忆需要重建。
 
 **两套旧容器和专属数据卷已删除并核验不存在。** 用户明确授权临时启动 OrbStack 后，核对完整容器 ID、停止状态和数据卷独占关系，使用非强制删除；其他 53 个容器、48 个数据卷及网络清单保持不变，初始化脚本源目录保留。未新建备份或生产库，配置、密钥、模型和历史证据未纳入删除。引擎启动期间 `astrbot` 按既有 `always` 策略自动运行，随后已随 OrbStack 恢复停止；未改变该策略。操作、删除后检查和 `Stopped` 状态见[完成记录](../../run/deployment-decisions-20261028/deletion-approved/result.json)。此前启动审批阻断及首次过窄挂载断言保留为历史；后者发生在任何删除前，按实际只读 init bind／独占数据卷核对后继续。
 
-首轮运行域采用 **`ke-qiao` 登录后的 macOS 用户会话**。minor 已改为官方 `deepseek/deepseek-flash`＋none，独立输出预算保留；[新配置](../../run/fresh-start-20261028/config/server.production.pending.toml)与[新服务材料](../../run/fresh-start-20261028/services/README.md)已同步，旧 Instant 驻留不再是就绪条件。只保留 local embedding 的精确实例与 context8192 要求，不自动改共享 JIT。保留 `alia-main` 密钥、major、embedding、Easy-Turn 与 Juno；共享隐私／登录设置和 LaunchAgent 尚未应用。macOS 登录不自动创建 Alia 管理员。
+首轮运行域采用 **`ke-qiao` 登录后的 macOS 用户会话**。minor 已改为官方 `deepseek/deepseek-flash`＋none，独立输出预算保留；[准备配置](../../run/fresh-start-20261028/config/server.production.pending.toml)与[准备服务材料](../../run/fresh-start-20261028/services/README.md)保留当时未安装状态，实际安装见上节，不能直接用 pending配置替代私有有效配置。旧 Instant 驻留不再是就绪条件；只要求 local embedding 的精确实例与 context8192，不自动改共享 JIT。保留 `alia-main` 密钥、major、embedding、Easy-Turn 与 Juno。macOS 登录不自动创建 Alia 管理员。
 
-新生产 PostgreSQL 使用[独立 manifest](../../run/fresh-start-20261028/postgres-production/compose.yaml)：固定已验 ARM64 image 内容 ID、仅 loopback5432、新 external 卷 `alia-production-pgdata`、同一私有密码文件、首次 restart=no 和 Docker 日志轮转。manifest 已解析并静态核对，卷／密码／生产数据库均未创建；不使用含开发密码及宽监听的旧 compose 直接开生产。完整首次激活步骤见[数据库准备](../../run/fresh-start-20261028/postgres-production/README.md)。
+新生产 PostgreSQL 使用[独立 manifest](../../run/fresh-start-20261028/postgres-production/compose.yaml)：固定已验 ARM64 image 内容 ID、仅 loopback5432、新 external 卷 `alia-production-pgdata`、同一私有密码文件、首次 restart=no 和 Docker 日志轮转。准备阶段只解析和静态核对，随后按上节正式创建；不使用含开发密码及宽监听的旧 compose 直接开生产。原准备步骤见[数据库准备](../../run/fresh-start-20261028/postgres-production/README.md)。
 
-启动材料补齐了新库凭据连接：Server gate 从与 Compose 相同的私有 `postgres-password` 文件读取，复用 owner／权限／非symlink检查，按镜像 FILE 的尾LF语义处理并URL转义，仅向子进程注入固定loopback数据库DSN；清除外部继承值，不打印原值。最终13项 gate／特殊字符／权限／exec拦截检查通过，3份plist、15项ready fixture通过。另以6份合成日志验证系统newsyslog停服轮转，固定保留5个归档；首次count配置错误及修正保留。这不构成在线日志硬上界，也未安装任务或创建生产凭据。
+启动材料补齐了新库凭据连接：Server gate 从与 Compose 相同的私有 `postgres-password` 文件读取，复用 owner／权限／非symlink检查，按镜像 FILE 的尾LF语义处理并URL转义，仅向子进程注入固定loopback数据库DSN；清除外部继承值，不打印原值。准备阶段最终13项 gate／特殊字符／权限／exec拦截检查通过，3份plist、15项ready fixture通过。另以6份合成日志验证系统newsyslog停服轮转，固定保留5个归档；首次count配置错误及修正保留。这些 fixture不构成在线日志硬上界或实际安装结果，正式安装另见上节。
 
-[隔离新库验证](../../run/fresh-start-20261028/database/summary.json)已使用冻结 Mac 发布二进制完成首次启动、HTTP 注册管理员／普通用户、默认 shadow、选定 embedding 双 pin 与同身份重启。隔离账号／key 全部为临时测试身份，清理后不可迁作生产；生产本人首位管理员须在首次受控 loopback 窗口登记，密码在本机设置，不发入对话。真实 Pi 的 owner／设备 pin／网络仍待现场绑定。本轮只在隔离环境运行 Server，未创建生产服务或启用音频。
+[隔离新库验证](../../run/fresh-start-20261028/database/summary.json)已使用冻结 Mac 发布二进制完成首次启动、HTTP 注册管理员／普通用户、默认 shadow、选定 embedding 双 pin 与同身份重启。隔离账号／key 全部为临时测试身份，清理后不可迁作生产；生产本人首位管理员随后在上节受控 loopback 窗口独立登记，密码只在本机保存，不发入对话。真实 Pi 的 owner／设备 pin／网络仍待现场绑定。该隔离阶段未创建生产服务或启用音频，不把它改写成本轮正式启用结果。
 
 ## 本机数据与常驻准备盘点（2026-10-25）
 
@@ -64,18 +96,18 @@ LM Studio 的 HTTP autoStartOnLaunch 已开，而桌面 enableLocalService 关�
 
 首轮模型 jobs 按登录启动准备，Server 由操作者在就绪检查通过后显式启动。launchd 没有这些应用的依赖排序，Server 使用 `RunAtLoad=false`、全部新 job 使用 `KeepAlive=false`；保留首次失败，不自动重启求绿。下方系统 LaunchDaemon 模板仅描述 Server 的系统域运行方式，**不能证明整套 GUI 模型栈在无人登录时可用**。若选择开机无人登录运行，须另行落实 headless 模型服务、资产／凭据权限、OrbStack 启动和冷启动验收，不能直接混用两种运行域。
 
-以上为 10 月 25 日盘点时的待选项；数据库来源和登录运行域已由上方 10 月 28 日决定替代。共享 LM Studio 策略仍待定，参考文本和保留 `alia-main` 密钥无需重选。
+以上为10月25日盘点时的待选项；数据库来源、登录运行域和共享LM Studio策略以本页10月28日正式启用记录为准。参考文本和保留 `alia-main` 密钥无需重选，历史双模型驻留要求不再适用。
 
 ## Mac 与 Pi 的安装和常驻入口
 
-以下是**待部署材料**，本轮没有安装服务、切换二进制或启动设备。先在部署清单填入双端主机、服务账户、候选 commit／产物 SHA-256、绝对版本目录、私有配置／状态／模型／日志／备份目录、监听地址和端口。复用已有绑定时沿用原身份和状态；首次部署才创建新身份。`DEPLOY_USER`、`CANDIDATE` 和 `/absolute/...` 都是待替换值，不是现场已确认路径。
+以下是**通用部署模板**；本机 Mac 当前使用上节已安装的用户 LaunchAgent，Pi 模板仍待目标核对。先在部署清单填入双端主机、服务账户、候选 commit／产物 SHA-256、绝对版本目录、私有配置／状态／模型／日志／备份目录、监听地址和端口。复用已有绑定时沿用原身份和状态；首次部署才创建新身份。`DEPLOY_USER`、`CANDIDATE` 和 `/absolute/...` 都是待替换值，不是现场已确认路径。
 
 1. 从[候选交付记录](software-release.md)选定同一源码身份的 Mac Server 和 Linux ARM64 Embedded，核对归档与解包后二进制摘要，放入各自独立版本目录。不要复制整个开发仓库或覆盖现有运行文件。Linux 按交付包的 `ldd` 清单核对依赖；两端都复核平台和可执行权限。
 2. 私有目录由实际服务账户拥有，目录权限 `0700`、含凭据配置 `0600`；版本目录只用于代码，配置、SQLite、插件、R1 claim 和模型放在版本目录外。核对服务账户对目标 PCM／UART 的实际访问权限，不把整个设备目录设为全员可写。Server 的 PG／pgvector 和所选模型服务须先单独就绪；下列服务管理器不负责启动或等待它们。
 3. 按下节准备配置，在 Pi 用候选二进制 `--check-config` 检查副本；核对 `speech.channel_id` 与 Server channel、设备公钥 pin、真实网络可达地址。Mac 的 `server.public_endpoint` 必须是 Pi 可达地址，不能把 `0.0.0.0` 当作对端地址。生产身份首次配对只在受控网络和人工核对目标后执行，见本页账号入口。
 4. 首次正常启停、配对和模型链验收通过后，再启用常驻启动。保存实际服务文件及其摘要、所有非敏感环境变量和凭据来源名称；不要把 secret 写进下面的公共模板。生产日志与备份留在私有目录，不收集完整 settings 响应。
 
-Mac 使用系统级 LaunchDaemon，以选定的普通账户运行 Server；它不依赖 GUI 登录。保存为私有待审副本 `com.alia.server.plist`，替换用户和路径并用 `plutil -lint` 检查：
+下方 Mac 系统级 LaunchDaemon 是**另选无人登录方案时的模板，不是当前安装方式**。它以选定的普通账户运行 Server，本身不依赖 GUI 登录，但不能让当前 GUI 模型栈或 OrbStack自动变成 headless服务；不能与当前同名 LaunchAgent同时安装。选择并验证该方案后，才保存私有待审副本 `com.alia.server.plist`，替换用户和路径并用 `plutil -lint` 检查：
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -96,7 +128,7 @@ Mac 使用系统级 LaunchDaemon，以选定的普通账户运行 Server；它�
 </dict></plist>
 ```
 
-下一轮安装时将审核后的文件以 `root:wheel`、`0644` 放到 `/Library/LaunchDaemons/com.alia.server.plist`，先确保日志父目录存在。`sudo launchctl bootstrap system /Library/LaunchDaemons/com.alia.server.plist` 会立即启动；用 `sudo launchctl print system/com.alia.server` 核对 PID、退出状态，读取上面的两个日志。普通停止先 `sudo launchctl kill SIGTERM system/com.alia.server`，等待 PID 退出并记录清理结果；确认退出后 `sudo launchctl bootout system/com.alia.server` 卸载。禁用下次开机加载还需移走这一个 plist，保留私有副本；不要删除配置和状态。再次加载前核对数据库、模型与当前版本。LaunchDaemon 与用户 LaunchAgent 的登录边界见 [Apple 指南](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html)。
+仅选定并验证该备选运行域后，才将审核后的文件以 `root:wheel`、`0644` 放到 `/Library/LaunchDaemons/com.alia.server.plist`，先确保日志父目录存在。`sudo launchctl bootstrap system /Library/LaunchDaemons/com.alia.server.plist` 会立即启动；用 `sudo launchctl print system/com.alia.server` 核对 PID、退出状态，读取上面的两个日志。普通停止先 `sudo launchctl kill SIGTERM system/com.alia.server`，等待 PID 退出并记录清理结果；确认退出后 `sudo launchctl bootout system/com.alia.server` 卸载。禁用下次开机加载还需移走这一个 plist，保留私有副本；不要删除配置和状态。再次加载前核对数据库、模型与当前版本。LaunchDaemon 与用户 LaunchAgent 的登录边界见 [Apple 指南](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html)。
 
 Pi 使用系统级 `alia-embedded.service`；这里的普通启动**不发送 R1 初始化命令**：
 

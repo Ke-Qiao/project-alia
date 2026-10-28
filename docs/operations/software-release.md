@@ -1,5 +1,32 @@
 # 软件发布资料与真实模型链前置
 
+## Mac 正式启用与健康检查修复（2026-10-28）
+
+用户已授权正式启用Mac端，首次安装复用 `6123691516fae1c2b0e813652eaa1104c33da9af` 候选的已验证Mac release；此前操作文档提交不改变该二进制或原归档。本轮实际健康检查发现GPT-SoVITS就绪探测缺陷，已完成最小Rust修复、双平台影响验证与发布构建，并用新Mac二进制同身份重启。原候选及首错保留，不把10月25日源码A/B的验证分母与部署检查相加。尚未部署Pi。
+
+修复仅涉及现有GPT-SoVITS health请求：GET `/tts`携带当前default voice的 `text_lang`／`prompt_lang`，保持 `text=""`，不发送参考音频或prompt文本，使上游完成语言归一化后以参数不完整返回预期400，在合成前结束。原5秒期限、权重gate、ACK／preloaded状态以及500判为unhealthy保持；新增真实本地HTTP回归同时核对精确query、preloaded为degraded、ACK后为healthy和远端500仍拒绝。没有修改商家Python服务或放宽健康断言。
+
+修复提交为 `8481b0faf1b92bb39905d84af13bad2cd731e70e`，只改TTS实现与对应HTTP回归。其原生源码C在10月25日最终B之上仅增加这两处修改，锁文件／协议／迁移未变。本轮按影响范围执行，保留原测试并发与期限；本地HTTP fixture不请求模型、音频设备或真实数据库。
+
+| 平台 | TTS单元目标 | `provider_adapters` | 检查／构建 |
+| --- | --- | --- | --- |
+| macOS ARM64，源码C | **21 passed / 0 failed / 0 ignored** | **6 passed / 0 failed / 0 ignored** | Server no-default、Clippy、workspace release、Mach-O／系统动态库及3份Embedded离线配置检查通过；Clippy保留原警告 |
+| Linux ARM64容器，源码C | **21 passed / 0 failed / 0 ignored** | **6 passed / 0 failed / 0 ignored** | Server no-default、release、ELF／loader／链接及3份Embedded离线配置检查通过 |
+
+Mac证据为[分目标计数](../../run/mac-activation-20261028/mac-fix/impact-results.json)、[构建记录](../../run/mac-activation-20261028/mac-fix/build-summary.json)与[原生／配置检查](../../run/mac-activation-20261028/mac-fix/native-and-config-audit.json)；Linux的[分目标计数](../../run/mac-activation-20261028/linux-fix/impact-results.json)和[构建／清理记录](../../run/mac-activation-20261028/linux-fix/verify-impact.json)保留独立分母。Linux使用固定只读源码、network-none、无设备／模型，输入未漂移且任务容器已清理。新Mac Server SHA-256为 `cba48222a4aa888df452571c7750911302161c2e0a0a2ff7d3cb963a8e75e8cd`，Linux Server为 `9641f9352cd7e3e376c5c78385f8a4e41e24b716d462ce77a35a1db18e2684a2`；双平台Embedded和PDK guest均与原候选字节一致，见[产物比较](../../run/mac-activation-20261028/artifact-comparison.json)。这些定向检查不构成第二次完整workspace，不与旧A/B或两个平台数量相加。
+
+Mac私有安装位于 `/Users/ke-qiao/Library/Application Support/Alia`，使用 `ke-qiao` 的 `gui/501` 用户LaunchAgent。已登记Easy-Turn／独占Juno／Server，应用LM Studio回环和最小日志／登录策略并加载固定Qwen1024 embedding；实际模型就绪各分支通过。新的 `alia-production-pgdata` 空卷与固定PostgreSQL／pgvector镜像仅发布loopback5432，扩展与最终TCP就绪已核对；原Server key保留，不从已删除旧库或备份导入账号／数据。
+
+候选Server约5988ms提供HTTP，首位管理员 `ke-qiao@alia.local` 已注册为active admin，Companion shadow revision1；33项migration journal与源码逐项一致，Memory／Cache为所选Qwen1024双pin、policy version1，四张canonical／cache／projection表为空。首次检查脚本误假设profile总数只能为1，迁移另含3个静态seed，已保留原失败并纠正核对方式。实际health的TTS项因GET `/tts`缺少语言参数出现500；原失败保留，Server正常停止exit0、约161ms、3000／3001关闭及DB连接归零。
+
+停服后创建私有 `backups/initial-20261028` 恢复点，dump为262143bytes、SHA-256 `e2ed246869e11dc31dc7c1abdf36a00ac2713e9e209d3a7c0a8b9d61381f6335`。在network-none／tmpfs独立PostgreSQL真实restore exit0，67张public表逐表count及排序JSON行摘要与源库完全相同，未覆盖或写入生产库，临时容器已删除。见[恢复点记录](../../run/mac-activation-20261028/checkpoint.json)与[恢复核验](../../run/mac-activation-20261028/restore-checkpoint.json)。这证明首次初始化恢复点可还原，不等于之后真实业务升级／回滚和长期备份调度已验。
+
+新Server安装在 `releases/8481b0f/alia-server` 后完成实际重启，约5219.626ms提供HTTP；本人账号UUID／admin／active、shadow revision1、迁移、profile双pin、四张空表及原Server key全部保持，settings覆盖文件仍不存在。最终health的TTS与embedding为healthy、没有unhealthy模块；整体degraded仅来自3项有意关闭在线probe的LLM，不为求全绿开启额外付费请求。见[安装身份](../../run/mac-activation-20261028/installed-fix.json)与[实际重启记录](../../run/mac-activation-20261028/fixed-restart.json)。Mac正式服务保持运行，本轮没有采集、播放或发起模型推理。
+
+新的[源码候选](../../run/mac-activation-20261028/alia-source-candidate-20261028.tar.gz)、[macOS ARM64候选](../../run/mac-activation-20261028/alia-macos-arm64-candidate-20261028.tar.gz)和[Linux ARM64候选](../../run/mac-activation-20261028/alia-linux-arm64-candidate-20261028.tar.gz)位于独立目录，旧候选不覆盖。代码提交、后续文档提交、源码／锁文件、双平台产物与验证对应关系由[交付清单](../../run/mac-activation-20261028/delivery.json)及[本轮汇总](../../run/mac-activation-20261028/summary.json)固定，文档提交不改变已验原生输入。实际启动停止、登录域和配置身份见[Mac正式启用入口](server-embedded.md#mac-正式启用2026-10-28)。原准备检查、原隔离演练及首次失败分别保留，不能用后续就绪结果覆盖它们。已安装不代表登录恢复、进程故障自动恢复、真实讲话／播放、业务升级恢复或24小时资源上界通过。
+
+接下来先通知用户准备Pi，核对目标身份、owner UUID、endpoint、候选产物和持久状态，并在不启动Embedded的条件下完成配置／服务单元核对；再安排真人窗口，集中验证生产启动→讲话→模型→播放→打断／恢复→取消与下一轮，包含换气长句、Start／Stop和生产初始化后真人语音。R1已通过基线直接复用；AEC待商家确认后单独验收，首版MCP／插件按实际目标验收，V01／V02与Companion shadow边界不变。本轮没有推送、合并或正式Release。
+
 ## 本地软件候选与最终源码验证（2026-10-25）
 
 本轮在 10 月 24 日交付的未提交主线上进行范围审查、最小修复和软件验证，R1 的既有分阶段硬件基线继续复用。
@@ -81,7 +108,7 @@ Mac B 的[影响验证记录](../../run/software-candidate-20261024/mac-final/ve
 [产物溯源](../../run/software-candidate-20261024/artifact-provenance.json)逐项比较旧包、A 和 B：B 的 Embedded／PDK 字节与 A 相同，直接复用；旧 10 月 24 日双端宿主不再匹配最终输入。Mac PDK 与旧包相同可复用，Linux PDK 采用统一入口重建后的已验证字节。
 
 
-2026-10-25 后续模型方案、Mac 有限组件预检和生产配置／SQL 的隔离演练已记录在[模型出口](model-services.md#生产配置与隔离-sql-出口2026-10-25)。这些后续提交只更新操作文档，软件候选和原始归档不变；仍未切换生产。下一步落实真实数据库／身份／网络、停服备份和模型托管，再进入 Pi／真人现场窗口。
+2026-10-25 后续模型方案、Mac 有限组件预检和生产配置／SQL 的隔离演练已记录在[模型出口](model-services.md#生产配置与隔离-sql-出口2026-10-25)。这些后续提交只更新操作文档，软件候选和原始归档不变；该隔离阶段未切换生产。2026-10-28经用户授权进入本页首节的Mac正式启用，Pi／真人现场与新业务备份恢复仍是独立出口。
 按[部署入口](server-embedded.md)和[升级恢复](upgrade-recovery.md)集中完成：生产启动 → 讲话 → 模型处理 → 回复播放 → 打断／恢复 → 取消与下一轮对话，纳入正常换气长句、系统 Start／Stop 和生产单次初始化后的真人语音。
 首次配对在受控网络人工核对身份和 pin；`require_physical_confirm` 当前没有设备按钮门禁，不能把配置值当作已实现的确认。
 实际部署后另验成套升级／恢复与至少 24 小时混合负载，覆盖断网、模型超时、进程退出、设备重连及资源上界。AEC 等商家确认后独立验收；首版实际 MCP 服务／第三方插件按目标验收。

@@ -1,20 +1,24 @@
 # Server／Embedded 成套升级与失败恢复
 
-更新：2026-10-28。本页是现有软件改动的成套升级步骤，对应 [S03](../todo.md)。10 月 20 日完成的全 noop 双进程生命周期和隔离备份／还原演练保留原范围；后续 R1 变更补充于下表，不把旧演练写成新版实际部署通过。实际产物和验证见[软件发布记录](software-release.md)。R1 当前阶段已收口；真实模型方案与有限组件、配置／SQL 隔离演练已具备，待真实部署条件落实后集中做完整语音链验收；AEC 等商家确认后单独验证，ROS 和 R03 仍暂缓。
+更新：2026-10-28。本页是现有软件改动的成套升级步骤，对应 [S03](../todo.md)。10 月 20 日完成的全 noop 双进程生命周期和隔离备份／还原演练保留原范围；后续 R1 变更补充于下表，不把旧演练写成新版实际部署通过。实际产物和验证见[软件发布记录](software-release.md)。R1 当前阶段已收口；真实模型方案与有限组件、配置／SQL 隔离演练已具备，Mac 登录会话已获准正式启用；Pi 条件落实后集中做完整语音链验收；AEC 等商家确认后单独验证，ROS 和 R03 仍暂缓。
 
-新安装的版本目录、Mac LaunchDaemon／Pi systemd 模板、配对和日志入口见[无前端部署操作](server-embedded.md#mac-与-pi-的安装和常驻入口)。这些是待部署材料；本轮没有将候选包切换到 Pi 或现有服务。
+新安装的版本目录、Mac LaunchDaemon／Pi systemd 模板、配对和日志入口见[无前端部署操作](server-embedded.md#mac-与-pi-的安装和常驻入口)。当前 Mac 实际安装采用用户 LaunchAgent，见[Mac 正式启用](server-embedded.md#mac-正式启用2026-10-28)；通用系统域模板和 Pi 部署仍为后续材料。
 
 ## 新生产数据来源决定（2026-10-28）
 
-用户已决定弃用并删除两套旧 PostgreSQL，**不从旧库或备份恢复新生产初始数据**；执行状态及准确范围见[当前部署决定](server-embedded.md#当前部署决定2026-10-28)。用户随后明确授权临时启动引擎；两套容器和专属数据卷已删除并核验不存在，OrbStack 已恢复停止，尚未初始化新库。首轮采用 `ke-qiao` 登录会话；minor 已定官方 DeepSeek Flash＋none。
+用户已决定弃用并删除两套旧 PostgreSQL，**不从旧库或备份恢复新生产初始数据**；执行状态及准确范围见[当前部署决定](server-embedded.md#当前部署决定2026-10-28)。用户随后明确授权临时启动引擎；两套容器和专属数据卷已删除并核验不存在，删除阶段曾将 OrbStack 恢复停止；后续用户授权 Mac 正式启用后，已新建 `alia-production-pgdata`／`alia-production-postgres-1`，引擎随生产数据库保持运行。首轮采用 `ke-qiao` 登录会话；minor 已定官方 DeepSeek Flash＋none。
 
-因此下面 10 月 25 日“检查旧库 pin → 显式切换 → 重建历史投影”的步骤保留为已演练的未来迁移流程，不再作为本次新库首次启动的必经步骤。新库应使用选定的本地 1024 维 embedding，首次迁移／bootstrap 后核对实际 SQL descriptor、Memory／Cache pin、新管理员 UUID 和 Companion shadow；不导入旧账号或测试 fixture。保留 `alia-main` 密钥不等于保留已删数据库里的应用账号／绑定。
+因此下面 10 月 25 日“检查旧库 pin → 显式切换 → 重建历史投影”的步骤保留为已演练的未来迁移流程，不再作为本次新库首次启动的必经步骤。新生产库已使用选定的本地 1024 维 embedding，首次迁移／bootstrap 后核对了实际 SQL descriptor、Memory／Cache pin、`ke-qiao@alia.local` 管理员 UUID 和 Companion shadow；不导入旧账号或测试 fixture。保留 `alia-main` 密钥不等于保留已删数据库里的应用账号／绑定。
 
 新空库流程已在独立 PostgreSQL17.10／pgvector0.8.2 中用冻结 Mac release 实际验证：33 个 migration journal checksum 与源码逐项一致；Memory／Cache 均直接初始化到选定的本地 Qwen1024 descriptor、policy version1；四张 canonical／cache／projection 表为空；真实 HTTP 首个注册为 admin、第二个为 user，两用户 Companion shadow revision1。正常关闭后同身份重启，登录、角色、shadow、profile、journal 和空表保持，两个进程均 exit0、DB其他连接归零，临时容器／网络／私有状态清理，OrbStack恢复停止。见[结果](../../run/fresh-start-20261028/database/summary.json)。没有模型调用；health 中 embedding 因故意不提供真实凭据而 unhealthy，不能作为模型就绪证据。
 
 两次准备失败保留：internal Docker 网络没有按请求发布宿主端口，Server尚未启动；修正为独立bridge＋明确loopback发布。随后新隔离配置关闭两项routing开关，被校验器在 **33条迁移提交后**拒绝；改为开启noop minor路由，不更改应用、期限或断言。后者再次说明启动失败不表示数据库迁移未发生，不归入V01／V02。最终成功没有覆盖首次日志；本轮不重复旧profile切换／备份恢复演练。
 
-本次不使用旧备份作为数据来源，不取消未来上线后的备份与恢复要求。新业务开始后仍须建立一致恢复点；迁移后不能只换回旧二进制，真实升级恢复和 24 小时验收仍未完成。
+本次不使用旧备份作为数据来源，不取消上线后的备份与恢复要求。首次新生产 Server 正常 SIGTERM 退出、数据库其他连接归零后，已在私有目录 `/Users/ke-qiao/Library/Application Support/Alia/backups/initial-20261028` 建立新的恢复点，包含 custom-format `database.dump`、配置、身份／凭据来源、服务文件和 PostgreSQL manifest。该目录含敏感数据，0700／0600，仅记录摘要，不纳入 Git 或公共交付包。
+
+该新恢复点已在**无网络、无发布端口、临时 tmpfs PostgreSQL** 中实际 `pg_restore --exit-on-error` 成功，67 张 public 表的行数及排序 JSON 内容摘要逐表一致，包括迁移、管理员、shadow 和 profile；检查期间生产表摘要未变，临时容器已删除。见[恢复点](../../run/mac-activation-20261028/checkpoint.json)和[隔离恢复](../../run/mac-activation-20261028/restore-checkpoint.json)。这证明本次初始数据恢复点可读且 SQL 内容一致，未在恢复副本运行应用、连接模型或设备，也未将备份还原到生产。
+
+后续每次实际模型／配置／二进制变更及业务写入后仍需建立对应的新恢复点。初始恢复点记录的是首次软件候选，不自动包含之后的 TTS 健康检查修复二进制；运行版本按[发布记录](software-release.md#mac-正式启用与健康检查修复2026-10-28)对应。**数据库迁移后不能只换回旧二进制**；双端现场升级／恢复、设备状态与至少 24 小时验收仍未完成。
 
 ## 选定 embedding 的切换与隔离恢复（2026-10-25）
 
