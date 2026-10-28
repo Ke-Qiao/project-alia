@@ -24,7 +24,7 @@ not evidence that a service is installed or permission to start or probe it.
 
 四路默认构建启用，[现有 HTTP fixture](../../packages/alia-server/src/providers/llm/service/http_tests.rs)覆盖流终止、工具参数／身份、预算、取消和协议请求格式，已包含在软件候选回归中。本轮只读核查，未重跑回归或发起模型请求。原生工具继续进入 Execution；新 minor 仍须在原路由 5 秒、记忆捕获 3 秒期限下验证，不放宽预算。若经 Magpie 的 Chat 兼容入口访问其他厂商模型，Alia 一侧仍选择 `openai`／`chat_completions`。
 
-用户提到的 **“system One”尚缺准确产品、模型名或接口地址**，仓库和锁定 Rig provider 中没有同名入口，不据此新增适配。若指系统消息，现有 `role="system"` 已映射为 Rig `Message::system`；这不替代对该名称的确认。Embedding 与聊天协议分开：当前真实 [embedding factory](../../packages/alia-server/src/bootstrap/factory.rs)仅接 OpenAI-compatible `/embeddings`，会拒绝 Anthropic／Gemini embedding provider；已选本地 Qwen 路径不变。
+用户已澄清“system One”为口误并撤回，不列为待确认项或新增适配。Embedding 与聊天协议分开：当前真实 [embedding factory](../../packages/alia-server/src/bootstrap/factory.rs)仅接 OpenAI-compatible `/embeddings`，会拒绝 Anthropic／Gemini embedding provider；已选本地 Qwen 路径不变。
 
 ## 历史模型选择与输入清单（2026-10-25）
 

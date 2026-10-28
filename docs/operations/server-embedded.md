@@ -12,7 +12,7 @@ Harness／Embodiment 版本切换使用[成套升级与失败恢复步骤](upgra
 
 用户决定**不以旧库或备份作为新生产数据来源，删除两套旧 PostgreSQL**：`alia-postgres`＋`project-alia_pgdata`、`alia-python-postgres`＋`alia_python_postgres-data`。此前“保留旧卷并查询停服副本”的建议已撤回；下方 10 月 25 日的元信息与只读证据仍作为历史保留。新库后续按全新部署准备，不继承旧账号、embedding pin 或 Companion 政策，也不把演练 fixture 账号当成生产 owner。首次初始化后须实际核对 schema、选定的 1024 维 profile 与 shadow 政策；空库没有历史记忆需要重建。
 
-**当前删除尚未执行**：10 月 28 日 Docker socket 不存在、OrbStack 状态为 stopped；自动审批拒绝启动引擎，原因是可能触发既有容器自动重启。已请求临时启动引擎的明确授权。获准后只核对并删除上述精确容器与专属卷，不使用 force／prune，不删镜像、其他数据、配置、身份密钥或历史证据。删除不制作新备份；不能承诺恢复被删除旧库的账号和业务内容。执行状态见[本轮决定](../../run/deployment-decisions-20261028/decisions.json)。本轮也未新建生产库。
+**两套旧容器和专属数据卷已删除并核验不存在。** 用户明确授权临时启动 OrbStack 后，核对完整容器 ID、停止状态和数据卷独占关系，使用非强制删除；其他 53 个容器、48 个数据卷及网络清单保持不变，初始化脚本源目录保留。未新建备份或生产库，配置、密钥、模型和历史证据未纳入删除。引擎启动期间 `astrbot` 按既有 `always` 策略自动运行，随后已随 OrbStack 恢复停止；未改变该策略。操作、删除后检查和 `Stopped` 状态见[完成记录](../../run/deployment-decisions-20261028/deletion-approved/result.json)。此前启动审批阻断及首次过窄挂载断言保留为历史；后者发生在任何删除前，按实际只读 init bind／独占数据卷核对后继续。
 
 首轮运行域已确认采用 **`ke-qiao` 登录后的 macOS 用户会话**，不再是待选项；已有 LaunchAgent 材料继续适用，但尚未安装。minor 用户要求更换，准确模型／协议待定，旧 Instant 绑定及其就绪检查只能作为历史模板，确定新 minor 后须同步配置和检查。共享 LM Studio 日志／预加载策略仍未获准应用；保留 `alia-main` 密钥、已选 major、embedding、Easy-Turn 与 Juno。macOS 登录用户不自动等于 Alia 应用管理员账号。
 
