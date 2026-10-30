@@ -1,12 +1,40 @@
 # Server 与 Embedded 无前端操作入口
 
-更新：2026-10-28。部署目标为 Mac Server、Pi 5 / 8 GB Embedded，Easy-Turn 位于 Server。用户已授权 Mac 正式启用，采用 `ke-qiao` 登录会话、新生产库和本人管理员；实际状态见下节。Pi 的 Ubuntu 24.04.4 / aarch64 和 R1 分阶段采播基线继续复用，Pi 部署与真人语音仍待单独窗口。以下指向当前 CLI/REST；Web/iOS/Android 不参与本轮安装或验收。
+更新：2026-10-30。Mac Server 与 Pi Embedded 已按正式身份完成无采播部署、配对和局域网检查；Pi 当前仍运行全部 noop 模块，真人语音待单独窗口。Mac 使用 `ke-qiao` 登录会话、新生产库和本人管理员，Easy-Turn 位于 Server。以下指向当前 CLI/REST；Web/iOS/Android 不参与本轮安装或验收。下方带日期的旧阶段记录保留，当前入口以本节为准。
 
 当前硬件/部署输入、只读核对与R02/R03→R05门槛集中在 [部署资料清单](hardware-deployment-readiness.md)。
 
 当前软件产物／平台证据和真实模型端点／版本／部署待确认项见[软件发布记录](software-release.md)。Linux noop通过不代表当前Mac部署或真实模型链已验收。
 
 Harness／Embodiment 版本切换使用[成套升级与失败恢复步骤](upgrade-recovery.md)：双端协议、数据库迁移、插件 grant 和 Appraisal pin 必须一起核对。
+
+## Pi 正式身份无采播上线（2026-10-30）
+
+用户提供可用 Pi 后，经固定 SSH key、严格 known_hosts 校验核对 `KeQiaopi`（Ubuntu 24.04.4／aarch64）。旧项目真实设备 ID 为 `alia-embedded-2ae7195b6a9f`，公钥 `KucZW2qfcqs4Zau0GvPzLIVJ+27hw7i99VTsjxn1Tcg=`；SQLite 原先只有音量 1/1，没有 binding。没有使用历史验证身份，也没有重置旧 key、SQLite／WAL／SHM 或旧验证目录。新目录 `/home/ke-qiao/.local/share/alia` 中的 key 仅在 Pi 内复制，SQLite 通过 backup API 迁移，安装前后旧文件摘要和逻辑内容保持。
+
+两端沿用代码候选 `8481b0f`，本轮没有源码、锁文件、协议或数据库迁移变更。Pi 安装固定 Linux Embedded、Silero 和独立状态目录；ELF／loader／ldd、active 与 voice.pending 两份配置的 `--check-config`，以及实际 Pi 的 `systemd-analyze verify` 全部通过。安装证据见[Pi 汇总](../../run/pi-production-20261030/pi-install/summary.json)。
+
+| 当前对象 | 实际入口／状态 |
+| --- | --- |
+| Mac Server | `192.168.10.201:3000` HTTP、`:3001` VoiceSession gRPC；仅绑定该 LAN 地址，`gui/501/com.alia.server` 运行中 |
+| Pi Embedded | `/home/ke-qiao/.local/share/alia/releases/8481b0f/alia-embedded`，`192.168.10.221:50051`；`alia-embedded.service` 运行中，disabled、Restart=no |
+| Pi active 配置 | `config/embedded.toml`，七个模块槽位全部 noop，Motion／vision／毫米波／mDNS／BLE 关闭，`skip_binding=false` |
+| 待真人配置 | `config/embedded.voice.pending.toml`，同一身份／SQLite、固定 Silero 和已有 R1 system 参数；已预检，未选择、未启动 |
+| 正式绑定 | `alia-main` → `alia-embedded-2ae7195b6a9f`；channel `pi-living-room`，owner 为本人 UUID `a4b078c0-daf5-47f4-9303-e30af26eadb6` |
+
+首次配对先让 Pi 仅监听 loopback，经严格校验的 SSH 隧道读取设备 ID／公钥并与 Pi 磁盘独立身份比较，再以本人管理员发起一次 manual Bind。`require_confirmation=false` 只绕过当前无 mDNS 的候选检查，`skip_binding` 始终 false；没有实现物理按钮确认，也没有设备签名挑战应答，不能据此宣称不可信网络上的自动首次配对安全。绑定记录的 Server endpoint 是 `http://192.168.10.201:3000`，VoiceSession 按既有规则使用 3001，不能把 3001 写成 HTTP base。
+
+随后两端正常停止、Pi 仅改 listener、Mac 改为正式 LAN channel 后重启。设备 key、Server 公钥、binding 内容和 bound_since、音量均保持；两阶段的合法签名设备 settings 读取均为200，直接缺失／无效认证各返回 gRPC16。关闭本轮 SSH 转发后再次成功读取设备 settings，并核对真实 TCP peer 为 Pi LAN；Pi 到 Mac 3000／3001 可达，HTTP health可读。仅有 TCP Connected 或公开 BindingStatus 不作为认证成功证据。见[首次绑定](../../run/pi-production-20261030/pairing-checks.json)、[LAN 检查](../../run/pi-production-20261030/lan-checks.json)、[重启比较](../../run/pi-production-20261030/restart-comparison.json)和[隧道关闭后网络](../../run/pi-production-20261030/network-final.json)。
+
+两次 Pi cgroup／设备状态快照中，硬件 FD 为0，枚举到的 capture／playback PCM 全部 closed，初始化 claim 集合为空；没有发送 Start／Stop／UART 初始化或生成播放内容。claim 空不能证明 R1 刚冷启动，也不能授权补发初始化。旧硬件基线继续复用，当前二进制的完整真人生产链仍未验。
+
+本轮开始时 OrbStack 停止、PG不可达、embedding 未加载、Server未运行；按既有归属启动原引擎／原容器并加载选定 embedding 后就绪通过。Easy-Turn／独占 Juno 原进程未重启。这是手动受控恢复，不证明登录／整机重启或异常自动恢复。[生产 SQL 只读复核](../../run/pi-production-20261030/sql-current.json)确认原管理员、33迁移、Qwen1024 Memory／Cache 双pin与 shadow revision1保持；四张 canonical／cache／projection 表仍为空。整体health degraded仅来自关闭在线LLM probe，TTS／embedding healthy，没有额外推理请求。
+
+当前 Pi 的正常操作入口（通过已核验 SSH 主机执行）为 `sudo -n systemctl status/start/stop alia-embedded.service`；启动前必须复核 active 配置仍为预期文件，不能把 voice.pending 替换进去后照搬本轮“无设备”结论。日志在正式目录 `logs/embedded.stdout.log`／`embedded.stderr.log`。Mac 的启动门禁已固定最终配置摘要；后续配置变更须停服、审阅并同步 `services/deployment-paths.json`，否则门禁会拒绝启动。私有管理员登录元信息已更新为 LAN 地址，密码不变且不进入报告。
+
+已创建配对后的双端私有[恢复快照](../../run/pi-production-20261030/paired-checkpoint.json)，这份快照尚未做实际恢复演练。局域网地址使用本轮实测值，尚未验证DHCP保留。地址变化须先停服，按经过审阅的绑定／移交流程一起核对 Mac listener／Pi channel endpoint／Pi bound Server endpoint，不能直接改SQLite、只改一处或恢复旧绑定猜测。当前 HTTP／gRPC 沿用受控 LAN 传输，未配置 TLS，不暴露到公网。
+
+**下一步需要本人在场并明确进入采播窗口。** 使用已准备的 R1 system 配置与现有签名 CaptureControl 入口，按可确认的板端冷启动事实处理初始化；完成生产启动→讲话→模型→回复播放→打断／恢复→取消与下一轮，包含正常换气长句、Start／Stop和初始化后的真人语音。模型、密钥、参考文本和账号无需重选。双端升级／恢复、登录及异常恢复、24小时混合负载、AEC与具体生产插件仍独立验收。
 
 ## Mac 正式启用（2026-10-28）
 

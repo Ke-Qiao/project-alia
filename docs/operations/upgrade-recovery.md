@@ -1,8 +1,33 @@
 # Server／Embedded 成套升级与失败恢复
 
-更新：2026-10-28。本页是现有软件改动的成套升级步骤，对应 [S03](../todo.md)。10 月 20 日完成的全 noop 双进程生命周期和隔离备份／还原演练保留原范围；后续 R1 变更补充于下表，不把旧演练写成新版实际部署通过。实际产物和验证见[软件发布记录](software-release.md)。R1 当前阶段已收口；真实模型方案与有限组件、配置／SQL 隔离演练已具备，Mac 登录会话已获准正式启用；Pi 条件落实后集中做完整语音链验收；AEC 等商家确认后单独验证，ROS 和 R03 仍暂缓。
+更新：2026-10-30。本页是现有软件改动的成套升级步骤，对应 [S03](../todo.md)。10 月 20 日完成的全 noop 双进程生命周期和隔离备份／还原演练保留原范围；后续 R1 变更补充于下表，不把旧演练写成新版实际部署通过。实际产物和验证见[软件发布记录](software-release.md)。R1 当前阶段已收口；真实模型方案与有限组件、配置／SQL 隔离演练已具备，Mac／Pi 已按正式身份无采播运行，真人窗口的完整语音链仍待验收；AEC 等商家确认后单独验证，ROS 和 R03 仍暂缓。
 
-新安装的版本目录、Mac LaunchDaemon／Pi systemd 模板、配对和日志入口见[无前端部署操作](server-embedded.md#mac-与-pi-的安装和常驻入口)。当前 Mac 实际安装采用用户 LaunchAgent，见[Mac 正式启用](server-embedded.md#mac-正式启用2026-10-28)；通用系统域模板和 Pi 部署仍为后续材料。
+新安装的版本目录、Mac LaunchDaemon／Pi systemd 模板、配对和日志入口见[无前端部署操作](server-embedded.md#mac-与-pi-的安装和常驻入口)。当前 Mac 实际安装采用用户 LaunchAgent，见[Mac 正式启用](server-embedded.md#mac-正式启用2026-10-28)；通用系统域模板仍为备选材料；Pi 当前无音频配对与真人窗口边界见下节。
+
+## Pi 无音频配对后的恢复点与真人窗口（2026-10-30）
+
+本轮已安装同批候选的 Pi Embedded，保留原设备身份，以全 noop 配置完成真实生产配对和已绑定的签名设置读取；缺失／无效鉴权均被拒绝。配对证据见[本轮记录](../../run/pi-production-20261030/pairing-checks.json)。语音待用文件 `/home/ke-qiao/.local/share/alia/config/embedded.voice.pending.toml` 仍未选为运行配置，不把配对成功写成 PCM、模型或播放通过。LAN、无音频普通重启和最终运行状态由本轮部署证据另行记录。
+
+已建立以下成套恢复点；它们含私有身份／配置，不纳入 Git 或公共发布包。路径与摘要见[配对恢复点](../../run/pi-production-20261030/paired-checkpoint.json)：
+
+| 端 | 已有私有恢复点 | 本轮核验范围 |
+| --- | --- | --- |
+| Mac | `/Users/ke-qiao/Library/Application Support/Alia/backups/pi-paired-20261030` | config／secrets／services／PostgreSQL manifest 与在线事务 `pg_dump`，保留当时配置和 dump 摘要 |
+| Pi | `/home/ke-qiao/.local/share/alia/backups/paired-lan-20261030` | active／voice.pending 配置、identity，以及 SQLite backup API 副本；integrity 为 ok，state 行摘要一致，当前 claim 为空 |
+
+**这份 10 月 30 日恢复点尚未执行还原。** 10 月 28 日初始恢复点的隔离 SQL 还原结果不能覆盖新增绑定和 LAN 配置；后续在隔离环境还原、核对绑定／账号／policy／设备状态后再补本节状态。更早的 Mac `backups/pre-pi-20261030` 和 Pi `backups/paired-pre-lan-20261030` 是变更前保留点，不能当成本轮最终配对状态。恢复必须继续成套保留双端身份、数据库、SQLite、模型与服务配置；数据库迁移后不能只换回旧二进制。
+
+[真人窗口准备与配置审核](../../run/pi-production-20261030/human-window/README.md) 对比了 10 月 24 日 R1 系统控制基线：模块、串口、16 kHz mono 采集、48 kHz stereo 播放、线性增益、独立时钟和 system trigger 一致；生产身份、持久路径、LAN 地址和 channel 为明确变更，Silero 文件摘要一致。旧现场二进制与当前候选不同，不能写成同一产物已现场验收。USB mixer 的 −14 dB 是历史证据，本轮未重新读取，须在真人窗口前只读确认；不自动改音量或重复旧硬件基线。
+
+进入语音窗口须先确认本次**真实板端冷启动**，再记录该次启动唯一的新非 nil UUID；当前没有预先声明 cold-boot ID。空 claim、Linux／设备 boot ID、配对或进程重启均不能代替物理冷启动确认。选定已审核的 voice 配置后，由同一个长期进程执行一次 `--initialize-r1`，保留原固件检查、beam 0 与期限。按[初始化操作](server-embedded.md#mac-与-pi-的安装和常驻入口)移除临时 override，但不重启已保持同一采集流的进程；失败或结果未知也不自动重发。
+
+生产 claim 路径为 `/home/ke-qiao/.local/share/alia/state/embedded.sqlite3.r1-initialization/`。**回滚不能删除恢复点之后新增的 claim。** 还原旧配置／SQLite 前先独立保留当前完整 claim 目录；同 UUID 的冲突先保留两份证据并诊断，不用旧备份覆盖、换 state_path 或新 UUID 绕过防重。
+
+现场顺序为生产启动 → 签名 Inspect／Start → 短句与正常换气长句 → 模型／回复播放 → 打断／恢复 → 当前输出取消 → Inspect／Stop → 新 Start 与下一轮对话。准备的控制诊断默认只做离线参数检查，未执行真实 RPC；Start／Stop 要显式现场开关、前次成功 boot／generation，保留原 5 秒和零重试。公开 BindingStatus 比对不是 challenge-response，成功 Start 也不等于 Server Ready。输出 Cancel／Hold／Resume 与 Capture Stop 是不同操作；口头“结束对话”尚未映射到底层 Stop，不能用模型文字回复代替控制验收。
+
+输出控制的现有入口另见[暂停／恢复／取消材料](../../run/pi-production-20261030/human-window/output-control.md)：本人 `POST /api/v1/responses/{response_id}/cancel` 配合原Response／Delivery／events读回；Hold／Resume走真实VoiceSession语义链，无独立HTTP控制路由。现场按当前boot／SessionReady／owner取得动态response_id，不能用Capture generation或检测request_id代替。材料中的只读身份SQL已在当前生产schema以2秒期限完成PREPARE／DEALLOCATE校验，未执行SELECT或任何控制请求。
+
+生产初始化后的真人语音、完整中断／取消链、这份新恢复点的隔离还原、实际双端升级／恢复及至少 24 小时混合故障／资源上界仍待验证。AEC 在商家确认后单独验收，通用 MCP／插件测试不替代首版具体接入，Companion 仍保持 shadow。
 
 ## 新生产数据来源决定（2026-10-28）
 

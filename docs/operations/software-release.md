@@ -1,5 +1,13 @@
 # 软件发布资料与真实模型链前置
 
+## Pi 生产无采播部署记录（2026-10-30）
+
+本轮实际安装并运行了正式身份的 Pi Embedded，Mac 使用相同候选的 Server。代码仍为 `8481b0faf1b92bb39905d84af13bad2cd731e70e`；Mac Server SHA-256 `cba48222a4aa888df452571c7750911302161c2e0a0a2ff7d3cb963a8e75e8cd`，Pi Embedded SHA-256 `6608a23d38cbad5696f308c883a217d3faf22b1b10c4148f71634978b626d80a`。原10月28日归档、源码／锁文件身份和分层软件回归不变，本轮不重建或重复workspace求绿。
+
+目标 Pi 的原生链接、两份配置预检、systemd单元校验通过；保留旧真实设备 key／SQLite，以全noop active配置完成一次正式Bind。初绑使用严格主机校验的SSH隧道，随后两端正常停止、改为实际LAN监听并同身份重启；binding记录和bound_since不变。两阶段均验证本人管理员签名设置读取成功、缺失和伪造认证被拒绝；移除隧道后核对实际socket peer与Pi→Mac双端口可达。没有启用麦克风、播放、UART、Start／Stop或新增模型推理。详见[当前部署入口](server-embedded.md#pi-正式身份无采播上线2026-10-30)和[本轮证据汇总](../../run/pi-production-20261030/summary.json)。
+
+生产 SQL 保留原33迁移、本人账号、Qwen1024双pin和shadow；新配对恢复快照已创建，尚未演练恢复。Pi保持running／disabled／Restart=no，Mac仍为登录会话受控启动。启动前发现依赖未就绪，经手动恢复原OrbStack／PG／embedding后通过，不能把该结果记为自动登录或异常恢复。首次完整真人模型链、升级恢复、24小时负载、AEC和目标插件仍未通过；V01／V02状态不变，没有推送、合并或正式Release。
+
 ## Mac 正式启用与健康检查修复（2026-10-28）
 
 用户已授权正式启用Mac端，首次安装复用 `6123691516fae1c2b0e813652eaa1104c33da9af` 候选的已验证Mac release；此前操作文档提交不改变该二进制或原归档。本轮实际健康检查发现GPT-SoVITS就绪探测缺陷，已完成最小Rust修复、双平台影响验证与发布构建，并用新Mac二进制同身份重启。原候选及首错保留，不把10月25日源码A/B的验证分母与部署检查相加。尚未部署Pi。

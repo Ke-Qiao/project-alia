@@ -1,6 +1,6 @@
 # Project Alia TODO
 
-更新：2026-10-28。**R1 当前阶段已收口；软件候选和分层验证保留，Mac 已正式启用，Pi 与真人整链尚未验收。** 两套指定旧 PG 已删除，新生产不从旧库或备份初始化；使用 `ke-qiao` 登录会话及本人 `ke-qiao@alia.local` 管理员，保留 `alia-main` 原密钥。新库已完成33迁移、选定Qwen1024双pin和shadow；已建立新的私有初始恢复点并在隔离PG验证67表一致。首次真实健康检查发现Juno缺参500，已以本地代码提交 `8481b0f` 修复；双平台各27项定向回归及release通过，Mac修复版已用同账号／密钥／SQL身份启动，失败证据保留。后续集中执行“生产启动 → 讲话 → 模型处理 → 回复播放 → 打断／恢复 → 取消与下一轮对话”，纳入正常换气长句、Start／Stop及生产初始化后的真人语音。AEC等商家确认后单独验收，固件继续暂缓。
+更新：2026-10-30。**R1 当前阶段已收口；软件候选和分层验证保留，Mac＋Pi 已按正式身份完成无采播部署／配对，真人整链尚未验收。** 新生产不从已删除的两套旧库或备份初始化；本人 `ke-qiao@alia.local` 管理员、`alia-main` 原密钥、33迁移、Qwen1024双pin和shadow保持。Pi沿用真实旧设备身份与SQLite，七槽位noop运行，签名认证、实际LAN和正常重启绑定保持已核对，PCM／UART未启用。10月28日健康检查缺参修复及双平台定向回归保持，旧失败证据不覆盖。下一步本人在场执行“生产启动 → 讲话 → 模型处理 → 回复播放 → 打断／恢复 → 取消与下一轮对话”，纳入换气长句、Start／Stop与生产初始化后的真人语音；AEC另验，固件继续暂缓。
 
 最新实现：[架构概览](architecture/overview.md)、[Embodiment](architecture/embodiment.md)、[工具构建](concepts/skills-and-tools.md)、[MCP](operations/mcp-tools.md)、[WASM 插件](operations/wasm-plugins.md)。验证结果统一引用[软件发布记录](operations/software-release.md)，不将不同源码、平台或重复测试相加为项目完成率。
 
@@ -35,23 +35,23 @@ S01—S03 是 10 月 20 日的交付与部署出口，该轮没有新增生产�
 
 | ID | 任务与当前状态 | 恢复条件与完成标准 |
 | --- | --- | --- |
-| M01 | **Mac正式运行与初始恢复点已验；Pi真人整链未验** | minor／major固定官方Magpie `deepseek/deepseek-flash`＋none，独立1024／4096预算；default复用major，memory_capture走minor，sentence_expression走确定性baseline。Qwen1024 embedding、Easy-Turn、独占Juno已在Mac登录会话就绪；原组件期限和有限样本结果保留。本人首管理员 `ke-qiao@alia.local`、33迁移、shadow revision1和SQL profile双pin已核对；新恢复点在隔离PG还原67表一致。真实health缺参500已修复，双端定向各27/0/0、no-default和release通过；Mac新版本重启后同账号／key／pin／shadow保持，TTS及embedding healthy。整体degraded仅因LLM实时probe关闭，不改写首次失败。下一步Pi上线后核对真实device ID、公钥、owner与网络，先无采播部署／配对检查，再集中真人整链：启动→讲话→模型→播放→打断恢复→取消下一轮，含换气长句、Start／Stop和初始化后真人语音。R1既有基线复用，AEC独立；组件不等于整链或长稳。见[Mac正式启用](operations/server-embedded.md#mac-正式启用2026-10-28)、[模型入口](operations/model-services.md)与[恢复边界](operations/upgrade-recovery.md)。 |
+| M01 | **Mac组件、正式账号与Pi无采播配对已验；真人整链未验** | minor／major为官方Magpie `deepseek/deepseek-flash`＋none，预算1024／4096；default复用major、memory_capture走minor、sentence_expression走baseline。Qwen1024、Easy-Turn、独占Juno及参考文本已固定。本人UUID、33迁移、SQL双pin、shadow revision1保留；实际Pi身份、公钥、owner、LAN、签名读取／拒绝与正常重启绑定保持通过。下一步只需进入本人在场的采播窗口：生产启动→讲话→模型→播放→打断恢复→取消下一轮，含换气长句、Start／Stop和明确冷启条件下初始化后的真人语音。R1基线复用，AEC独立。见[10月30日部署](operations/server-embedded.md#pi-正式身份无采播上线2026-10-30)及[模型入口](operations/model-services.md)。 |
 | E01 | **ROS 与具体具身适配器暂缓**：Embodiment 地基已完成，默认没有实际物理适配器 | 用户指定首个设备、通信协议／ROS 版本和目标能力后，实现 `PhysicalAdapter`；核对设备身份、反馈、停止证据、迟到请求终结、断线／重启和共享执行器仲裁。先仿真再实机，沿用 Execution；不扩大 expression 的设备权限。见[接入契约](architecture/embodiment.md)。 |
 | R02-F | **R1 固件改造由用户明确暂缓**：新旧资料、镜像及两份不同虚拟机已核查，未找到匹配板端 SDK；未开发、构建或烧录新固件 | 用户明确恢复后，再取得匹配的最小板端应用 SDK／ABI，或满足契约的受支持常开模式，并补齐当前 1.9.6 恢复路径。核查与候选方案见[硬件记录](operations/hardware-deployment-readiness.md#r1-通用固件工作2026-10-21)，[商家资料清单](operations/r1-firmware-vendor-inputs.md)仅保留为参考，不继续调查或索取。 |
 | R02 | **当前软件接入与分阶段验证已收口；整体验收按条件恢复** | 真实模型整链统一归 M01；AEC 归 R02-AEC。其他方向／安装标定及长稳在实际部署时随 R05 明确范围，不默认重做已通过的 R1 基线。模块正常，R02-F 暂缓不阻断 Alia 主线；FYP ROS 验收不等于 Alia ROS 接入。见[硬件资料](operations/hardware-deployment-readiness.md)。 |
 | R02-AEC | **AEC 单独等待商家确认** | 商家明确当前固件、模拟参考链及支持的配置后，再安排回声、双讲、打断期间参考与物理尾音验证；真实模型整链成功不自动关闭本项。 |
 | R03 | **执行器现场工作由用户暂停**：Motion 软件契约与资产身份已完成 | 用户恢复后补板卡、供电／OE、通道、限位／校准、双端资产审核和现场反馈；验证停止保持、失联／重启、迟到命令。主机写入、取消 ACK 或 Unknown 退休都不算物理停止。见[现场门槛](operations/hardware-deployment-readiness.md)。 |
-| R05 | **Mac已正式启用，Pi生产配对／双端升级恢复及长稳未验** | S01—S03 已完成；Mac新库初始恢复点另在隔离PG核对67表一致，但未覆盖Pi生产状态。10 月 21 日追加真实 Pi 上的隔离全 noop 协议与正常重启恢复证据。模型／音频出口具备后，按首版实际启用范围固定生产部署身份，完成常驻安装、实际链路配对、升级／恢复及至少 24 小时混合负载，覆盖断网、模型超时、进程退出、设备重连与资源上界。执行器仍按 R03 暂缓，不隐式成为无执行器首版的前置。首次配对须受控网络核对身份；当前物理确认配置没有设备按钮 gate。现场清单见[R01—R06](refactor/checklists/next-round.md)；本次隔离身份与无设备验证不能替代这些出口。 |
+| R05 | **双端正式无采播运行；成套升级恢复与长稳未验** | S01—S03及10月28日初始恢复点隔离67表还原保留。10月30日已按真实设备身份完成Pi安装、目标unit校验、配对、LAN、同身份正常重启与无设备边界检查；新双端私有快照已创建但未还原。仍需实际双端升级／恢复、登录／整机重启／进程异常恢复、至少24小时混合负载，覆盖断网、模型超时、设备重连和资源上界。当前Pi disabled／Restart=no、Mac受控登录会话，不宣称无人值守。执行器仍按R03暂缓；首次配对没有物理按钮gate或设备签名挑战，已借助可信SSH核对身份。见[部署入口](operations/server-embedded.md#pi-正式身份无采播上线2026-10-30)。 |
 | I01 | **具体生产 MCP 服务／第三方插件验收待目标**：客户端、WASM 运行器与 Rust PDK 已交付 | 选定首个服务／包后，按实际凭据主体和版本验证目录变化、授权／撤权、未知结果及清理。现有回环 MCP 与真实 WASM 测试不证明任意生产服务、任意包或 Pi 容量已可用；无需重建通用 harness。 |
 | D01／D02／D04 | **Web／iOS／Android 提升及随前端延期的跨终端体验** | 用户开启对应轮次后接入当时契约，完成界面、权限、生命周期和端到端验收。已做的接口必要迁移不等于启动全面前端重构。详见[延期台账](refactor/deferred.md)。 |
 | D03／D05／R06 | **通用 Embedded、多实体及其他平台／部署形态** | 指定新设备或部署目标后独立评估并验证；当前不评估 Pi 5 承载 Easy-Turn，不因已有 Rust trait 或 feature 就宣称正式支持。多实体与未来部署属于条件项，不统一称作用户明确延期。详见[延期台账](refactor/deferred.md)。 |
 
 ## 下一步执行顺序
 
-1. **Mac准备已完成**：当前保持正式服务运行；代码提交 `8481b0f`、双端产物、实际安装和恢复点由[交付记录](../run/mac-activation-20261028/delivery.json)关联，原候选不覆盖。现阶段为登录会话内运行，未验注销／整机重启或进程异常自动拉起；不要将其视为无人值守出口。
-2. **需要Pi开机联网后**，先只读核对实际主机、device ID／公钥、SQLite与R1初始化claim、音频设备名及权限；生成绑定本人UUID的生产配置，离线预检。未明确进入采播窗口前，不打开PCM、不发送UART初始化。
-3. 无采播的成套安装／网络／身份配对核验通过后，安排本人在场的真人整链窗口；模型、密钥和参考文本不必重选。必要的R1冷启动初始化按现有防重记录和明确冷启条件执行。
-4. 实际部署后验证双端升级／恢复、登录与进程退出后的恢复路径，再进行至少24小时混合负载与断网、模型超时、设备重连、资源上界验收。AEC、实际生产MCP／插件分别按自己的门槛关闭。
+1. **无采播部署已完成**：当前Mac＋Pi正式服务保持运行；Pi active配置全noop，待真人R1 system配置已单独准备、预检。候选代码仍为 `8481b0f`，部署记录见[10月30日汇总](../run/pi-production-20261030/summary.json)，历史软件回归和包不重做。
+2. **最先需要本人在场并明确允许采播**：不需重新选择模型／密钥／参考文本。确认R1当前板端冷启事实，按既有防重规则处理唯一cold_boot_id／claim；不能用claim空、进程重启或Pi boot ID推断可再次初始化。再启用待验配置与签名CaptureControl，集中执行启动→讲话→模型→播放→打断／恢复→取消下一轮，覆盖换气长句、Start／Stop和生产初始化后的真人语音。
+3. 随实际部署验证双端升级／恢复与新配对快照、登录和进程退出后的恢复路径；再做至少24小时混合负载及断网、模型超时、设备重连、资源上界。当前手动恢复依赖成功不等于自动恢复通过。
+4. AEC等商家确认后单独验收；首版实际MCP服务／第三方插件按目标验证。V01／V02继续明确未定根因，Companion保持shadow，其他暂缓与条件项不扩展。
 
 ## 按具体需求再立项
 
