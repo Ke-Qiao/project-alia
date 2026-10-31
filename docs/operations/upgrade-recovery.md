@@ -1,8 +1,18 @@
 # Server／Embedded 成套升级与失败恢复
 
-更新：2026-10-30。本页是现有软件改动的成套升级步骤，对应 [S03](../todo.md)。10 月 20 日完成的全 noop 双进程生命周期和隔离备份／还原演练保留原范围；后续 R1 变更补充于下表，不把旧演练写成新版实际部署通过。实际产物和验证见[软件发布记录](software-release.md)。R1 当前阶段已收口；真实模型方案与有限组件、配置／SQL 隔离演练已具备，Mac／Pi 已按正式身份无采播运行，真人窗口的完整语音链仍待验收；AEC 等商家确认后单独验证，ROS 和 R03 仍暂缓。
+更新：2026-10-31。本页是现有软件改动的成套升级步骤，对应 [S03](../todo.md)。10 月 20 日全 noop 生命周期与隔离还原、10 月 28 日新库恢复点各保留原范围，不能代替实际双端恢复。10 月 31 日真人窗口失败后，Pi 已恢复全 noop，新增 R1 claim 必须保留；Mac 暂不可达后的 worker／关闭故障也未解决。实际产物和验证见[软件发布记录](software-release.md)。完整语音链、AEC 仍分别待验，ROS 和 R03 仍暂缓。
 
 新安装的版本目录、Mac LaunchDaemon／Pi systemd 模板、配对和日志入口见[无前端部署操作](server-embedded.md#mac-与-pi-的安装和常驻入口)。当前 Mac 实际安装采用用户 LaunchAgent，见[Mac 正式启用](server-embedded.md#mac-正式启用2026-10-28)；通用系统域模板仍为备选材料；Pi 当前无音频配对与真人窗口边界见下节。
+
+## 真人窗口后的恢复边界（2026-10-31）
+
+这次实际使用了生产 voice 配置并完成唯一一次已确认板端冷启动初始化。新增 claim 为 `state/embedded.sqlite3.r1-initialization/d9b21420-fa34-43ee-bc55-2406fc696442.jsonl`，SHA-256 `45103ccdf47cc0ea1227e04db8145ede5feff349307e4ac0b6c13646abfe95ee`，含先行保留与 command_accepted 两条记录。Pi 私有 `backups/voice-window-20261031` 保存该 claim、语音配置、身份与 SQLite；`backups/pre-voice-20261031` 是窗口前备份。此新快照未做还原演练，不是已验证可替代整套双端恢复的产物。
+
+窗口两次会话都在 turn model deadline 结束；停止语音进程 exit 0，恢复原 all-noop 配置后正常运行，PCM 全闭、硬件 FD 为 0，claim 仍在且摘要一致，见[实际恢复检查](../../run/voice-acceptance-20261031/pi-restored-noop.json)。恢复的是配置／进程模式，没有回退 SQLite 或清除防重记录。下方 10 月 30 日快照中的空 claim 只是当日历史；**任何较旧快照恢复都须保留后来新增的完整 claim 集合，不能用普通进程重启、新 UUID 或换 state_path 重发初始化。** 若板端再次真正断电，须另行确认并记录新的真实冷启动事实。
+
+Mac 本次故障恢复有明确失败边界：数据库直接查询／登录已恢复时 Execution worker 仍处于 fault；SIGTERM 实际 exit 1，包含 Delivery 数据库 deadline／提交结果未知。原始结果见[停止记录](../../run/voice-acceptance-20261031/server-stop-outcome.json)。关闭日志记录 Execution `pending_effects=[]`，不等于 Delivery／output-control 账本已全面对账；保留未知结果后仅做一次受控重启，健康恢复；这不是“正常关闭通过”，也不证明数据库暂断或合盖后可自动恢复。不能仅凭后续 health 为绿消除未知提交结果，未来存在真实业务记录时须按持久状态查询／对账，不能盲目重派外部效果。
+
+下一步隔离验证暂不可达／恢复／退出流程，保留现有数据库期限，并区分 worker 真故障与过期健康错误。之后才在合适维护窗口验证实际登录、休眠／唤醒和成套升级恢复；不为验证中断当前生产数据库或重复现场语音。**数据库迁移后不能只换回旧二进制**的边界保持；24 小时混合故障负载、AEC 与具体插件验收仍分别开放。
 
 ## Pi 无音频配对后的恢复点与真人窗口（2026-10-30）
 

@@ -1,12 +1,24 @@
 # Server 与 Embedded 无前端操作入口
 
-更新：2026-10-30。Mac Server 与 Pi Embedded 已按正式身份完成无采播部署、配对和局域网检查；Pi 当前仍运行全部 noop 模块，真人语音待单独窗口。Mac 使用 `ke-qiao` 登录会话、新生产库和本人管理员，Easy-Turn 位于 Server。以下指向当前 CLI/REST；Web/iOS/Android 不参与本轮安装或验收。下方带日期的旧阶段记录保留，当前入口以本节为准。
+更新：2026-10-31。Mac Server 与 Pi Embedded 的正式身份、配对和 LAN 保持；本次真人窗口未通过，两个 VoiceSession 在原 Easy-Turn 5 秒期限结束。第二会话在讲话提示前已经结束，指定短句未取得有效完整测试。Pi 已恢复全 noop 运行并关闭 PCM；先处理软件期限和恢复故障，再安排真人窗口。Mac 使用 `ke-qiao` 登录会话、新生产库和本人管理员。以下指向当前 CLI/REST；Web/iOS/Android 不参与本轮。下方带日期的阶段记录保留，当前状态以上方最新日期为准。
 
 当前硬件/部署输入、只读核对与R02/R03→R05门槛集中在 [部署资料清单](hardware-deployment-readiness.md)。
 
 当前软件产物／平台证据和真实模型端点／版本／部署待确认项见[软件发布记录](software-release.md)。Linux noop通过不代表当前Mac部署或真实模型链已验收。
 
 Harness／Embodiment 版本切换使用[成套升级与失败恢复步骤](upgrade-recovery.md)：双端协议、数据库迁移、插件 grant 和 Appraisal pin 必须一起核对。
+
+## 真人窗口失败与安全收口（2026-10-31）
+
+用户确认 R1 在上次验证后真正断电重启，随后以唯一 cold_boot_id `d9b21420-fa34-43ee-bc55-2406fc696442` 执行一次初始化；固件回复匹配，beam 0 命令被接受，初始化本身不证明声学内容有效。ALSA 16 kHz mono 采集与 48 kHz stereo 播放打开，USB `PCM` mixer 只读确认仍为 −14 dB，未重复硬件基线或调整音量。同一 PID／采集流保持，移除临时初始化 override 后没有重启或补发 UART。见[初始化](../../run/voice-acceptance-20261031/pi-initialize.json)。
+
+两次签名 Start 分别获得新代次和 SessionReady，随后均以 `DeadlineExceeded: turn model deadline` 结束并自动退休。第一会话没有指定测试句；第二会话 Ready 为 08:26:50 UTC、结束为 08:27:02，讲话提示记录为 08:27:37，现场调度未及时确认会话仍有效。用户反馈“没有回复”保留，但不能据此认定「你好 Alia，请用一句话介绍你自己」进入了模型。没有已确认回复／播放，长句、Hold／Resume、输出 Cancel、成功 Stop 与下一轮均未执行。原始日志和纠正后的时序说明见[本轮汇总](../../run/voice-acceptance-20261031/summary.json)。
+
+关闭语音进程 exit 0 后，已恢复原全 noop 配置、同一身份和绑定，当前 Embedded 仍运行（disabled／Restart=no）；采集／播放 PCM closed、硬件 FD 为 0。active 配置 SHA-256 为 `54c00655071804c69ddfaccadef37c6b3a3fca4ab66b3a5796dacc6c41d51797`，新 claim 及其独立私有副本均保留，见[收口核验](../../run/voice-acceptance-20261031/pi-restored-noop.json)。普通后续重启不能再次初始化；不能恢复 10 月 30 日的空 claim 集合覆盖新增记录。Mac 服务继续运行，Easy-Turn 新诊断的激活和固定样本失败单独见[模型记录](model-services.md#真人窗口失败与-easy-turn-诊断补充2026-10-31)。
+
+窗口开始前还发现独立的 Mac 恢复故障：数据库本身重新可达、管理员登录成功，但 Execution worker 保留 deadline fault，Memory 健康仍报 rebuild scan 超时。错误时段与合盖休眠／DarkWake 相邻，仅支持时间相关，尚未证明底层根因。Server 正常 SIGTERM 请求后实际 exit 1，包含 worker／Delivery 未完成关闭和未知提交结果；受控重启后健康恢复，不等于根因或自动恢复已解决。保留[故障调查](../../run/voice-acceptance-20261031/database-health-investigation.json)、[停止结果](../../run/voice-acceptance-20261031/server-stop-outcome.json)和[重启结果](../../run/voice-acceptance-20261031/server-recovery-start.json)。这两项新增故障分别按 TODO V03／V04 跟踪，不并入旧 V01／V02。
+
+下一步先完成无设备的软件定位：原 5 秒预算内的 CPU 实际窗口推理，以及数据库暂不可达／休眠后 worker、健康与关闭语义的隔离验证。重新进入真人窗口时先协调讲话时机，取得当前有效 SessionReady／generation 后立即提示并同步观察终止；会话已退休时取消该提示，不能拿旧 Ready 继续要求讲话。模型、密钥、参考文本和账号无需重选，当前不用本人守在设备旁，也不要求再次断电。
 
 ## Pi 正式身份无采播上线（2026-10-30）
 

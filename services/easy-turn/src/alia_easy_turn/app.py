@@ -23,6 +23,7 @@ MAX_BODY_BYTES = MAX_BASE64_CHARS + 4096
 STATES = ("complete", "incomplete", "backchannel", "wait")
 IDENTIFIER = r"^[A-Za-z0-9._:-]{1,128}$"
 U64_MAX = (1 << 64) - 1
+LOGGER = logging.getLogger("uvicorn.error")
 
 
 class AudioWindow(BaseModel):
@@ -132,13 +133,32 @@ def create_app(detector: Detector, *, inference_timeout: float = 60.0) -> FastAP
             "streaming": False, "cancellation": "caller_discards_stale_result",
         }
 
-    def infer(pcm: bytes):
+    def infer(pcm: bytes, request_id: str, generation_epoch: int, accepted_at: float):
+        start = time.perf_counter()
         try:
-            start = time.perf_counter()
+            LOGGER.info(
+                "Easy-Turn native_started request_id=%s generation_epoch=%d at_unix_ms=%d queue_ms=%.3f",
+                request_id, generation_epoch, time.time_ns() // 1_000_000,
+                (start - accepted_at) * 1000,
+            )
             transcript, state = detector.detect(pcm)
             if not isinstance(transcript, str) or state not in STATES:
                 raise ValueError("invalid model output")
-            return transcript, state, (time.perf_counter() - start) * 1000
+            elapsed = (time.perf_counter() - start) * 1000
+            LOGGER.info(
+                "Easy-Turn native_finished request_id=%s generation_epoch=%d at_unix_ms=%d "
+                "native_ms=%.3f status=success state=%s",
+                request_id, generation_epoch, time.time_ns() // 1_000_000, elapsed, state,
+            )
+            return transcript, state, elapsed
+        except Exception as exc:
+            LOGGER.error(
+                "Easy-Turn native_finished request_id=%s generation_epoch=%d at_unix_ms=%d "
+                "native_ms=%.3f status=error error_type=%s",
+                request_id, generation_epoch, time.time_ns() // 1_000_000,
+                (time.perf_counter() - start) * 1000, type(exc).__name__,
+            )
+            raise
         finally:
             # A timed-out/cancelled HTTP caller cannot free a still-running model.
             slot.release()
@@ -161,15 +181,27 @@ def create_app(detector: Detector, *, inference_timeout: float = 60.0) -> FastAP
             return error(422, "invalid_audio", "Audio must contain complete PCM16 samples and at least 100 ms.", **ids)
         if not slot.acquire(blocking=False):
             return error(429, "busy", "The model is still processing an audio window.", True, **ids)
-        task = asyncio.create_task(asyncio.to_thread(infer, pcm))
+        accepted_at = time.perf_counter()
+        LOGGER.info(
+            "Easy-Turn accepted request_id=%s generation_epoch=%d at_unix_ms=%d pcm_bytes=%d audio_ms=%.3f",
+            request.request_id, request.generation_epoch, time.time_ns() // 1_000_000,
+            len(pcm), len(pcm) * 1000 / (SAMPLE_RATE * 2),
+        )
+        task = asyncio.create_task(asyncio.to_thread(
+            infer, pcm, request.request_id, request.generation_epoch, accepted_at,
+        ))
         running.add(task)
         task.add_done_callback(completed)
         try:
             transcript, state, elapsed = await asyncio.wait_for(asyncio.shield(task), inference_timeout)
         except asyncio.TimeoutError:
+            LOGGER.warning(
+                "Easy-Turn response_timeout request_id=%s generation_epoch=%d at_unix_ms=%d deadline_ms=%.3f",
+                request.request_id, request.generation_epoch, time.time_ns() // 1_000_000,
+                inference_timeout * 1000,
+            )
             return error(504, "inference_timeout", "Inference exceeded its response deadline.", True, **ids)
         except Exception:
-            logging.getLogger(__name__).error("Easy-Turn inference failed; request_id=%s", request.request_id)
             return error(500, "inference_failed", "The model did not produce a valid turn result.", False, **ids)
         return JSONResponse(
             content={**ids, "transcript": transcript, "state": state,

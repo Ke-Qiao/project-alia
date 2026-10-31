@@ -185,6 +185,17 @@ restart; do not launch overlapping inference on the same model after timeout.
 The HTTP server additionally bounds concurrent connections to 32; Uvicorn's
 own saturation response may be HTTP 503 without the application error envelope.
 
+Accepted inference logs use Uvicorn's existing INFO logger: `accepted` records
+the validated request ID/epoch, UTC Unix milliseconds, PCM byte count and audio
+duration; `native_started` adds the thread-dispatch delay, and `native_finished`
+records actual native elapsed time and the validated turn state or exception
+class. No audio, transcript, prompt, exception message or credentials are logged.
+These events do not enable third-party verbose logging or HTTP access logs.
+`response_timeout` records the service's own response deadline (normally 60 s),
+not the Rust caller's separate 5 s deadline or proof of a client disconnect.
+Native completion may therefore be logged after the caller has already stopped
+waiting; it is not evidence that the caller received or accepted that result.
+
 ## Verification
 
 Contract tests (injected fake, no weights or GPU required):
@@ -194,7 +205,8 @@ services/easy-turn/.venv/bin/python -m unittest discover -s services/easy-turn/t
 ```
 
 They verify format/size/IDs, chunked-body bounds, error privacy, output-label
-parsing, concurrent overload, and preservation of the model slot after timeout.
+parsing, metadata-only inference logs, concurrent overload, and preservation of
+the model slot and late native completion logging after timeout.
 They **do not** verify neural inference, classification accuracy or duplex UX.
 
 For real acceptance, explicitly prepare and start the model, send every class

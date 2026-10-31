@@ -46,7 +46,8 @@ class HttpContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(capabilities["audio"]["max_duration_ms"], 30000)
         self.assertEqual(capabilities["max_concurrent_requests"], 1)
         self.assertFalse(capabilities["streaming"])
-        result = await self.client.post("/v1/detect", json=payload())
+        with self.assertLogs("uvicorn.error", level="INFO") as logs:
+            result = await self.client.post("/v1/detect", json=payload())
         self.assertEqual(result.status_code, 200)
         self.assertEqual(result.json()["request_id"], "request-17")
         self.assertEqual(result.json()["generation_epoch"], 42)
@@ -54,6 +55,19 @@ class HttpContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.json()["state"], "wait")
         self.assertEqual(result.headers["cache-control"], "no-store")
         self.assertEqual(self.detector.calls, [b"\x01\x00" * 1600])
+        self.assertEqual(len(logs.records), 3)
+        self.assertIn("accepted request_id=request-17 generation_epoch=42", logs.output[0])
+        self.assertIn("pcm_bytes=3200 audio_ms=100.000", logs.output[0])
+        self.assertIn("native_started", logs.output[1])
+        self.assertRegex(logs.output[1], r"queue_ms=\d+\.\d+")
+        self.assertIn("native_finished", logs.output[2])
+        self.assertIn("status=success state=wait", logs.output[2])
+        self.assertRegex(logs.output[2], r"native_ms=\d+\.\d+")
+        for record in logs.output:
+            self.assertRegex(record, r"at_unix_ms=\d+")
+            self.assertNotIn(result.json()["transcript"], record)
+            self.assertNotIn(payload()["audio"]["data_base64"], record)
+            self.assertNotIn(repr(self.detector.calls[0]), record)
 
     async def test_invalid_audio_and_format_do_not_reach_model(self):
         invalid = [payload(b""), payload(b"\x00" * 3199), payload(b"\x00" * 3201)]
@@ -116,15 +130,24 @@ class HttpContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_model_error_is_sanitized_and_releases_slot(self):
         class BrokenDetector(FakeDetector):
             def detect(self, pcm):
-                raise RuntimeError("private transcript and local /secret/path")
+                raise RuntimeError("private transcript /secret/path prompt=private-prompt api_key=private-key")
 
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(BrokenDetector())),
                                      base_url="http://127.0.0.1") as client:
-            for _ in range(2):
-                result = await client.post("/v1/detect", json=payload())
-                self.assertEqual(result.status_code, 500)
-                self.assertEqual(result.json()["error"]["code"], "inference_failed")
-                self.assertNotIn("secret", result.text)
+            with self.assertLogs("uvicorn.error", level="INFO") as logs:
+                for _ in range(2):
+                    result = await client.post("/v1/detect", json=payload())
+                    self.assertEqual(result.status_code, 500)
+                    self.assertEqual(result.json()["error"]["code"], "inference_failed")
+                    self.assertNotIn("secret", result.text)
+            failures = [record for record in logs.records if record.levelname == "ERROR"]
+            self.assertEqual(len(failures), 2)
+            for record in failures:
+                self.assertIn("status=error error_type=RuntimeError", record.getMessage())
+                self.assertIsNone(record.exc_info)
+            for private in ("private transcript", "/secret/path", "private-prompt", "private-key",
+                            payload()["audio"]["data_base64"]):
+                self.assertNotIn(private, "\n".join(logs.output))
 
     async def test_busy_and_timeout_keep_slot_until_inference_actually_ends(self):
         entered, release = threading.Event(), threading.Event()
@@ -136,27 +159,34 @@ class HttpContractTests(unittest.IsolatedAsyncioTestCase):
                 return "done", "complete"
 
         app = create_app(SlowDetector(), inference_timeout=0.1)
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
-                                     base_url="http://127.0.0.1") as client:
-            first = asyncio.create_task(client.post("/v1/detect", json=payload()))
-            try:
-                self.assertTrue(await asyncio.to_thread(entered.wait, 1))
-                busy = await client.post("/v1/detect", json=payload())
-                self.assertEqual(busy.status_code, 429)
-                self.assertEqual((await client.get("/health")).status_code, 200)
-                timed_out = await first
-                self.assertEqual(timed_out.status_code, 504)
-                still_busy = await client.post("/v1/detect", json=payload())
-                self.assertEqual(still_busy.status_code, 429)
-            finally:
-                release.set()
-                await first
-            for _ in range(100):
-                await asyncio.sleep(0.01)
-                recovered = await client.post("/v1/detect", json=payload())
-                if recovered.status_code != 429:
-                    break
-            self.assertEqual(recovered.status_code, 200)
+        with self.assertLogs("uvicorn.error", level="INFO") as logs:
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                         base_url="http://127.0.0.1") as client:
+                first = asyncio.create_task(client.post("/v1/detect", json=payload()))
+                try:
+                    self.assertTrue(await asyncio.to_thread(entered.wait, 1))
+                    busy = await client.post("/v1/detect", json=payload())
+                    self.assertEqual(busy.status_code, 429)
+                    self.assertEqual((await client.get("/health")).status_code, 200)
+                    timed_out = await first
+                    self.assertEqual(timed_out.status_code, 504)
+                    still_busy = await client.post("/v1/detect", json=payload())
+                    self.assertEqual(still_busy.status_code, 429)
+                    self.assertEqual(sum("accepted" in line for line in logs.output), 1)
+                    self.assertTrue(any("response_timeout" in line for line in logs.output))
+                    self.assertFalse(any("native_finished" in line for line in logs.output))
+                finally:
+                    release.set()
+                    await first
+                for _ in range(100):
+                    await asyncio.sleep(0.01)
+                    recovered = await client.post("/v1/detect", json=payload())
+                    if recovered.status_code != 429:
+                        break
+                self.assertEqual(recovered.status_code, 200)
+                finishes = [line for line in logs.output if "native_finished" in line]
+                self.assertEqual(len(finishes), 2)
+                self.assertTrue(all("status=success state=complete" in line for line in finishes))
 
     async def test_malformed_model_output_is_not_a_fabricated_turn_state(self):
         class InvalidDetector(FakeDetector):

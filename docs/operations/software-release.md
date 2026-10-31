@@ -1,5 +1,17 @@
 # 软件发布资料与真实模型链前置
 
+## 真人窗口与模型诊断源码增量（2026-10-31）
+
+本轮真人窗口的两个生产VoiceSession均以 `turn model deadline` 结束，原Rust Easy-Turn **5秒／并发1**没有放宽，尚无完整判句→回复播放证据。首会话未提示测试句，第二会话也在短句提示记录之前失败；不能将未知输入直接记为已识别的指定真人短句。原错误、短句无回复和现场收口分开保留，详见[模型记录](model-services.md#真人窗口失败与-easy-turn-诊断补充2026-10-31)。Pi已恢复同一配对身份的全noop运行，PCM关闭并保留本次初始化claim。
+
+官方known fixture实际 **4021.590ms** 返回 `complete`，原诊断因期望参数误写 `Complete` 而exit1；原输出与[单独解释](../../run/voice-acceptance-20261031/easy-turn-known-sample-assessment.json)保留，未追加请求求绿。同一fixture临时QoS检查为 **3966.222ms**，差异不能证明超时根因或修复，已回退原进程策略。两份组件结果不抵消真人窗口失败，也不关闭V01／V02或扩大Companion shadow边界。
+
+源码增量仅为Easy-Turn `app.py`、对应服务测试与README，增加不含音频／转写／prompt／凭据的请求时序和native完成元数据；模型、线程、协议、期限、并发和依赖锁不变。原超时／取消后native持有单槽直到实际结束的语义保持。现有服务测试 **14 passed / 0 failed / 0 skipped**，默认Uvicorn日志独立检查及定向空白检查通过，见[验证记录](../../run/voice-acceptance-20261031/easy-turn-diagnostics/summary.json)。这些是fake-detector／日志配置检查，不是新增完整workspace或真实模型通过。
+
+原生候选仍为 `8481b0faf1b92bb39905d84af13bad2cd731e70e` 对应的已验Mac／Linux字节，原生源码、配置协议和迁移没有本轮增量，不因此重建或重复软件回归。10月25日／28日源码归档和双平台产物完整保留；新Python诊断源码属于后续提交，旧归档不冒充包含该变更。
+
+Easy-Turn诊断已通过一次受控重启实际激活，旧PID879退出、新PID3949在 **18.162秒** 就绪。旧进程graceful shutdown后Uvicorn按既有行为重发SIGTERM15，首个编排器误要求exit0的[失败记录](../../run/voice-acceptance-20261031/easy-turn-diagnostics/live-activation.json)保留；核对源码及端口关闭后才继续一次kickstart，没有改plist／配置／模型／期限。唯一冷启动后固定 **3.256秒** 官方PCM在客户端 **5026.030ms** 超出原5秒期限；新元数据确认派发 **0.749ms**、native **5960.658ms** 后迟到返回 `complete`。见[激活与真实失败](../../run/voice-acceptance-20261031/easy-turn-diagnostics/live-activation-resumed.json)：`passed=true`只指诊断记录激活，`probe_passed=false`保留样本失败，不重试或预热求绿。此次native耗时已得到定位，前两次未知现场输入及其根因仍未确定。后续生产门槛仍包括原期限内整链、业务升级恢复、24小时故障／资源负载、AEC及实际插件目标。
+
 ## Pi 生产无采播部署记录（2026-10-30）
 
 本轮实际安装并运行了正式身份的 Pi Embedded，Mac 使用相同候选的 Server。代码仍为 `8481b0faf1b92bb39905d84af13bad2cd731e70e`；Mac Server SHA-256 `cba48222a4aa888df452571c7750911302161c2e0a0a2ff7d3cb963a8e75e8cd`，Pi Embedded SHA-256 `6608a23d38cbad5696f308c883a217d3faf22b1b10c4148f71634978b626d80a`。原10月28日归档、源码／锁文件身份和分层软件回归不变，本轮不重建或重复workspace求绿。

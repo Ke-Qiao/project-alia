@@ -6,8 +6,22 @@ installation details.
 
 The [software release record](software-release.md) separates verified binaries,
 component checks and actual deployment evidence. The dated sections below retain
-their original scope; the current Mac installation is recorded first. Example
+their original scope; the latest validation status is recorded first. Example
 URLs and model names alone are not evidence of deployment or acceptance.
+
+## 真人窗口失败与 Easy-Turn 诊断补充（2026-10-31）
+
+**完整真人模型链仍未通过。** 本次生产初始化后的真人窗口中，两个 VoiceSession 分别在 `08:21:51.192Z`、`08:27:02.896Z` 以 `DeadlineExceeded: turn model deadline` 结束，保留原 Rust **5000 ms**、并发1。首会话尚未提示测试句；第二会话也早于 `08:27:37.607Z` 的短句提示记录结束。两个期限故障是真实故障，但指定短句未取得有效完整测试，不能推断该语句已进入模型。用户未收到回复，现有日志没有可核对的转写／Response／Delivery；触发声音及实际PCM窗口长度仍未知。见[首次会话分析](../../run/voice-acceptance-20261031/mac-log-deltas/startup-first-session/analysis.json)、[Pi 两次会话原始日志](../../run/voice-acceptance-20261031/pi-short-observation.log)及[短句阶段](../../run/voice-acceptance-20261031/short-human-stage.json)。现场随后收口，Pi恢复已配对的全noop配置，PCM关闭、初始化claim保留，见[终态](../../run/voice-acceptance-20261031/pi-restored-noop.json)。
+
+同一固定CPU服务的官方known fixture实际 **4021.590 ms** 返回 `complete`，在原5秒内；诊断命令误传期望值 `Complete`，与协议小写不符，故原exit1仍保留，另做[结果解释](../../run/voice-acceptance-20261031/easy-turn-known-sample-assessment.json)，没有为改判定重复推理。一次临时QoS假设检查的同样本为 **3966.222 ms**，不足以归因或认定修复；[原结果](../../run/voice-acceptance-20261031/easy-turn-qos-sample.json)与[回退记录](../../run/voice-acceptance-20261031/qos-rollback.json)分别保留，未改服务plist或模型参数。这些组件样本不能替代失败的真人窗口，也不关闭历史V01／V02。
+
+为补齐下次定位依据，仅在现有[Easy-Turn服务](../../services/easy-turn/src/alia_easy_turn/app.py)增加接受请求、native开始／完成及服务响应超时的元数据日志：已校验的request ID／epoch、UTC毫秒、PCM字节数／音频时长、线程派发等待、native耗时，以及合法turn state或异常类别。日志不记录音频、转写、prompt、密钥、异常正文或traceback；复用Uvicorn既有INFO logger，不全局开启第三方verbose。Rust调用协议、原5秒期限、Python原60秒响应期限、模型、线程和并发均未改变。原 `asyncio.shield` 及native结束才释放单槽的逻辑保持；`response_timeout`仅代表Python服务自身期限，不是Rust调用方5秒超时或断开的证明。
+
+现有fake-detector服务测试 **14 passed / 0 failed / 0 skipped**，补充日志隐私、native晚完成和超时后占槽断言；独立默认logger检查确认本服务INFO可见、第三方INFO／DEBUG不输出。见[诊断变更验证](../../run/voice-acceptance-20261031/easy-turn-diagnostics/summary.json)。这不是神经推理性能修复，也没有为该变更重跑已通过的Rust workspace。
+
+诊断源码已通过一次仅针对Easy-Turn的受控重启激活：旧PID879完成graceful shutdown后，已安装Uvicorn恢复并重发SIGTERM，记录signal15。首个编排器误要求数字exit0而停止，保留[原始失败](../../run/voice-acceptance-20261031/easy-turn-diagnostics/live-activation.json)；核对Uvicorn源码行为及8091端口关闭后，才执行一次kickstart。新PID3949在 **18.162秒** 就绪，固定模型身份、plist、配置及期限不变，见[实际激活记录](../../run/voice-acceptance-20261031/easy-turn-diagnostics/live-activation-resumed.json)。
+
+随后唯一一次冷启动后官方固定样本为 **104192bytes／3.256秒PCM**，Rust调用在 **5026.030ms** 以原5秒期限失败，没有重试或warmup求绿。新日志记录该请求的接受、native开始及迟到完成：线程派发 **0.749ms**，native阶段 **5960.658ms** 后返回 `complete`。这确认**此样本**主要耗时在native阶段而非排队，且调用方超时后原推理仍继续；与native结束后才释放单槽的既有实现一致，但未另外探测槽位。该结果不能反推前两次现场的音频内容或故障根因。记录中的 `passed=true` 只代表元数据诊断已激活，**`probe_passed=false`** 是实际样本结果，晚到的 `complete` 不能改写为原5秒内成功。本轮不再调用模型或采播；后续仍需解决真实窗口失败，再验讲话→模型→回复播放→打断／恢复→取消下一轮，AEC、升级恢复、24小时负载和实际MCP／插件保持独立门槛。
 
 ## Mac 模型服务正式启用（2026-10-28）
 
