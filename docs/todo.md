@@ -1,6 +1,6 @@
 # Project Alia TODO
 
-更新：2026-11-02。**Mac／Pi 的 `.local` 连接和签名访问已恢复，Pi 保持全 noop／采播关闭；完整真人链仍未通过。** Easy-Turn仅修正常驻调度分类，三个固定PCM在原5秒内通过。V03的安全巡检恢复修复已形成独立Rust提交，但Linux出现两次未定位的Resume回执超时，第三次诊断通过不关闭故障；新候选暂不部署，生产仍为`8481b0f`。新生产账号、Qwen1024双pin、shadow、R1初始化claim和旧证据保持。下一步可安排现有版本的受控短句复验；新候选软件门槛、完整恢复、24小时负载、AEC和插件目标均独立保留。
+更新：2026-11-03。**Pi 已安装独立诊断版 `d392401`；一次无讲话的 Start→Ready→Stop 检查通过，现已恢复全 noop，指定短句和完整真人链仍未验收。** Mac 保持 `8481b0f`，没有部署受 V05 限制的 V03 恢复候选。此次 Ready 成功不能解释更早 Ready 前的上传终止，V06 仍开放；两份 R1 claim、本人账号、本地 Qwen1024 双 pin 和 shadow 保持。用户目前不能讲话，下一轮首先复用已准备入口，在新鲜 Ready 后即时提示指定句，不再临时编译或重新选择模型。完整恢复、24 小时负载、AEC 和具体插件仍是独立门槛。见[本轮启动诊断](operations/model-services.md#诊断版无讲话启动核对2026-11-03)。
 
 最新实现：[架构概览](architecture/overview.md)、[Embodiment](architecture/embodiment.md)、[工具构建](concepts/skills-and-tools.md)、[MCP](operations/mcp-tools.md)、[WASM 插件](operations/wasm-plugins.md)。验证结果统一引用[软件发布记录](operations/software-release.md)，不将不同源码、平台或重复测试相加为项目完成率。
 
@@ -32,15 +32,17 @@ S01—S03 是 10 月 20 日的交付与部署出口，该轮没有新增生产�
 - [ ] **V02 · Harness 验证中未定位的时间准入／数据库截止异常。** 10 月 19 日最终统一整套已通过，但两次独立诊断的失败原因未确定；与 V01 分开保留，不把休眠或系统代理扫描统一解释为所有失败的根因。出现新证据时复用原日志有界定位，见[Harness 验证记录](operations/software-release.md#harness-迁移验证2026-10-19)。
 
 - [ ] **V03 · 数据库暂不可达后的恢复生命周期。** 已在真实PG隔离复现并修复Execution／Delivery安全巡检失败永久停止、Memory扫描健康不恢复的问题，保留真正派发／receipt／投影写入的失败边界；Mac逐目标回归和双平台构建已留证。原合盖／DarkWake与数据库不可达的底层原因仍未证明，新候选因V05暂不部署。11月2日旧Server停止仍exit1，但六类执行／输出账本前后均为空、连接归零；不把重启后的健康当正常关闭或自动恢复通过。见[软件修复记录](operations/software-release.md#数据库恢复修复与候选准备2026-11-02)。
-- [ ] **V04 · Easy-Turn真人输入的原5秒门槛。** 已通过同样本单次前台／后台冷请求对照定位调度成本，仅将LaunchAgent的ProcessType改为Interactive；生产重载后complete／backchannel／wait为1535／384／436ms，原5秒、并发、权重、线程和生成参数不变，无预热。10月31日未知现场输入与原冷样本5.961秒失败保留，三个组件样本不能关闭真人短句／换气长句门槛。见[调度修正](operations/model-services.md#easy-turn-调度定位与实际修正2026-11-02)。
+- [ ] **V04 · Easy-Turn真人输入的原5秒门槛。** 已通过同样本单次前台／后台冷请求对照定位调度成本，仅将LaunchAgent的ProcessType改为Interactive；生产重载后complete／backchannel／wait为1535／384／436ms，原5秒、并发、权重、线程和生成参数不变，无预热。10月31日未知现场输入与原冷样本5.961秒失败保留。11月2日第二现场窗口17个输入分段的native最大1333.747ms，未观察到turn-model deadline；用户已确认该窗口没有讲话，指定短句测试未执行，声源未由PCM确认。不是17条独立验收，也不能关闭识别／换气长句门槛。见[现场记录](operations/model-services.md#受控真人窗口与输出取消2026-11-02)和[调度修正](operations/model-services.md#easy-turn-调度定位与实际修正2026-11-02)。
 
 - [ ] **V05 · Linux暂停后Resume回执／SQL行锁等待。** 本轮两次完整duplex目标均39/1/4，同一held-before-first-start用例在原3秒内缺少Resume回执；第二次确认native仍Held、wire无Resume且随后cleanup失败。同轮PG有Response行锁statement timeout，但缺少确切blocker／case对应。最后一次加入失败后SQL诊断的完整目标40/0/4，observer未触发；无生产修复，根因仍未定，不合并解释V01／V02。保留默认并发和所有首错，新Rust候选暂不作为通过版本部署。下一次只在具体新假设／证据下定位，不为求绿重复整套。见[原始结果与边界](../run/software-recovery-20261102/linux-diagnostic-sql/summary.json)。
+
+- [ ] **V06 · VoiceSession Ready 前上传终止。** 11月3日第一次 Start 后约0.703秒、Ready前出现合并的 Full／Closed 错误，无法回溯分型。已补最小诊断元数据并完成双平台定向验证；独立 `d392401` 只携带该增量，已安装到 Pi。随后唯一一次无讲话检查取得 Ready，并在约0.795秒内完成 Start／精确 Stop ACK，没有复现故障；**不因此关闭根因**。原容量、期限、并发和首错保持，不重复现场求绿。下一次真人窗口直接复用诊断件，若再失败按具体 Full／Closed 和同窗日志有界定位。见[原失败](operations/model-services.md#voicesession-ready-前上传终止2026-11-03)与[诊断启动](operations/model-services.md#诊断版无讲话启动核对2026-11-03)。
 
 ## 待输入或明确恢复后推进
 
 | ID | 任务与当前状态 | 恢复条件与完成标准 |
 | --- | --- | --- |
-| M01 | **模型已定、`.local`配对已恢复；待受控真人复验** | minor／major为官方Magpie `deepseek/deepseek-flash`＋none，预算1024／4096；default复用major、memory_capture走minor、sentence_expression走baseline。本地Qwen1024、CPU Easy-Turn、独占Juno与参考文本保持，无新输入。先在本人到场、确认真实板端供电事实后，用现有已部署版本取得当前有效SessionReady并即时提示短句；再逐项完成长句／回复播放／打断恢复／取消下一轮及Start／Stop。旧失败不改写，V05与新候选部署门槛独立，AEC不并入。 |
+| M01 | **模型已定；诊断版 Ready／Stop 通过，等待本人短句和完整播放验收** | minor／major仍为Magpie `deepseek/deepseek-flash`＋none，预算1024／4096；default复用major、memory_capture走minor、sentence_expression走baseline。本地Qwen1024、CPU Easy-Turn、独占Juno与参考文本不重选。11月2日用户未讲话，指定句未执行；旧两unknown／3秒hold及Stop取消保留。11月3日原上传失败后补诊断件；后续无讲话窗口仅确认Ready和Stop，不算识别、模型质量或播放通过。用户恢复在场讲话后，使用[预备入口](../run/voice-acceptance-20261103/next-human-window/README.md)，完成短句→正常换气长句→打断恢复→取消下一轮；V05、V06和AEC分别保留。 |
 | E01 | **ROS 与具体具身适配器暂缓**：Embodiment 地基已完成，默认没有实际物理适配器 | 用户指定首个设备、通信协议／ROS 版本和目标能力后，实现 `PhysicalAdapter`；核对设备身份、反馈、停止证据、迟到请求终结、断线／重启和共享执行器仲裁。先仿真再实机，沿用 Execution；不扩大 expression 的设备权限。见[接入契约](architecture/embodiment.md)。 |
 | R02-F | **R1 固件改造由用户明确暂缓**：新旧资料、镜像及两份不同虚拟机已核查，未找到匹配板端 SDK；未开发、构建或烧录新固件 | 用户明确恢复后，再取得匹配的最小板端应用 SDK／ABI，或满足契约的受支持常开模式，并补齐当前 1.9.6 恢复路径。核查与候选方案见[硬件记录](operations/hardware-deployment-readiness.md#r1-通用固件工作2026-10-21)，[商家资料清单](operations/r1-firmware-vendor-inputs.md)仅保留为参考，不继续调查或索取。 |
 | R02 | **当前软件接入与分阶段验证已收口；整体验收按条件恢复** | 真实模型整链统一归 M01；AEC 归 R02-AEC。其他方向／安装标定及长稳在实际部署时随 R05 明确范围，不默认重做已通过的 R1 基线。模块正常，R02-F 暂缓不阻断 Alia 主线；FYP ROS 验收不等于 Alia ROS 接入。见[硬件资料](operations/hardware-deployment-readiness.md)。 |
@@ -53,10 +55,10 @@ S01—S03 是 10 月 20 日的交付与部署出口，该轮没有新增生产�
 
 ## 下一步执行顺序
 
-1. **先协调一次受控真人短句复验**：Mac与Pi网络已恢复，模型／账号／参考文本不用重选；Pi目前noop。确认本人在场和10月31日后R1的真实断电事实，不要求为了测试拔插，不用Pi重启推断板端断电。只有当前有效SessionReady才能即时提示讲话，并同步观察退休；完成短句→判句→模型→回复播放，失效会话提示不计通过。
+1. **下一轮先做本人短句，复用已准备入口**：用户能讲话后，只做必要的当前身份／依赖／电源事实核对，普通启动诊断件，单次Start取得新鲜Ready后立即提示「你好 Alia，请用一句话介绍你自己」。不重编译、不重选模型、不先跑一轮额外Start预热；窗口同进程自动收口。若尚未Ready就失败，保存具体诊断并收口，不提示讲话或连续重试。未确认再次真正断电时不得初始化。当前采播关闭；Ready成功一次不保证下次一定可用，也不关闭V06。
 2. **新Rust候选仍留在软件门槛**：V03具体恢复修复已提交、构建产物保留，但V05两次Resume失败未解释，最后一次通过不算根因修复，不部署为已通过候选。下一次有具体假设或新失败时使用已准备的失败专用状态／PG锁诊断，不扩大期限、并发或忽略项，也不重新整套求绿。
 3. 短句通过后集中完成正常换气长句、打断／恢复、输出取消、成功Stop／新Start和下一轮；随后在维护窗口完成应用级成套升级恢复、登录／进程异常／休眠唤醒／resolver重启恢复，以及至少24小时混合故障和资源上界。分阶段结果不合并为整链完成。
-4. AEC等待商家确认后单独验；首版实际MCP／第三方插件按目标验。V01／V02／V03／V04／V05保持各自证据，Companion仍为shadow，固件／ROS／执行器／全面前端及其他平台范围不扩展。
+4. AEC等待商家确认后单独验；首版实际MCP／第三方插件按目标验。V01／V02／V03／V04／V05／V06保持各自证据，Companion仍为shadow，固件／ROS／执行器／全面前端及其他平台范围不扩展。
 
 ## 按具体需求再立项
 

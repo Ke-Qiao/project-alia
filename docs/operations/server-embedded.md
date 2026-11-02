@@ -1,12 +1,46 @@
 # Server 与 Embedded 无前端操作入口
 
-更新：2026-11-02。**Mac 与 Pi 已迁移到 `http://Ke-QiaoMac.local:3000`，签名读取和普通 noop 重启通过；采播仍关闭，完整真人链未通过。** 生产两端继续使用已部署的 `8481b0f` 二进制；本轮数据库恢复修复的新 Rust 候选因两次未定位的 Linux Resume 回执超时暂不部署。Easy-Turn 调度已修正，三个固定样本在原5秒内通过，但不替代真人输入。Mac 使用 `ke-qiao` 登录会话、新生产库和本人管理员。下方带日期的阶段记录保留，当前状态以上方最新日期为准。
+更新：2026-11-03。**Mac 保持原 `8481b0f` Server／PID77141；Pi 已安装独立 `d392401` 上传日志诊断件，完成一次仅 Start→Ready→Stop 的窗口后恢复全 noop／PID6015，PCM closed、硬件 FD 为 0。** 本次没有要求用户讲话，不能当作短句或模型／播放整链通过；更早上传失败的 V06 仍未定位。Server 数据库恢复修复 `e2831e4` 仍因 V05 暂不部署。两份 R1 claim、原设备／绑定及两条历史 unknown Delivery 保留，没有再次初始化或恢复旧数据库。下方历史条目的运行状态与“下一步”属于其记录日期，最新状态以本节和紧接的诊断窗口记录为准。
 
 当前硬件/部署输入、只读核对与R02/R03→R05门槛集中在 [部署资料清单](hardware-deployment-readiness.md)。
 
 当前软件产物／平台证据和真实模型端点／版本／部署待确认项见[软件发布记录](software-release.md)。Linux noop通过不代表当前Mac部署或真实模型链已验收。
 
 Harness／Embodiment 版本切换使用[成套升级与失败恢复步骤](upgrade-recovery.md)：双端协议、数据库迁移、插件 grant 和 Appraisal pin 必须一起核对。
+
+## 独立 Embedded 诊断与就绪窗口（2026-11-03）
+
+用户授权部署诊断件后，Pi 安装 `/home/ke-qiao/.local/share/alia/releases/d392401/alia-embedded`，SHA-256 `2062967f682a5125d401aa0444d4943c962e9875944dfc911445f6acde129346`。源码 `d39240111617a4c741f8dc5fdd4aa32159df6012` 直接以 `8481b0f` 为父提交，只移植两个 Embedded 日志／测试文件；不包含主线尚未放行的 Server 恢复代码。Linux 原 workspace release、一次 Embedded duplex 模块回归及静态预检的身份见[诊断清单 v2](../../run/voice-acceptance-20261103/diagnostic-candidate/diagnostic-manifest-v2.json)。这是一组明确记录的 Mac 旧版＋Pi 诊断件组合，不是整套新版 Release 或 `e2831e4` 放行。
+
+安装仅调整两份 systemd unit 中 `ExecStartPre`／`ExecStart` 的二进制路径，原配置、身份、SQLite 绑定、两份 claim、disabled／Restart=no 保持；没有插件重新授权。首次普通 noop 启动为 PID5012，修正本地 Inspect CLI 参数门禁后，签名 Inspect 确认为新 boot、generation 0、inactive／available=false；noop 没有连接采集 pipeline，不能要求 available=true。原拒绝发生在网络调用前，见[实际部署](../../run/voice-acceptance-20261103/diagnostic-deploy-plan/deployment-summary.json)及[签名核验](../../run/voice-acceptance-20261103/diagnostic-deploy-plan/noop-activation-complete.json)。旧二进制和私有恢复点均保留。
+
+新窗口准备首次在任何停服／启动前误把 noop 独有的 `grpc_drain_timeout_ms`／`shutdown_grace_ms` 与 voice 默认值差异当作身份差异，原失败保留；只核对该已存在的配置差异后继续，未改产品期限。见[准备拒绝](../../run/voice-acceptance-20261103/diagnostic-window-preparation/prepare.json)、[差异核对](../../run/voice-acceptance-20261103/diagnostic-window-preparation/prepare-config-difference.json)和[准备通过](../../run/voice-acceptance-20261103/diagnostic-window-preparation/prepare-corrected.json)。Mac 本轮只读门禁确认生产字节／配置不变，模型依赖 ready，Server 模块无 unhealthy；三项 LLM 仍仅因关闭 live probe 显示 degraded，见[Mac 基线](../../run/voice-acceptance-20261103/diagnostic-mac-baseline/summary.json)。
+
+用户暂时不能讲话，因此本次只执行就绪诊断。普通语音进程 PID5788 无初始化启动；同一编排仅一次 Start（capture generation 2）→有效 SessionReady→新的 Inspect→一次 Stop（generation 3、inactive，精确 ACK），原 5 秒 RPC、零重试保持。0.681366 秒进入清理，0.795196 秒完成，没有 human prompt，也没有等待 30 秒讲话。见[窗口摘要](../../run/voice-acceptance-20261103/diagnostic-readiness-window/summary.json)、[Start](../../run/voice-acceptance-20261103/diagnostic-readiness-window/start.json)和[Stop](../../run/voice-acceptance-20261103/diagnostic-readiness-window/stop.json)。它证明本次 Start→Ready 和受控 Stop 可完成，不证明物理静默期限、真人输入或回复播放。
+
+窗口后有界读取原日志增量，原始字节仅保存在私有证据目录：观察到一条 Ready，没有 terminal／Full／Closed；Easy-Turn accepted 日志事件 0、Juno `POST /tts` 访问事件 0。现有日志不能精确计数云 LLM／embedding 请求，不能将缺少可计数日志写成实际请求必为 0。见[日志元数据摘要](../../run/voice-acceptance-20261103/diagnostic-log-review/capture/summary.json)。**一次未复现不能关闭 V06，也不能把日志补充称为故障修复。**
+
+语音进程随后正常停止，恢复诊断版全 noop PID6015；两路 PCM closed、硬件 FD 为 0、disabled／Restart=no，两份 R1 claim 摘要保持，没有 initialization override。私有 `/home/ke-qiao/.local/share/alia/backups/voice-window-diagnostic-20261103` 保存收口状态，尚未演练还原，见[最终 noop 状态](../../run/voice-acceptance-20261103/diagnostic-window-preparation/restore.json)。下一步等用户能够即时讲话时重新核对当前身份和新鲜 Ready，再做一次自动有界收口的短句窗口；不要求再次断电或重复初始化。长句换气、模型回复、Hold／Resume、输出 Cancel、Stop 后新 Start／下一轮、24 小时混合负载和 AEC 仍分别待验。
+
+## 窗口前置依赖恢复与中止（2026-11-03）
+
+准备新窗口时，Mac 首次仅余 149 MiB 磁盘空间，文档／脚本写入遇到 ENOSPC。只删除已核对为可重建的 `target/debug/incremental` 缓存（清理前约 202 GiB），未删除源码、数据库、模型或证据，见[限定清理记录](../../run/voice-acceptance-20261102/disk-cache-cleanup.json)。随后发现 Docker API 不可达、OrbStack engine 未运行；不能据时间邻近推断磁盘不足就是 engine 停止的原因。`open -a` 后仍未启动 engine，继而用 `orbctl start` 恢复，再只对精确匹配的原 PostgreSQL 容器执行一次 `docker start`，未创建或重建容器、volume、image，也未还原数据库。原失败与恢复核对见[依赖诊断](../../run/voice-acceptance-20261103/health-diagnosis/assessment.json)、[engine 恢复](../../run/voice-acceptance-20261103/health-diagnosis/orb-start.json)和[原容器启动](../../run/voice-acceptance-20261103/health-diagnosis/start-existing-postgres.json)。
+
+数据库恢复可达后，旧 Server PID50935 仍显示 tools unhealthy 和 Memory rebuild scan degraded；三项关闭 live probe 的 LLM degraded 与此分开。单次停止旧进程实际 exit 1，保留原失败；六类执行／输出账本的 count 与行摘要在停服前后相同，两条 unknown Delivery 未删除或重派。新私有恢复点的 dump／配置材料与未演练还原的边界见[恢复说明](upgrade-recovery.md#窗口前置故障与新恢复点2026-11-03)。之后仅启动同一 `8481b0f` Server 一次，PID77141 约 4.057 秒恢复就绪，六类账本摘要仍相同；tools／Memory 恢复健康，三项 LLM live probe 仍按配置关闭。这是人工受控恢复，不证明 V03 自动恢复或异常关闭已修复，见[停止与新恢复点](../../run/voice-acceptance-20261103/health-diagnosis/controlled-server-checkpoint.json)及[同版恢复](../../run/voice-acceptance-20261103/health-diagnosis/server-resumed.json)。
+
+Pi 随后仅以原语音配置普通启动 PID3962，没有初始化请求；新 wrapper 在发送任何 Capture Start 前发现旧 `target/debug/examples/capture_window_control` 不存在，整个旧 `target` 目录在检查时缺失，原因未定。限定缓存清理只针对 `debug/incremental`，不能据此解释父目录缺失。当时先停止 PID3962，exit 0、两端 PCM closed，两份初始化 claim 摘要保持。随后已在独立目录用原归档源码与锁定依赖重建 helper，固定到 `run/voice-acceptance-20261103/control-bin/`，原 13 项自检与离线配置检查通过；未覆盖旧失败 manifest。见[前置拒绝](../../run/voice-acceptance-20261103/window-manifest-gate-failure.json)、[当时停止核验](../../run/voice-acceptance-20261103/pi-stop-await-helper.json)及[helper 重建记录](../../run/voice-acceptance-20261103/control-build/summary.json)。
+
+新 wrapper 在同一进程中从唯一 Start 调用前计时，30 秒到时进入 Stop／异常清理；这不是保证设备在第 30 秒物理静默。23 项假时钟／runner 离线检查通过，保留原 5 秒控制 RPC、零重试及身份不匹配不盲目 Stop 的边界，见[离线检查](../../run/voice-acceptance-20261102/next-window-preparation/selfcheck.json)。重建后的第一次真实 Start 在 Ready 前约 0.6 秒出现旧版混合错误 `voice upload queue full or disconnected`，没有提示用户讲话；fresh Inspect 已为同 boot 的下一代 inactive，wrapper 保守退出并未盲目 Stop，随后恢复 noop。它没有区分 Full 与 Closed，独立按 V06 保留，见[首次窗口](../../run/voice-acceptance-20261103/window/summary.json)和[只读定位](../../run/voice-acceptance-20261103/upload-queue-diagnosis/readonly-review.json)。后续仅补诊断并完成上节就绪窗口，没有完成新的指定短句测试。11月2日用户没有讲话的澄清不改变旧实际账本，也不允许重复初始化，见[用户澄清](../../run/voice-acceptance-20261102/human-clarification.json)。
+
+## 真人短句窗口与安全收口（2026-11-02）
+
+用户确认 R1 自上次窗口后真正断电，本次以唯一 cold_boot_id `0797886f-48b2-401d-958b-08f0620d0111` 初始化一次；固件检查与 beam 0 命令接受成功，同一长期语音进程 PID2857 保持。临时初始化 override 移除后没有重启或补发初始化。新 claim SHA-256 为 `37a93185fbffc1013f7bfcf80c8aec7fd30bf405e6a85ee0ec1f546f3e7b4cff`，10 月 31 日旧 claim 也保持。见[唯一初始化记录](../../run/voice-acceptance-20261102/pi-initialize.json)；命令接受不等于声学输入或回复播放已验证。
+
+第一次 Start 后，只读日志 observer 因 `PermissionError` 失败，未向用户发出指定短句提示，随后先确认 Stop；不能把该阶段环境／偶发输入当作指定测试句。修正 observer 为受限 `sudo` 只读日志后，第二次 Start 的 capture generation 为 4，取得当前 SessionReady 并再次 Inspect 确认 active 后才提示讲话。后续签名 Stop 成功推进到 generation 5、active=false，原 5 秒 RPC 期限和零重试保持。capture generation 与 VoiceSession generation 不是同一身份字段。见[首阶段解释](../../run/voice-acceptance-20261102/first-window-assessment.json)、[有效 Ready](../../run/voice-acceptance-20261102/session-ready-v2.json)、[提示时状态](../../run/voice-acceptance-20261102/at-prompt-v2.json)和[第二次 Stop](../../run/voice-acceptance-20261102/stopped-v2.json)。
+
+只读 SQL 确认本窗口产生两条 Delivery，均为 unknown；offered／accepted 为 0，submitted／presented 为 null。第一条取消时 SQL observation 总期限尚未到；Pause AcousticCandidate 至 `tts_output` 中断约 2.990 秒，与现有 gate 的 3 秒临时语义 hold 到期一致，不能把通用 deadline 日志误称为总期限耗尽。下一条 Backchannel 在退休后才返回；第二次取消则与本轮明确的 Stop 一致。三个中间 turn 各自创建新 producer／gate，时序支持独立新 hold 到期；缺少逐 hold 触发帧身份，`stage=llm` 也不证明三次模型超时，见[有界核查](../../run/voice-acceptance-20261102/sql-analysis/later-turn-holds-readonly-review.json)。仍不能由此判断声源或识别准确，也不能重放 unknown 输出。用户已确认旧窗口没有讲话，指定短句测试未执行；舍友聊天是用户推测、未由PCM确认，不再等待旧窗口听感，见[用户澄清](../../run/voice-acceptance-20261102/human-clarification.json)。完整判句→回复播放、打断／恢复、输出 Cancel 与下一轮均没有本窗口通过结论。见[账本与取消分析](../../run/voice-acceptance-20261102/sql-analysis/summary.json)和[模型窗口记录](model-services.md#受控真人窗口与输出取消2026-11-02)。
+
+语音 PID2857 正常退出 exit 0 后，恢复原 active noop 配置和既有身份／绑定，收口时 PID3435、disabled／Restart=no；全部 PCM closed，硬件 FD 为 0，初始化 override 不存在。新旧两份 claim 摘要均核对保持，私有 `/home/ke-qiao/.local/share/alia/backups/voice-window-20261102` 保存本次收口状态，见[语音退出](../../run/voice-acceptance-20261102/pi-stop-voice.json)与[noop 收口](../../run/voice-acceptance-20261102/pi-restored-noop.json)。该窗口没有安装新 Rust 候选。用户随后要求重来；11月3日的 helper 重建、首次上传失败、独立诊断件和无讲话就绪窗口已在上节分别记录，没有新的指定短句通过结论，也不要求重复断电或重跑旧硬件基线。恢复早先快照前必须保留当前完整 claim 集合及本次新增账本证据，见[本窗口恢复边界](upgrade-recovery.md#真人窗口后的恢复边界2026-11-02)。
 
 ## 主机名连接与受控恢复（2026-11-02）
 
@@ -16,7 +50,7 @@ Pi 使用原 systemd-resolved，在全局与 wlan0 的两份 drop-in 开启 mDNS
 
 本人管理员的签名 settings 读取通过，缺失／伪造认证各为gRPC16；一次普通 noop 重启后 endpoint／bound_since／公钥与 claim 均保持，PCM closed、硬件 FD 为0。见[重启及认证结果](../../run/software-recovery-20261102/network/pair-migration.json)。Pi仍disabled／Restart=no；本轮没有麦克风、播放、Capture Start／Stop或UART初始化。resolver 的整机重启持久性、异常自动恢复和长稳尚未验。
 
-恢复 Mac 时先被既有启动门禁拒绝：LM Studio当时停止，没有已加载实例。保留首次30秒观察失败与gate日志，按原回环1234和context8192恢复固定Qwen embedding后才受控启动；没有改变共享JIT、期限或发送推理。现有Server PID50935，loopback／LAN／`.local`健康通过，账号、33迁移、Qwen1024双pin和shadow revision1不变；degraded仅为三项关闭在线probe的LLM。见[依赖恢复](../../run/software-recovery-20261102/network/lmstudio-recovery.json)和[实际服务恢复](../../run/software-recovery-20261102/network/existing-server-mdns-resumed.json)。这仍是受控恢复，不宣称登录后自动恢复通过。
+恢复 Mac 时先被既有启动门禁拒绝：LM Studio当时停止，没有已加载实例。保留首次30秒观察失败与gate日志，按原回环1234和context8192恢复固定Qwen embedding后才受控启动；没有改变共享JIT、期限或发送推理。恢复时Server PID50935，loopback／LAN／`.local`健康通过，账号、33迁移、Qwen1024双pin和shadow revision1不变；degraded仅为三项关闭在线probe的LLM。见[依赖恢复](../../run/software-recovery-20261102/network/lmstudio-recovery.json)和[实际服务恢复](../../run/software-recovery-20261102/network/existing-server-mdns-resumed.json)。这仍是受控恢复，不宣称登录后自动恢复通过。
 
 本轮新 Rust 修复未安装，运行字节仍为Mac Server `cba48222…e8cd`／Pi Embedded `6608a23d…680a`。新源码、软件回归失败与构建产物单独见[本轮发布记录](software-release.md#数据库恢复修复与候选准备2026-11-02)，不能把第三次诊断通过当作前两次失败的根因已解决。当前新旧恢复点及隔离还原边界见[升级与恢复](upgrade-recovery.md)。
 

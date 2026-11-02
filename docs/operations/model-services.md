@@ -9,6 +9,42 @@ component checks and actual deployment evidence. The dated sections below retain
 their original scope; the latest validation status is recorded first. Example
 URLs and model names alone are not evidence of deployment or acceptance.
 
+## 诊断版无讲话启动核对（2026-11-03）
+
+**独立诊断版已安装，Start→Ready→Stop 通过一次；指定短句仍未执行。** 用户在准备期间表示暂时不能讲话，因此本窗口只检查会话启动，取得新鲜 Ready 后立即进入原签名清理，不发讲话提示、不等待人工反馈。Mac 仍为 `8481b0f`，Pi 为仅增加 Full／Closed 元数据的 `d392401`；没有带入受 V05 限制的 Server 恢复代码，也没有扩大队列、模型／握手期限或重复 R1 初始化。安装前后设备 key、Bound `.local`、SQLite 逻辑行、完整两份 claim 均一致，见[诊断部署](../../run/voice-acceptance-20261103/diagnostic-deploy-plan/deployment-summary.json)。
+
+一次 Start 使用 voice boot `4ff872eb-1642-4da1-baf9-fb82f344aff3`、capture generation 2；取得 session `a245d55a-9ba3-4228-8eec-21eda6aa2207` 的新鲜 Ready，并再次签名 Inspect 核对仍 active。约 **0.681秒**进入清理，以新 Inspect 发一次 Stop，generation 3／inactive 的精确回执成功，Start前至清理结束共 **0.795秒**。原RPC每阶段5秒、零重试保持；复用原window编排，仅跳过讲话提示与人工观察。新增三个fake分支检查通过，不冒充设备验收。见[实际窗口](../../run/voice-acceptance-20261103/diagnostic-readiness-window/summary.json)与[Stop](../../run/voice-acceptance-20261103/diagnostic-readiness-window/stop.json)。
+
+本次日志有一条 Ready，没有 terminal／Full／Closed；Easy-Turn accepted与Juno合成POST均未观察到，现有日志不能精确计数云LLM／embedding请求。无讲话、无听感或完整回复播放结论。本次没有复现V06，**不能以成功替代其根因证据**，更早原始失败继续保留。日志见[有界差分](../../run/voice-acceptance-20261103/diagnostic-log-review/capture/summary.json)。 原5秒期限内的一次只读SQL核对耗时76.676ms，本次Start之后同owner新消息／Response／Delivery／control等均为0，六类账本数量和摘要不变，原两条unknown保持；未读取对话正文或重派，见[本次SQL观察](../../run/voice-acceptance-20261103/sql-after-diagnostic-ready/summary.json)。
+
+之后语音进程PID5788正常退出，诊断件以全noop恢复PID6015，PCMclosed、硬件FD0、disabled／Restart=no；新签名Inspect为generation0、active=false、available=false。两份claim保持，无新增初始化。见[收口](../../run/voice-acceptance-20261103/diagnostic-window-preparation/restore.json)与[最终签名状态](../../run/voice-acceptance-20261103/diagnostic-window-preparation/final-noop-inspect.json)。
+
+两项本轮准备错误单独保留：首次noop Inspect漏传helper本地必需flag，在读key／联网前拒绝；补参数后只做一次实际Inspect。首次语音准备误比较TOML原始结构，noop显式1000／5000ms关闭预算而voice省略相同Rust默认，发生于0stop／0start前；按既有默认归一后继续，未改变有效期限。原错误没有当作产品故障或覆盖。下一轮用[预备入口](../../run/voice-acceptance-20261103/next-human-window/README.md)，先核对当前状态，直接进入一个真人窗口；不要求用户再次选择模型、提供密钥或参考文本。仍必须等实时Ready才提示讲话。
+
+## VoiceSession Ready 前上传终止（2026-11-03）
+
+**本日较早窗口在 Ready 前终止，没有提示讲话；该次收口恢复全 noop。** Mac 依赖恢复与控制 helper 冷编译单独留证，运行版本仍为 `8481b0f`。新 wrapper 只发送一次签名 Start，约 19.762 ms 收到本地 admission 成功，capture generation 2／active=true；这不等于 VoiceSession Ready。随后 observer 记录 terminal-before-ready，原部署错误为 `voice upload queue full or disconnected; session cannot continue`。当前日志把队列已满与接收端已关闭合并，无法确定是哪一类，也不能据此归因网络、设备输入或模型期限；单列 TODO V06，不并入 V04／V05。见[窗口记录](../../run/voice-acceptance-20261103/window/summary.json)、[Start 回执](../../run/voice-acceptance-20261103/window/start.json)与[Ready 前终止](../../run/voice-acceptance-20261103/window/ready.json)。
+
+wrapper 在 Start 前计时约 0.703 秒进入清理，Inspect 已显示同 boot 的 generation 3／active=false，因此按代次边界没有再发 Stop，也没有重试 Start；提示从未发出。该异常路径证明提前终止后的清理判定，不能冒充正常30秒窗口或真人采播验收。原控制RPC 5秒、零重试保持；当时尚无分型诊断；后续独立诊断件及无讲话结果见上节，仍未证明根因修复，见[清理状态](../../run/voice-acceptance-20261103/window/inspect-cleanup.json)。
+
+以 Mac `start.json` 的实际 mtime `2026-11-02T16:37:06.054057Z` 为起点，对本人 owner 做原5秒期限的只读 SQL 观察：消息、canonical Response、Delivery、Delivery event、output-control scope／command 和 conversation event 均为 **0 新增**；六类执行／输出账本行摘要与本轮 Server 恢复后完全相同，旧两条 unknown Delivery 保留。首个诊断查询的 TEXT／UUID 比较错误及原语句保留，按现有 schema 修正后只执行一次成功观察，未改数据。已有 Server／Easy-Turn 日志增量为0字节，Juno仅一条 `GET /tts` HTTP400，不能算合成成功；空日志也不能证明从未有瞬时传输或原生设备活动。见[脱敏 SQL 与源摘要](../../run/voice-acceptance-20261103/sql-after-terminal/summary.json)。
+
+随后恢复原 noop 配置，Pi PID4547、disabled／Restart=no、PCM closed、硬件FD为空，两份初始化claim保持且无初始化override，见[安全收口](../../run/voice-acceptance-20261103/pi-restored-noop.json)。本次不计短句识别、模型回复或播放验收；旧11月2日则是用户明确没有讲话，仍按未执行保留。该时点之后的诊断增量与实际安装见上节，后续通过不自动关闭原故障。
+
+## 受控真人窗口与输出取消（2026-11-02）
+
+**本次指定短句测试未执行，完整语音链仍未验收；窗口结束后 Pi 已恢复全 noop。** 用户在 11 月 3 日明确确认，旧 23:31–23:33 窗口内自己没有讲话；“可能是舍友聊天进入”是用户的声源推测，未由原始 PCM 确认。因此本窗口既不计指定短句识别通过，也不计识别失败，不再等待旧窗口听感作为下一轮前提。见[用户澄清](../../run/voice-acceptance-20261102/human-clarification.json)。此前用户确认板端真正断电后完成一次初始化；现有生产 `8481b0f` 未更换为暂不放行的恢复候选。第一次窗口因只读 observer 无权读取 root-owned 日志而停止，没有提示指定短句；保留原失败，修正为固定路径的只读 sudo 并验证实际可读后才开第二个窗口。第二次在新 SessionReady 与同 boot／capture generation 的 Inspect 后立即提示短句，原模型／RPC 期限未变。见[本轮汇总](../../run/voice-acceptance-20261102/summary.json)及[安全收口](server-embedded.md#真人短句窗口与安全收口2026-11-02)。
+
+第二窗口日志有 17 个不同 Easy-Turn request：7 个 backchannel、5 个 incomplete、5 个 complete，native 最大 **1333.747 ms**，服务 accepted→finished 最大 **1334 ms**；没有观察到本轮 turn-model deadline。它们是一次现场窗口的输入分段，不能当作 17 条独立验收或完整 Rust 请求延迟，也不能证明源声音或识别准确。只读 SQL 的 5 条 user message 均不与指定句精确匹配，去标点／空白归一后也不匹配；用户已确认当时没有讲话，这些文本不是指定句的识别样本，不能据此评价该句的识别能力。没有保存可据此核对声源的原始 PCM。统计见[去重模型观察](../../run/voice-acceptance-20261102/model-window-statistics.json)和[脱敏账本](../../run/voice-acceptance-20261102/sql-analysis/snapshot.json)。
+
+两次生成均进入 `tts_output`，两条 Delivery 最终为 unknown；offered／accepted 都为 0，submitted／presented 为 null，未取得设备媒体提交或完整播放证据。第一输出在 `15:32:29.526Z` 因 AcousticCandidate 被 Pause，随后收到 Held；约 3 秒后取消。当前源码的 `OutputGate` 会取临时语义 hold、普通 hold 与输出总期限的最早值：这与原 **3 秒临时语义 hold** 到期一致，不能误写为 SQL 中 `15:34:27.713Z` 的输出总期限已到。日志的 `original output deadline` 没有标明是哪一种 gate 期限；先前仅凭该文案作出的总期限判断已更正。没有因此扩大期限、关闭打断或重派 unknown 输出。第二次取消与本轮明确的 Stop 同时发生，详见[原身份时间线](../../run/voice-acceptance-20261102/sql-analysis/summary.json)。Juno 的两次请求有 HTTP 200 和合成阶段计时；第一组阶段合计 32.980 秒、第二组 4.088 秒，这不是 HTTP 首包／总延时。Rust adapter 在 headers 后返回惰性流，实际读取仍受 output gate 约束；零媒体计数不等于 Juno 没有合成，当前缺少 Alia 收到首 chunk／EOF 的证据。见[TTS 与 gate 源码核对](../../run/voice-acceptance-20261102/sql-analysis/cancellation-tts-readonly-review.json)。
+
+中间三个 turn（VoiceSession generation epoch 3／4／5）分别出现 `stage=llm, original hold expired`，均未形成 canonical Response。源码确认每个 Respond 创建独立 producer／gate，没有复用已退休 epoch 2 的 hold；错误与各自后续输入的首个保留帧相隔约 3.302／3.302／3.338 秒，包含最多 300 ms pre-roll，支持各自新 AcousticCandidate 的 3 秒 hold 到期。日志缺少逐 hold／触发帧身份，因此精确触发帧仍未证实。`stage=llm` 是外层标签，epoch 3 甚至没有 `llm_call` 记录，不能写成三次模型超时。见[三个新 hold 的有界核查](../../run/voice-acceptance-20261102/sql-analysis/later-turn-holds-readonly-review.json)。
+
+此次准备流程还有明确限制：30 秒是 observer 自己的等待上限，Start 与后续 Stop 分属不同工具调用，第二窗口实际约 **144 秒**；不能写成 30 秒采集已经受控验证。下一次必须让同一有界流程承担到时关闭和异常清理，不能依赖后续人工步骤才 Stop。Pi 时钟比 Mac 快约 **4.117–5.399 秒**，这是 SSH 往返界限，只支持因果顺序与同机时间线，不能跨机按 UTC 做毫秒级排序；本轮没有调时。见[时钟观察](../../run/voice-acceptance-20261102/clock-comparison.json)。
+
+用户要求重来后，11 月 3 日使用独立证据目录和同一进程内定时 Stop／异常清理的 wrapper，实际在 Ready 前因上传终止而收口，结果见[新窗口记录](#voicesession-ready-前上传终止2026-11-03)。不重复断电初始化或恢复已收口的独立硬件测试。正常换气长句、完整打断／恢复、取消下一轮、24 小时混合负载、AEC 和具体插件仍未验收；本窗口也不解释 V05 的软件 Resume 故障。
+
 ## Easy-Turn 调度定位与实际修正（2026-11-02）
 
 **已修正已复现的后台调度成本，完整真人模型链仍未通过。** 对同一份官方 3.256 秒 PCM，在两个新进程各自的单 worker 线程中各做一次冷请求：普通前台进程 **1544.967 ms**，`taskpolicy -b` 后台进程 **4583.239 ms**，两者转写 SHA 与 `complete` 标签一致。阶段记录显示音频 encoder 与 Qwen generate 均变慢，支持先修正常驻任务调度分类，而非改模型数学或依赖；这只有一对对照，不是性能分位数或 SLA。见[前台阶段记录](../../run/software-recovery-20261102/easy-turn/worker-foreground.json)、[后台阶段记录](../../run/software-recovery-20261102/easy-turn/worker-background.json)与[本轮汇总](../../run/software-recovery-20261102/easy-turn/summary.json)。10月31日临时 `taskpolicy -B` 未明显改善的原结果与回退仍保留，不能用本次新进程对照改写它。

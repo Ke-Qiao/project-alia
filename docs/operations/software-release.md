@@ -1,5 +1,34 @@
 # 软件发布资料与真实模型链前置
 
+## 上传诊断增量与独立 Pi 诊断件（2026-11-03）
+
+本轮现场 Start 在 Ready 前终止，旧错误把上传队列 Full／Closed 合并，无法回溯分型，见 [V06 现场记录](model-services.md#voicesession-ready-前上传终止2026-11-03)。最小 Rust 改动只保留具体错误类别，以及 sequence、sample_offset、frame_samples 和队列容量标量，不格式化 PCM／CaptureFrame／文本／凭据；失败后采样的剩余容量不冒充失败瞬间的队列快照。原容量、非阻塞入队、采样时钟、5 秒握手、清理期限与零重试均保持。这是诊断改进，不是已证明的现场根因修复。
+
+主分支两文件提交为 `fa00850c793327b662d5fce9c71d0f39a1e80e82`。为避免带入尚未放行的 V03 Server 恢复代码，另外从实际生产 C／`8481b0faf1b92bb39905d84af13bad2cd731e70e` 建立独立分支 `codex/pi-upload-diagnostic-20261103`，仅移植这两文件，得到 **`d39240111617a4c741f8dc5fdd4aa32159df6012`**，tree `023a3b3720b7a3dd20c0d835e12a3df419c97f11`。该分支没有 `e2831e4` 的 Server 改动，不解除 V05，也不是主分支全部源码已可部署的声明。
+
+| 平台／源码 | 实际检查 | 结果 |
+| --- | --- | --- |
+| macOS ARM64／主分支诊断改动 | Embedded duplex 模块，原默认并发与期限，首次运行 | **39 passed / 0 failed / 0 ignored**；269 filtered，未跑完整 workspace |
+| Linux ARM64／独立 `d392401` | 同一模块，唯一一次运行 | **40 passed / 0 failed / 1 既有 ignored**；Linux 专属 PTY 通过，真实 R1 UART／ALSA 用例仍忽略 |
+| Linux ARM64／独立 `d392401` | 原 default workspace release，offline／locked，jobs 2 | 通过，520.224 秒；只保留 Embedded 为诊断件 |
+| Linux ARM64／新 Embedded | ELF／ldd／loader，staging／R1 自然／R1 系统配置预检 | 全部通过，六项 NEEDED 库名与旧产物一致；未打开设备 |
+
+Mac 原日志及源码摘要见[诊断实施记录](../../run/voice-acceptance-20261103/upload-queue-diagnosis/implementation-summary.json)，Linux 结果、源码、镜像、native archive 和清理状态见[独立诊断清单 v2](../../run/voice-acceptance-20261103/diagnostic-candidate/diagnostic-manifest-v2.json)。两平台计数分别保留，不与旧 workspace 或现场片段相加。复用了原满队列清理测试，新增 Closed 与 Ready 前满队列边界测试；后者验证失败关闭和诊断内容，不证明本次现场一定为 Full。
+
+原产物使用 workspace release；只构建 `-p alia-embedded` 会改变 20 个共享依赖的 feature 集合，因此此处沿用原构建范围。核对 250 个 Embedded／共享依赖／协议／锁文件／工具链输入，差异仅为上述两个文件；3189 个独立源码文件与 Git blob 和冻结清单一致。镜像、Linux native archive、4 CPU／12 GiB／pids512 条件保持，network none，无生产配置、PostgreSQL 或物理设备挂载。两次任务容器均按具体 ID 清理。见[构建范围核对](../../run/voice-acceptance-20261103/embedded-diagnostic-input-review/summary.json)。
+
+保留两项编排首错：镜像环境门禁误拒绝已经受控覆盖的 `CARGO_TARGET_DIR`，发生在建容器前；随后模块测试通过，但 runner 误按 Mac 计数判断 Linux 结果，故未进入构建。纠正平台计数后只续跑缺失的 release／预检，没有重跑成功测试或增加忽略。原 manifest 中无关的 Finder 元数据由 v2 索引排除，旧 manifest 未覆盖，产物／源码／测试字段未变。
+
+固定产物位于 `run/voice-acceptance-20261103/diagnostic-candidate/artifacts/alia-embedded`，**70,839,656 bytes**，SHA-256 **`2062967f682a5125d401aa0444d4943c962e9875944dfc911445f6acde129346`**。这是与旧 Mac C 兼容的临时 Embedded 诊断件，不是成套正式发布；实际安装／回退及新宿主 pin 边界按[部署材料](../../run/voice-acceptance-20261103/diagnostic-deploy-plan/INSTALL-ROLLBACK.md)单独留证。当前目标插件目录为空，没有重授旧 grant；普通进程／二进制重启不允许再次 UART 初始化。未推送、合并、发布正式 Release 或覆盖任何旧交付包。
+
+实际安装完成：Pi release目录为 `/home/ke-qiao/.local/share/alia/releases/d392401`，仅两处systemd二进制路径更新；Mac保持8481。noop核对后普通启动语音，唯一一次无讲话Start取得Ready并收到精确Stop ACK，总约0.795秒，随后恢复同诊断件全noop。两份claim、身份和绑定保持；没有再次初始化。具体部署、准备首错和本次范围见[启动诊断](model-services.md#诊断版无讲话启动核对2026-11-03)。这是一次实际诊断件安装与启动检查，不是V06修复、真人语音或完整成套升级恢复验收。
+
+## 现有生产版本的受控真人复验（2026-11-02）
+
+在本日软件／mDNS 阶段之后，用户确认在场及 R1 真正断电，使用现有生产 `8481b0f` 完成唯一一次初始化和受控语音尝试；没有部署下节 `e2831e4` 候选。第二窗口在有效 Ready 后提示短句，但用户在 11 月 3 日明确确认旧窗口内没有讲话，因此指定短句测试未执行，不计识别失败或通过；“可能是舍友聊天进入”是用户推测，无原始 PCM 确认，见[用户澄清](../../run/voice-acceptance-20261102/human-clarification.json)。两条真实 Delivery 均为 unknown，未取得媒体提交证据；第一条与原 3 秒 AcousticCandidate 临时语义 hold 到期一致，不能误称 SQL 输出总期限到达。三个中间 turn 的独立新 gate 与时序支持各自 hold 到期，不能把 `stage=llm` 标签写成三次模型超时，见[有界核查](../../run/voice-acceptance-20261102/sql-analysis/later-turn-holds-readonly-review.json)。原始失败、实际窗口约 144 秒而非 observer 的 30 秒限制及无 PCM 声源证据均保留。见[模型窗口记录](model-services.md#受控真人窗口与输出取消2026-11-02)和[独立现场汇总](../../run/voice-acceptance-20261102/summary.json)。
+
+语音进程正常退出后 Pi 已恢复原 noop 配置，PCM closed、硬件 FD 为 0，新增和旧 R1 claim 均保存。本节仅补现场与操作文档，无生产源码／依赖变更，也没有重复软件回归。旧窗口听感不再作为等待输入；11月3日后续原失败、诊断部署和无讲话Ready检查分别见上节，指定句仍未执行。V05 的两次 Linux Resume 失败仍限制新候选部署，现场语义 hold 到期不能解释该故障；完整真人链和正式发布均未通过。
+
 ## 数据库恢复修复与候选准备（2026-11-02）
 
 本轮针对 V03 完成了有界隔离复现和最小 Rust 修复。Execution 的空账本巡检遇到数据库期限后会永久取消 worker，Delivery 的周期回收也会永久关闭 supervisor；数据库恢复本身不能重启这些已取消的实例。现将安全的扫描／过期状态收敛与真实派发分开：Execution 扫描失败暂停派发并报告 unhealthy，后续成功扫描恢复同一 worker；Delivery 回收失败暂关新 admission，保留原 owner 的监督，两个回收查询成功后恢复。Execution 原 submit 期限和容量仍有效，扫描期间可持久排队；不能将其写成所有 admission 已关闭。
