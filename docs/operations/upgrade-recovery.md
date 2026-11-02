@@ -1,8 +1,34 @@
 # Server／Embedded 成套升级与失败恢复
 
-更新：2026-10-31。本页是现有软件改动的成套升级步骤，对应 [S03](../todo.md)。10 月 20 日全 noop 生命周期与隔离还原、10 月 28 日新库恢复点各保留原范围，不能代替实际双端恢复。10 月 31 日真人窗口失败后，Pi 已恢复全 noop，新增 R1 claim 必须保留；Mac 暂不可达后的 worker／关闭故障也未解决。实际产物和验证见[软件发布记录](software-release.md)。完整语音链、AEC 仍分别待验，ROS 和 R03 仍暂缓。
+更新：2026-11-02。本页是现有软件改动的成套升级步骤，对应 [S03](../todo.md)。本轮已在隔离环境验证数据库巡检恢复修复，但 Linux Resume 两次失败的原因仍未确定，新源码／二进制暂不放行；实际生产恢复使用既有 `8481b0f`，并完成用户选定的主机名 endpoint 同身份迁移。生产休眠／数据库暂不可达的底层触发仍未证实，真实效果未知结果不自动重派。各恢复点保留其实际验证范围，不能代替实际双端恢复；Pi 保持全 noop，10 月 31 日新增 R1 claim 必须保留。实际产物和验证见[软件发布记录](software-release.md)。完整语音链、AEC 仍分别待验，ROS 和 R03 仍暂缓。
 
 新安装的版本目录、Mac LaunchDaemon／Pi systemd 模板、配对和日志入口见[无前端部署操作](server-embedded.md#mac-与-pi-的安装和常驻入口)。当前 Mac 实际安装采用用户 LaunchAgent，见[Mac 正式启用](server-embedded.md#mac-正式启用2026-10-28)；通用系统域模板仍为备选材料；Pi 当前无音频配对与真人窗口边界见下节。
+
+## 数据库恢复修复与地址迁移准备（2026-11-02）
+
+V03 的隔离复现已确认：Execution／Delivery 的安全巡检第一次触及数据库期限就会永久取消本实例，数据库重新可达不能恢复已取消的 worker。最小修复允许安全扫描和过期状态收敛在原周期内继续：Execution 失败时暂停派发并显示异常，成功扫描后恢复；Delivery 回收失败时拒绝新 admission、保留原 owner，两个回收查询成功后恢复。初始启动仍要求账本可用，关闭时仍报告未恢复的扫描错误。Memory 将扫描错误与投影写入错误独立记录，成功空扫描不清未确认的投影写入故障。
+
+这些恢复查询只能读取意图、将过期记录收敛为 unknown／cancelled／retired，不能产生新的派发许可。claim 提交结果未知、已派发效果回执未确认、真实输出控制和取消失败继续保持原失败状态；按原 effect／response／command 身份查询和对账，不用“扫描恢复”作为重发外部效果的依据。Execution 的持久 submit 仍受原期限／容量约束，扫描暂停期间可入队，不能推断所有 admission 都已关闭。详细反例、逐目标验证与首次失败见[本轮软件记录](software-release.md#数据库恢复修复与候选准备2026-11-02)。
+
+真实 PostgreSQL 锁定测试保持原 2 秒数据库期限和既有并发，验证解锁后同一实例恢复、原身份重试只有一次派发。生产库、休眠和设备均未用于这些故障注入；本轮不据此关闭 10 月 31 日底层触发问题，也不把后续健康成功等同未知 Delivery／output-control 账本已全面对账。双平台构建和影响验证有实际结果，但 Linux 同一 Resume 用例先后两次失败，独立记为 V05；第三次只加诊断后通过，没有提供根因。新 D2 本地代码提交 `e2831e4408b868adb3e61ff1b90a7417703ef5c4` 和构建产物因此保留待查，不安装、不打包为通过候选，生产仍使用旧 C。
+
+本轮还确认 Mac 的旧字面 IP `.201` 已变化，用户选择固定使用 `http://Ke-QiaoMac.local:3000`。Pi `.221` 已启用系统现有 resolver 的 mDNS **resolve** 模式，只加两份指定 drop-in，没有安装额外 daemon、广播服务或重启网络／Embedded；实际解析为 `.191`，见[解析变更](../../run/software-recovery-20261102/network/mdns-applied.json)。这项地址漂移与数据库巡检故障分别记录。
+
+Pi 在 `/home/ke-qiao/.local/share/alia/backups/mdns-before-20261102` 保存变更前私有恢复点，原 identity／binding／SQLite 和完整 claim 保留。准备时原 noop PID1648、disabled／Restart=no、PCM closed，binding endpoint 尚为旧 `.201`，见[准备时检查](../../run/software-recovery-20261102/network/pi-noop-prepared.json)。其 SQLite 备份副本已在 Mac immutable／read-only 模式核对 integrity、state、绑定和音量，设备身份摘要／已存公钥半部及完整 claim 摘要一致；未将副本还原到 Pi，也未启动第二个设备身份实例，见[Pi 副本核验](../../run/software-recovery-20261102/restore/pi-summary.json)。不能用 10 月 30 日的空 claim 集合覆盖现有初始化记录。
+
+Mac 的配置只改 `server.host` 为 `0.0.0.0`、新增上述 `server.public_endpoint`，原 channel／owner／device pin、Server key、模型角色与预算、数据库和关闭 discovery 的设置保持。Mac 自身解析主机名会先取得回环地址，因此不能直接把主机名当 listener；`0.0.0.0` 实际监听所有 IPv4 接口，保留现有认证和双端公钥核对，不新增公网转发。见[配置语义差异](../../run/software-recovery-20261102/network/server-config-prepared.json)。旧组件诊断限定无 channel，检查此生产副本时被其范围门禁拒绝，见[原检查结果](../../run/software-recovery-20261102/network/server-config-only.json)；随后用实际 `ServerConfig::load` 核对，原失败仍保留。
+
+旧 Server 停止实际 exit 1，不能记为正常关闭；本轮在停止前后分别核对 Execution effects／outbox、Responses／Deliveries、output-control scopes／commands 六表均为 0，旧进程退出且数据库其他连接归零，未重派任何效果。私有 `/Users/ke-qiao/Library/Application Support/Alia/backups/pre-recovery-mdns-20261102` 保存该停服点，见[原停止与恢复点](../../run/software-recovery-20261102/network/old-server-checkpoint.json)。其 dump 已在 network-none 临时 PostgreSQL 实际恢复，67 张非系统表的 count 与排序 JSON 内容摘要逐表一致，生产表摘要前后不变；本次使用 no-owner／no-acl，未另外比较序列状态和角色／ACL，不能借用旧演练的更广验证范围，见[本次隔离恢复](../../run/software-recovery-20261102/restore/summary.json)。
+
+随后恢复的是既有已验证 `8481b0f` Server 和新名称配置，未安装 D2。首次启动门禁因 LM Studio 停止而拒绝；恢复原 loopback1234、选定 Qwen embedding／8192 context 后通过，Server PID50935 约 5205 ms 就绪，账号、profile双pin、33迁移和 shadow 保持；overall degraded 仅为三项有意关闭的 LLM live probe，见[实际恢复](../../run/software-recovery-20261102/network/existing-server-mdns-resumed.json)。这次手动修复依赖不等于自动登录／进程故障恢复已通过。
+
+既有签名 PrepareHandoff／CompleteHandoff 各执行一次并成功，让同一 Server／设备／owner 更新 endpoint；没有直接改 SQLite、删绑定或生成新 key。Handoff 按协议更新 bound_since 并撤销旧 output generation，不能要求该时间戳等于迁移前。迁移后及一次普通 noop 重启后，持久 endpoint 均为 `http://Ke-QiaoMac.local:3000`，签名设置读取成功，缺失／伪造认证均拒绝 code16，claim 摘要保持，见[一次移交](../../run/software-recovery-20261102/network/handoff/execution.json)、[重启后认证](../../run/software-recovery-20261102/network/pair-after-noop-restart.json)及[迁移汇总](../../run/software-recovery-20261102/network/pair-migration.json)。Pi 二进制未变，音频／初始化请求为 0；mDNS 的整机重启持久性未测。以后 Prepare／Complete 若超时，先查原身份和持久状态，不盲目重试或以旧数据库覆盖未知结果。
+
+迁移后两端另建 `backups/paired-mdns-20261102` 私有快照，保存当前 C 二进制身份、`.local` 配置、SQL／SQLite、设备身份和完整 claim。Mac dump 在隔离 PostgreSQL 还原后，67 张表的行数／排序 JSON 摘要与 dump 前、后及还原后观察完全一致；Pi 副本只读检查为 Bound `.local`，原 claim 保持，见[迁移后恢复点核验](../../run/software-recovery-20261102/paired-restore/summary.json)。这是相邻时间分别取得的在线快照，不是跨端原子快照；角色／ACL、序列状态和恢复副本的应用启动未验，也未覆盖当前生产数据或现场恢复 Pi。
+
+Pi 服务单元与两份 mDNS drop-in 另存私有 `backups/paired-mdns-network-20261102`，与应用快照成套恢复，见[网络与服务材料备份](../../run/software-recovery-20261102/network/network-materials-backup.json)。Mac 私有管理员登录材料仅更新 URL，密码不变，原冻结恢复点未改写，见[登录入口协调](../../run/software-recovery-20261102/network/admin-login-endpoint.json)。这些恢复点描述当前运行的 `8481b0f`，不包含尚未启用的 Rust 恢复修复。
+
+若需撤回 resolver 变更，只删除本轮两份新增 drop-in，按其记录 reload 网络定义并恢复 resolver 状态；该操作不自动回滚已经提交的 binding。endpoint 的恢复必须按实际持久绑定和同身份移交流程处理，旧 `.201` 未重新取得可达证据时不能直接换回。所有回退均须保留后来新增的完整 R1 claim；**数据库迁移后不能只换回旧二进制**。下一次用户在场确认 R1 电源事实后，可先在现有 C 上执行受控短句验证，不以安装 D2 为该有限窗口前提；完整链路与正式发布仍受 V05 等未验门槛约束。实际双端升级／恢复、登录及异常恢复、24 小时混合故障／资源上界、AEC 仍分别待验。
 
 ## 真人窗口后的恢复边界（2026-10-31）
 

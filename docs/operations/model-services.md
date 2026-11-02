@@ -9,6 +9,16 @@ component checks and actual deployment evidence. The dated sections below retain
 their original scope; the latest validation status is recorded first. Example
 URLs and model names alone are not evidence of deployment or acceptance.
 
+## Easy-Turn 调度定位与实际修正（2026-11-02）
+
+**已修正已复现的后台调度成本，完整真人模型链仍未通过。** 对同一份官方 3.256 秒 PCM，在两个新进程各自的单 worker 线程中各做一次冷请求：普通前台进程 **1544.967 ms**，`taskpolicy -b` 后台进程 **4583.239 ms**，两者转写 SHA 与 `complete` 标签一致。阶段记录显示音频 encoder 与 Qwen generate 均变慢，支持先修正常驻任务调度分类，而非改模型数学或依赖；这只有一对对照，不是性能分位数或 SLA。见[前台阶段记录](../../run/software-recovery-20261102/easy-turn/worker-foreground.json)、[后台阶段记录](../../run/software-recovery-20261102/easy-turn/worker-background.json)与[本轮汇总](../../run/software-recovery-20261102/easy-turn/summary.json)。10月31日临时 `taskpolicy -B` 未明显改善的原结果与回退仍保留，不能用本次新进程对照改写它。
+
+实际部署仅把 `~/Library/LaunchAgents/com.alia.easy-turn.plist` 与 `~/Library/Application Support/Alia/services/com.alia.easy-turn.plist` 两份相同文件的 **`ProcessType: Background → Interactive`**，正常停止原 PID 3949 后重新加载，实际新 PID **41472**，就绪 **4.704秒**，launchd 分类回读为 Interactive。两份新 plist 的 SHA-256 均为 `946ad67af9971d7962c0037b8a231088920fcaa55571151658f27519ae644bd3`；[变更及回退计划](../../run/software-recovery-20261102/easy-turn/scheduling-plan.json)、[实际生效记录](../../run/software-recovery-20261102/easy-turn/scheduling-activation.json)分别保存。此次没有改变 Python 服务实现、依赖、权重、CPU／FP32、18线程、prompt、生成参数、单请求并发或任何期限，也没有预热请求。
+
+随后通过当前 Rust Easy-Turn adapter 各发送一次固定 PCM：重启后的第一个真实请求 `complete` **1535.027 ms**，后续 `backchannel` **383.876 ms**、`wait` **436.418 ms**，三次均在原 **5000 ms** 客户端期限内通过。Python 原60秒 native响应期限仍保留；没有裁短输入／输出、扩大期限、重试求绿或启用麦克风／播放。它们证明本次调度配置下的三个组件样本，不证明10月31日两个现场未知输入的根因或生产长句已解决；`incomplete`、正常换气长句和真人输入仍待验，升级恢复、24小时混合负载与AEC继续独立。
+
+旧源码包与发布包仍对应各自提交和清单。10月25日 `6123691` 源码归档不包含后来的10月31日诊断变更；本次11月2日用户域 plist 调整另由部署证据固定，不能把旧源码归档当作当前主机全部配置身份，也不重写旧失败或累计历史样本数量。真人窗口恢复还须处理当轮单独记录的网络／数据库条件，不能仅凭此处组件成功重新启用采播。
+
 ## 真人窗口失败与 Easy-Turn 诊断补充（2026-10-31）
 
 **完整真人模型链仍未通过。** 本次生产初始化后的真人窗口中，两个 VoiceSession 分别在 `08:21:51.192Z`、`08:27:02.896Z` 以 `DeadlineExceeded: turn model deadline` 结束，保留原 Rust **5000 ms**、并发1。首会话尚未提示测试句；第二会话也早于 `08:27:37.607Z` 的短句提示记录结束。两个期限故障是真实故障，但指定短句未取得有效完整测试，不能推断该语句已进入模型。用户未收到回复，现有日志没有可核对的转写／Response／Delivery；触发声音及实际PCM窗口长度仍未知。见[首次会话分析](../../run/voice-acceptance-20261031/mac-log-deltas/startup-first-session/analysis.json)、[Pi 两次会话原始日志](../../run/voice-acceptance-20261031/pi-short-observation.log)及[短句阶段](../../run/voice-acceptance-20261031/short-human-stage.json)。现场随后收口，Pi恢复已配对的全noop配置，PCM关闭、初始化claim保留，见[终态](../../run/voice-acceptance-20261031/pi-restored-noop.json)。

@@ -1,12 +1,26 @@
 # Server 与 Embedded 无前端操作入口
 
-更新：2026-10-31。Mac Server 与 Pi Embedded 的正式身份、配对和 LAN 保持；本次真人窗口未通过，两个 VoiceSession 在原 Easy-Turn 5 秒期限结束。第二会话在讲话提示前已经结束，指定短句未取得有效完整测试。Pi 已恢复全 noop 运行并关闭 PCM；先处理软件期限和恢复故障，再安排真人窗口。Mac 使用 `ke-qiao` 登录会话、新生产库和本人管理员。以下指向当前 CLI/REST；Web/iOS/Android 不参与本轮。下方带日期的阶段记录保留，当前状态以上方最新日期为准。
+更新：2026-11-02。**Mac 与 Pi 已迁移到 `http://Ke-QiaoMac.local:3000`，签名读取和普通 noop 重启通过；采播仍关闭，完整真人链未通过。** 生产两端继续使用已部署的 `8481b0f` 二进制；本轮数据库恢复修复的新 Rust 候选因两次未定位的 Linux Resume 回执超时暂不部署。Easy-Turn 调度已修正，三个固定样本在原5秒内通过，但不替代真人输入。Mac 使用 `ke-qiao` 登录会话、新生产库和本人管理员。下方带日期的阶段记录保留，当前状态以上方最新日期为准。
 
 当前硬件/部署输入、只读核对与R02/R03→R05门槛集中在 [部署资料清单](hardware-deployment-readiness.md)。
 
 当前软件产物／平台证据和真实模型端点／版本／部署待确认项见[软件发布记录](software-release.md)。Linux noop通过不代表当前Mac部署或真实模型链已验收。
 
 Harness／Embodiment 版本切换使用[成套升级与失败恢复步骤](upgrade-recovery.md)：双端协议、数据库迁移、插件 grant 和 Appraisal pin 必须一起核对。
+
+## 主机名连接与受控恢复（2026-11-02）
+
+用户选择电脑名 `.local`，因此 Mac 的 public endpoint 现为 **`http://Ke-QiaoMac.local:3000`**，VoiceSession 继续使用同主机3001。Mac 当前 DHCP 地址为 `.191`；listener 改为 `0.0.0.0`，实际监听所有 IPv4 接口，仍只用于受控局域网，不新增公网转发，现有认证与设备公钥 pin 保持。Pi 仍为 `192.168.10.221:50051`，其地址变化仍需独立核对 channel，不能误以为 Mac `.local` 同时解决 Pi DHCP。
+
+Pi 使用原 systemd-resolved，在全局与 wlan0 的两份 drop-in 开启 mDNS `resolve`，不安装新 daemon、不广播服务。实际 `Ke-QiaoMac.local` 解析为 `.191`，两端口连通。之后用原 Server key 执行一次签名 `PrepareHandoff`＋`CompleteHandoff`，同一 `alia-main`／设备身份更新 endpoint；没有 Unbind、直接写 SQLite 或重新配对。该协议更新 bound_since 并撤销旧输出代次；原公钥、owner、配置及 R1 初始化 claim 保持。见[签名移交](../../run/software-recovery-20261102/network/handoff/execution.json)与[持久地址读回](../../run/software-recovery-20261102/network/pi-after-handoff.json)。
+
+本人管理员的签名 settings 读取通过，缺失／伪造认证各为gRPC16；一次普通 noop 重启后 endpoint／bound_since／公钥与 claim 均保持，PCM closed、硬件 FD 为0。见[重启及认证结果](../../run/software-recovery-20261102/network/pair-migration.json)。Pi仍disabled／Restart=no；本轮没有麦克风、播放、Capture Start／Stop或UART初始化。resolver 的整机重启持久性、异常自动恢复和长稳尚未验。
+
+恢复 Mac 时先被既有启动门禁拒绝：LM Studio当时停止，没有已加载实例。保留首次30秒观察失败与gate日志，按原回环1234和context8192恢复固定Qwen embedding后才受控启动；没有改变共享JIT、期限或发送推理。现有Server PID50935，loopback／LAN／`.local`健康通过，账号、33迁移、Qwen1024双pin和shadow revision1不变；degraded仅为三项关闭在线probe的LLM。见[依赖恢复](../../run/software-recovery-20261102/network/lmstudio-recovery.json)和[实际服务恢复](../../run/software-recovery-20261102/network/existing-server-mdns-resumed.json)。这仍是受控恢复，不宣称登录后自动恢复通过。
+
+本轮新 Rust 修复未安装，运行字节仍为Mac Server `cba48222…e8cd`／Pi Embedded `6608a23d…680a`。新源码、软件回归失败与构建产物单独见[本轮发布记录](software-release.md#数据库恢复修复与候选准备2026-11-02)，不能把第三次诊断通过当作前两次失败的根因已解决。当前新旧恢复点及隔离还原边界见[升级与恢复](upgrade-recovery.md)。
+
+下一步可在用户明确在场后，以当前已部署版本做短句受控复验，重点确认当前有效SessionReady后即时讲话、判句与回复播放。先确认10月31日以来R1是否真正断电，不要求为了测试拔插；只有新的真实断电事实才允许新cold_boot_id与一次初始化。短句结果不能替代换气长句、Hold／Resume、Cancel、Stop／新Start、下一轮、24小时负载或AEC；V03／V05与新候选部署门槛继续独立保留。
 
 ## 真人窗口失败与安全收口（2026-10-31）
 

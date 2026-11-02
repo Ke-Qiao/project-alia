@@ -58,6 +58,17 @@ the checkpoint's file size is not the process's peak memory requirement.
 SIGTERM; restarting reloads the model. Do not wrap it in multiple Uvicorn
 workers, which would duplicate weights and defeat the model concurrency bound.
 
+For the macOS login-session deployment, set this voice-response service's
+LaunchAgent `ProcessType` to `Interactive`. `Background` applies resource
+limits unsuitable for the synchronous turn decision; `Adaptive` requires XPC
+activity that this HTTP service does not use. Reload the reviewed job after
+changing its plist, preserving the old plist and stopping the previous process
+first. Merely changing the file or applying `taskpolicy -B` to a running job
+does not establish that its launchd classification changed. Keep the model,
+single-request limit and Rust 5 s deadline unchanged, and validate the first
+real request after restart without a hidden inference warmup. The measured
+scope and remaining human acceptance are in the [model operations record](../../docs/operations/model-services.md).
+
 `--device auto` currently selects the verified CPU route. `--device mps` is an
 explicit candidate, uses FP32, and performs a required-operator check before
 model loading. **The pinned Torch 2.2.2 MPS route failed real inference** on the

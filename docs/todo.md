@@ -1,6 +1,6 @@
 # Project Alia TODO
 
-更新：2026-10-31。**软件候选与正式 Mac＋Pi 身份保持；本次真人窗口未通过，Pi 已恢复全 noop、采播关闭。** 用户确认 R1 真正断电后只初始化一次，新 claim 已持久化并备份。两个 VoiceSession 在原 Easy-Turn 5 秒期限结束，第二会话在讲话提示前已结束；用户反馈无回复，指定短句未取得有效完整测试。新增诊断已生效，唯一重启后官方样本 native 5.961 秒，原 5 秒客户端失败；没有重复请求求绿。最先推进无设备的推理期限与数据库故障恢复定位，准备好后再邀本人进行完整语音链。新生产仍不从已删旧库或备份初始化；账号、SQL 双 pin、shadow、AEC 独立门槛与固件暂缓保持。
+更新：2026-11-02。**Mac／Pi 的 `.local` 连接和签名访问已恢复，Pi 保持全 noop／采播关闭；完整真人链仍未通过。** Easy-Turn仅修正常驻调度分类，三个固定PCM在原5秒内通过。V03的安全巡检恢复修复已形成独立Rust提交，但Linux出现两次未定位的Resume回执超时，第三次诊断通过不关闭故障；新候选暂不部署，生产仍为`8481b0f`。新生产账号、Qwen1024双pin、shadow、R1初始化claim和旧证据保持。下一步可安排现有版本的受控短句复验；新候选软件门槛、完整恢复、24小时负载、AEC和插件目标均独立保留。
 
 最新实现：[架构概览](architecture/overview.md)、[Embodiment](architecture/embodiment.md)、[工具构建](concepts/skills-and-tools.md)、[MCP](operations/mcp-tools.md)、[WASM 插件](operations/wasm-plugins.md)。验证结果统一引用[软件发布记录](operations/software-release.md)，不将不同源码、平台或重复测试相加为项目完成率。
 
@@ -31,30 +31,32 @@ S01—S03 是 10 月 20 日的交付与部署出口，该轮没有新增生产�
 - [ ] **V01 · 历史 Companion 配对超时根因。** 旧 25 秒失败没有足够阶段证据；10 月 22 日 Linux 完整 duplex 中又出现既有 H1→H2 场景等待 Resume 的 3 秒超时，新 R1 场景在该轮通过。同一 binary 定向诊断通过，追加失败专用状态诊断后一次完整目标 32/0；均不能倒推根因已解决或认定与旧 25 秒失败同因。仅在新证据出现时有界定位，保留原期限、并发与失败，不无限复跑求绿。扩大无人值守 live 前需根因证据或明确接受已有边界；默认 shadow 保持。见[本轮记录](operations/software-release.md#r1-长句与真实-server-采播软件闭环2026-10-22)、[历史检查点](refactor/resume-checkpoint-v01-server-startup-2026-10-15.md)及[历史台账](refactor/deferred.md)。
 - [ ] **V02 · Harness 验证中未定位的时间准入／数据库截止异常。** 10 月 19 日最终统一整套已通过，但两次独立诊断的失败原因未确定；与 V01 分开保留，不把休眠或系统代理扫描统一解释为所有失败的根因。出现新证据时复用原日志有界定位，见[Harness 验证记录](operations/software-release.md#harness-迁移验证2026-10-19)。
 
-- [ ] **V03 · 正式 Mac 暂不可达后的 worker／健康／关闭故障。** 10 月 31 日数据库和登录已恢复，Execution 仍保留 deadline fault、Memory 报 scan timeout；错误与合盖休眠／DarkWake 在时间上相邻，底层根因未确定。SIGTERM exit 1，含 Delivery 未知提交结果，受控重启后健康恢复不等于根因解决。先在隔离环境复现数据库不可达与恢复，区分真实 worker 停止和过期 health，并核验退出／持久状态；不合并解释旧 V01／V02。见[恢复边界](operations/upgrade-recovery.md#真人窗口后的恢复边界2026-10-31)。
-- [ ] **V04 · Easy-Turn 原 5 秒预算下的真实期限失败。** 两个生产会话失败，输入内容／长度当时不可观测；第二会话早于讲话提示结束，指定短句测试无效。补齐不含音频／转写的元数据诊断，14/0/0 服务测试通过；重启后单个官方 3.256 秒样本实测派发 0.749 ms、native 5960.658 ms，客户端 5026.030 ms 失败。此样本定位到 native 耗时，不证明前两现场根因；QoS 对比无明显改善并已恢复。继续有界 CPU 窗口／输出成本定位，保持原期限、并发、权重与原失败，禁止以扩大期限或 warmup 掩盖冷请求门槛。见[模型记录](operations/model-services.md#真人窗口失败与-easy-turn-诊断补充2026-10-31)。
+- [ ] **V03 · 数据库暂不可达后的恢复生命周期。** 已在真实PG隔离复现并修复Execution／Delivery安全巡检失败永久停止、Memory扫描健康不恢复的问题，保留真正派发／receipt／投影写入的失败边界；Mac逐目标回归和双平台构建已留证。原合盖／DarkWake与数据库不可达的底层原因仍未证明，新候选因V05暂不部署。11月2日旧Server停止仍exit1，但六类执行／输出账本前后均为空、连接归零；不把重启后的健康当正常关闭或自动恢复通过。见[软件修复记录](operations/software-release.md#数据库恢复修复与候选准备2026-11-02)。
+- [ ] **V04 · Easy-Turn真人输入的原5秒门槛。** 已通过同样本单次前台／后台冷请求对照定位调度成本，仅将LaunchAgent的ProcessType改为Interactive；生产重载后complete／backchannel／wait为1535／384／436ms，原5秒、并发、权重、线程和生成参数不变，无预热。10月31日未知现场输入与原冷样本5.961秒失败保留，三个组件样本不能关闭真人短句／换气长句门槛。见[调度修正](operations/model-services.md#easy-turn-调度定位与实际修正2026-11-02)。
+
+- [ ] **V05 · Linux暂停后Resume回执／SQL行锁等待。** 本轮两次完整duplex目标均39/1/4，同一held-before-first-start用例在原3秒内缺少Resume回执；第二次确认native仍Held、wire无Resume且随后cleanup失败。同轮PG有Response行锁statement timeout，但缺少确切blocker／case对应。最后一次加入失败后SQL诊断的完整目标40/0/4，observer未触发；无生产修复，根因仍未定，不合并解释V01／V02。保留默认并发和所有首错，新Rust候选暂不作为通过版本部署。下一次只在具体新假设／证据下定位，不为求绿重复整套。见[原始结果与边界](../run/software-recovery-20261102/linux-diagnostic-sql/summary.json)。
 
 ## 待输入或明确恢复后推进
 
 | ID | 任务与当前状态 | 恢复条件与完成标准 |
 | --- | --- | --- |
-| M01 | **模型／正式配对已具备；真人窗口未通过，先处理 V04** | minor／major 为官方 Magpie `deepseek/deepseek-flash`＋none，预算 1024／4096；default 复用 major，memory_capture 走 minor，sentence_expression 走 baseline。Qwen1024、Easy-Turn、独占 Juno 与参考文本不变。本次 R1 一次初始化／签名 Start／SessionReady 有证据，但无有效指定短句整链／回复播放。先解决原期限内的推理门槛及提示时序，再邀本人完成启动→讲话→模型→播放→打断恢复→取消下一轮，含换气长句和成功 Start／Stop。R1 基线复用，不要求重新选模型、交密钥或重复冷启；AEC 独立。见[10月31日现场记录](operations/server-embedded.md#真人窗口失败与安全收口2026-10-31)。 |
+| M01 | **模型已定、`.local`配对已恢复；待受控真人复验** | minor／major为官方Magpie `deepseek/deepseek-flash`＋none，预算1024／4096；default复用major、memory_capture走minor、sentence_expression走baseline。本地Qwen1024、CPU Easy-Turn、独占Juno与参考文本保持，无新输入。先在本人到场、确认真实板端供电事实后，用现有已部署版本取得当前有效SessionReady并即时提示短句；再逐项完成长句／回复播放／打断恢复／取消下一轮及Start／Stop。旧失败不改写，V05与新候选部署门槛独立，AEC不并入。 |
 | E01 | **ROS 与具体具身适配器暂缓**：Embodiment 地基已完成，默认没有实际物理适配器 | 用户指定首个设备、通信协议／ROS 版本和目标能力后，实现 `PhysicalAdapter`；核对设备身份、反馈、停止证据、迟到请求终结、断线／重启和共享执行器仲裁。先仿真再实机，沿用 Execution；不扩大 expression 的设备权限。见[接入契约](architecture/embodiment.md)。 |
 | R02-F | **R1 固件改造由用户明确暂缓**：新旧资料、镜像及两份不同虚拟机已核查，未找到匹配板端 SDK；未开发、构建或烧录新固件 | 用户明确恢复后，再取得匹配的最小板端应用 SDK／ABI，或满足契约的受支持常开模式，并补齐当前 1.9.6 恢复路径。核查与候选方案见[硬件记录](operations/hardware-deployment-readiness.md#r1-通用固件工作2026-10-21)，[商家资料清单](operations/r1-firmware-vendor-inputs.md)仅保留为参考，不继续调查或索取。 |
 | R02 | **当前软件接入与分阶段验证已收口；整体验收按条件恢复** | 真实模型整链统一归 M01；AEC 归 R02-AEC。其他方向／安装标定及长稳在实际部署时随 R05 明确范围，不默认重做已通过的 R1 基线。模块正常，R02-F 暂缓不阻断 Alia 主线；FYP ROS 验收不等于 Alia ROS 接入。见[硬件资料](operations/hardware-deployment-readiness.md)。 |
 | R02-AEC | **AEC 单独等待商家确认** | 商家明确当前固件、模拟参考链及支持的配置后，再安排回声、双讲、打断期间参考与物理尾音验证；真实模型整链成功不自动关闭本项。 |
 | R03 | **执行器现场工作由用户暂停**：Motion 软件契约与资产身份已完成 | 用户恢复后补板卡、供电／OE、通道、限位／校准、双端资产审核和现场反馈；验证停止保持、失联／重启、迟到命令。主机写入、取消 ACK 或 Unknown 退休都不算物理停止。见[现场门槛](operations/hardware-deployment-readiness.md)。 |
-| R05 | **双端身份保持；本次恢复暴露 V03，成套恢复与长稳未验** | 10 月 28 日初始 SQL 67 表隔离还原、10 月 30 日 Pi 配对／正常重启证据保留；新配对快照及 10 月 31 日含 claim 的快照尚未还原。先隔离验证数据库暂断／恢复／退出；仍需实际双端升级恢复、登录／整机重启／进程异常恢复及至少 24 小时混合负载，覆盖断网、模型超时、设备重连和资源上界。当前 Pi disabled／Restart=no，Mac 受控登录会话，手动恢复不等于无人值守通过；执行器按 R03 暂缓。见[恢复入口](operations/upgrade-recovery.md#真人窗口后的恢复边界2026-10-31)。 |
+| R05 | **`.local`签名迁移／noop普通重启通过；完整升级恢复与长稳仍开放** | Mac当前监听0.0.0.0、public endpoint为Ke-QiaoMac.local；Pi .221解析及持久绑定／公钥／claim通过。11月2日迁移前新PG恢复点隔离还原67表一致，Pi快照只读完整性／pin／claim一致；迁移后恢复点见操作记录。仍需实际应用级成套恢复、resolver整机重启持久性、登录／异常／休眠恢复及至少24小时断网、模型超时、设备重连和资源上界。Pi仍disabled／Restart=no，Mac受控登录会话，手动恢复不等于无人值守。执行器按R03暂缓。 |
 | I01 | **具体生产 MCP 服务／第三方插件验收待目标**：客户端、WASM 运行器与 Rust PDK 已交付 | 选定首个服务／包后，按实际凭据主体和版本验证目录变化、授权／撤权、未知结果及清理。现有回环 MCP 与真实 WASM 测试不证明任意生产服务、任意包或 Pi 容量已可用；无需重建通用 harness。 |
 | D01／D02／D04 | **Web／iOS／Android 提升及随前端延期的跨终端体验** | 用户开启对应轮次后接入当时契约，完成界面、权限、生命周期和端到端验收。已做的接口必要迁移不等于启动全面前端重构。详见[延期台账](refactor/deferred.md)。 |
 | D03／D05／R06 | **通用 Embedded、多实体及其他平台／部署形态** | 指定新设备或部署目标后独立评估并验证；当前不评估 Pi 5 承载 Easy-Turn，不因已有 Rust trait 或 feature 就宣称正式支持。多实体与未来部署属于条件项，不统一称作用户明确延期。详见[延期台账](refactor/deferred.md)。 |
 
 ## 下一步执行顺序
 
-1. **先做不依赖真人的软件排查**：使用已经生效的请求身份／窗口长度／native 耗时诊断，限定范围分析 V04 的 CPU 推理成本；另在隔离环境验证 V03 的数据库暂断、恢复、worker／health 和关闭结果。保持原期限与并发，必要修复按影响范围验证，不再整套求绿。Mac 服务运行，Pi 保持 noop，不再次初始化 R1。
-2. **软件门槛满足后才重新安排本人窗口**：不需重选模型／密钥／参考文本。使用当前持久 claim，除非又有明确板端断电事实，不生成新 cold_boot_id 或补发 UART。先协调讲话时机，再取得当前有效 SessionReady 并即时提示、同步观察退休；完成短句、正常换气长句、回复播放、打断／恢复、取消、成功 Stop／新 Start 与下一轮。失效会话上的提示不计有效用例。
-3. 在维护窗口完成真实双端升级恢复、新配对及新增 claim 快照的还原验证、登录／进程退出／休眠唤醒恢复；再执行至少 24 小时混合故障与资源上界验收。当前正常运行或受控重启成功不能代替这些门槛。
-4. AEC 等商家确认后单独验；首版实际 MCP／第三方插件按目标验。V01／V02 与新 V03／V04 分开跟踪，Companion 保持 shadow，其他暂缓与条件项不扩展。当前软件定位无需用户新增模型、账号、密钥或参考文本输入；需要真人时再明确给出短测试步骤。
+1. **先协调一次受控真人短句复验**：Mac与Pi网络已恢复，模型／账号／参考文本不用重选；Pi目前noop。确认本人在场和10月31日后R1的真实断电事实，不要求为了测试拔插，不用Pi重启推断板端断电。只有当前有效SessionReady才能即时提示讲话，并同步观察退休；完成短句→判句→模型→回复播放，失效会话提示不计通过。
+2. **新Rust候选仍留在软件门槛**：V03具体恢复修复已提交、构建产物保留，但V05两次Resume失败未解释，最后一次通过不算根因修复，不部署为已通过候选。下一次有具体假设或新失败时使用已准备的失败专用状态／PG锁诊断，不扩大期限、并发或忽略项，也不重新整套求绿。
+3. 短句通过后集中完成正常换气长句、打断／恢复、输出取消、成功Stop／新Start和下一轮；随后在维护窗口完成应用级成套升级恢复、登录／进程异常／休眠唤醒／resolver重启恢复，以及至少24小时混合故障和资源上界。分阶段结果不合并为整链完成。
+4. AEC等待商家确认后单独验；首版实际MCP／第三方插件按目标验。V01／V02／V03／V04／V05保持各自证据，Companion仍为shadow，固件／ROS／执行器／全面前端及其他平台范围不扩展。
 
 ## 按具体需求再立项
 

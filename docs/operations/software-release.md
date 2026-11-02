@@ -1,5 +1,51 @@
 # 软件发布资料与真实模型链前置
 
+## 数据库恢复修复与候选准备（2026-11-02）
+
+本轮针对 V03 完成了有界隔离复现和最小 Rust 修复。Execution 的空账本巡检遇到数据库期限后会永久取消 worker，Delivery 的周期回收也会永久关闭 supervisor；数据库恢复本身不能重启这些已取消的实例。现将安全的扫描／过期状态收敛与真实派发分开：Execution 扫描失败暂停派发并报告 unhealthy，后续成功扫描恢复同一 worker；Delivery 回收失败暂关新 admission，保留原 owner 的监督，两个回收查询成功后恢复。Execution 原 submit 期限和容量仍有效，扫描期间可持久排队；不能将其写成所有 admission 已关闭。
+
+claim、外部执行、receipt 持久化、真实输出控制和取消结果未知等错误仍保持原失败边界，扫描成功不会消除它们，也不会获得重派许可。Memory 则将 `rebuild_scan_error` 与投影写入 `last_error` 分开：成功空扫描只清自己的扫描错误，实际投影成功也不清尚未重新验证的扫描故障。原数据库 2 秒、Execution 500 ms 巡检、Delivery 5 秒巡检、Memory 30 秒扫尾、worker 并发和测试并发均未修改。没有增加依赖、配置开关或迁移。
+
+Mac 验证使用 Rust 1.96.0、offline／locked、jobs 2、默认 test threads 和专属 PostgreSQL 17.10／pgvector。原实现的 Execution、output-control 反例分别验证“数据库恢复后 worker 不恢复”和“原 supervisor 已停止”；Delivery 修正测试观测后单独回退原服务实现，原用例同样因 supervisor 停止失败。保留[首次反例](../../run/software-recovery-20261102/database/mac/red.log)、[反例范围说明](../../run/software-recovery-20261102/database/mac/red-assessment.json)及[Delivery 单条反例](../../run/software-recovery-20261102/database/mac-recovery/red-delivery.log)，随后恢复修复源码并逐文件核对摘要。
+
+首次 11 个目标的实际结果为 **157 passed / 21 failed / 4 ignored**。其中 1 条新 Delivery 测试用 SQL `prepare` 观察同一被锁账本，导致观测本身等待并错过门禁变化；改用既有同步入口的非法 nil request 检查门禁，要求精确错误、不创建 owner，保留原 10／8 秒断言预算及后续真实投递断言。另 20 个失败来自本轮测试脚本额外添加的 512 MiB tmpfs：原 SQL 明确报 `pg_wal/xlogtemp.649: No space left on device`，测试 PostgreSQL 随后 exit 1 并被 auto-remove；两次 fixture 清理也超过原 10 秒，均保留。该测试基础设施问题不属于生产 V03。见[数据库失败定位](../../run/software-recovery-20261102/database/mac/database-failure-assessment.json)和[观测修正](../../run/software-recovery-20261102/database/mac-recovery/delivery-observation-assessment.json)。
+
+补验回到仓库既有的一次性 Docker 数据层，不加小 tmpfs 容量上限，并在清理前保留日志。仅重跑受影响的 `delivery_service`、`memory_embedding_provenance`、`output_control`，实际 **34 passed / 0 failed / 0 ignored**；已通过目标没有重复运行。两轮之间生产 Rust 源码完全相同，唯一差异是 Delivery 新测试的观测代码。下表为各目标最后一次实际结果的来源，不将两轮计数相加，也不写成一次全绿的 11 目标运行。
+
+| Mac ARM64 目标 | passed / failed / ignored | 证据来源 |
+| --- | --- | --- |
+| `execution_service` | 31 / 0 / 0 | 首次定向运行 |
+| `execution_repository` | 19 / 0 / 0 | 首次定向运行 |
+| `delivery_service` | 14 / 0 / 0 | 观测修正后补验 |
+| `delivery_repository` | 15 / 0 / 0 | 首次定向运行 |
+| `delivery_text` | 6 / 0 / 0 | 首次定向运行 |
+| `delivery_text_service` | 4 / 0 / 0 | 首次定向运行 |
+| `output_control` | 13 / 0 / 0 | 测试库恢复后补验 |
+| `duplex_playback` | 40 / 0 / 4 | 首次定向运行，保留 4 条原 R1 现场忽略 |
+| `memory` | 13 / 0 / 0 | 首次定向运行 |
+| `memory_embedding` | 16 / 0 / 0 | 首次定向运行 |
+| `memory_embedding_provenance` | 7 / 0 / 0 | 测试库恢复后补验 |
+
+逐目标来源、原始两轮计数与源码差异见[Mac 验证矩阵](../../run/software-recovery-20261102/database/mac-validation-summary.json)，最初 8 个变更源码摘要见[恢复修复源码身份](../../run/software-recovery-20261102/database/final-source-hashes.json)。第二个专属测试库在清理前确认其他连接 0、非默认 schema 0，保留日志后仅删除本轮容器与匿名卷，见[清理记录](../../run/software-recovery-20261102/database/mac-recovery/database-cleanup.json)。本轮没有重跑完整 workspace，历史 A／B／C 的计数保持其原范围。
+
+Linux ARM64 使用同一恢复修复生产源码 D，实际出现新的 Resume 回归异常，按有界诊断保留三次独立运行：
+
+| Linux ARM64 运行 | passed / failed / ignored | 实际范围与结论 |
+| --- | --- | --- |
+| 首次 11 个定向目标 | **177 / 1 / 4** | `duplex_playback` 为 39 / 1 / 4；其余 10 个目标通过。原 3 秒 receipt 观测超时，没有阶段／命令诊断 |
+| 仅完整 `duplex_playback`，增加失败元数据 | **39 / 1 / 4** | 同一用例再次失败：Resume 应有 2 条持久回执，实际 1 条；native 仍 Held、sequence 1、剩余约 21.45 秒，wire 仅 Pause、没有媒体 Push，随后 Delivery 清理也失败 |
+| 仅完整 `duplex_playback`，再补失败时 SQL 观察 | **40 / 0 / 4** | 单次通过；失败分支未执行，未取得 blocker 身份，不能解释前两次失败 |
+
+该新异常独立记为 **V05**，失败用例为 `held_before_first_start_survives_handshake_idle_and_resumes_one_original_output`。第二次 PostgreSQL 日志有 `delivery_responses` 行锁的 statement timeout，但未记录 schema／case 归属，不能确定它是 Resume 的阻塞来源还是后续清理结果。源码审查没有找到持有 Response SQL 锁跨 `wait_open` 或 RPC 的路径；仍不能据此排除回归。两次新增诊断只涉及测试：原 3 秒观测、5 ms 轮询、默认线程、3 case 并发和 45 秒总预算不变，失败原 panic 保留；最后一次准备的独立 SQL observer 上限 2 秒，成功路径不执行它。原始计数见[首次 11 目标](../../run/software-recovery-20261102/linux/targeted-results.json)、[第二次失败与构建](../../run/software-recovery-20261102/linux-diagnostic/summary.json)和[最后一次诊断](../../run/software-recovery-20261102/linux-diagnostic-sql/summary.json)。不把三次结果相加，不把最后通过写成根因已解决，也不认定与 V01／V02 同因。
+
+Mac 的 fmt、边界检查及自检、Server no-default／all-targets、Clippy、workspace release、Mach-O／系统动态库及三份 Embedded 配置预检通过；Clippy 保留 276 条 warning header。Linux 在第二次诊断后继续完成 PDK、Server no-default／all-targets、workspace release、ELF／loader／链接与三份配置预检，均通过。原始构建分别见[Mac](../../run/software-recovery-20261102/mac-build/checks.json)和[Linux](../../run/software-recovery-20261102/linux-diagnostic/summary.json)。Mac 构建后的第一版纯失败诊断另通过定向编译；最终 SQL 诊断版在 Linux 实际执行，未重复 Mac 测试。
+
+最终源码记为 **D2：D 恢复修复加两份测试诊断增量**，本地代码提交为 `e2831e4408b868adb3e61ff1b90a7417703ef5c4`。相对 C 共 10 个 Rust 文件：5 个生产文件（Execution service／worker、Delivery service、Memory service／embedding worker），3 个回归测试文件，以及 `duplex_playback.rs` 和 `delivery_support/mod.rs` 两份诊断文件。所有运行与双平台构建的生产输入一致，较早测试／构建与 D2 的差异仅为明确记录的测试文件；逐文件关系见[最终源码对照](../../run/software-recovery-20261102/source-identity-final.json)。构建字节分别保留在 `run/software-recovery-20261102/mac-build/artifacts/` 和 `linux-diagnostic/artifacts/`，**当前仍是暂不放行的验证产物，没有作为通过候选打包，没有安装到生产。** 原 `8481b0f` 包及所有失败证据不覆盖，旧产物不能冒充包含新 Rust 修复。
+
+独立的地址漂移已完成处理：Mac 从旧 `.201` 变为 `.191`，用户选择 `Ke-QiaoMac.local`；Pi 仅启用系统 mDNS resolve。Mac 实际恢复运行的仍是已验证的 `8481b0f`，配置只改 `server.host=0.0.0.0` 和 `public_endpoint=http://Ke-QiaoMac.local:3000`，HTTP／gRPC 监听所有 IPv4 接口，原认证／公钥 pin 保持，没有新增公网转发或 TLS。首次启动门禁因 LM Studio 停止而拒绝；恢复原 loopback 服务和固定 Qwen 后才启动，见[旧二进制恢复记录](../../run/software-recovery-20261102/network/existing-server-mdns-resumed.json)。同身份签名 PrepareHandoff／CompleteHandoff 各执行一次，持久 endpoint、签名读取、缺失／伪造鉴权拒绝及普通 noop 重启后的身份保持均通过，见[配对迁移](../../run/software-recovery-20261102/network/pair-migration.json)。Pi 没有更换二进制、启用音频或再次初始化 R1；恢复点与边界见[恢复记录](upgrade-recovery.md#数据库恢复修复与地址迁移准备2026-11-02)。
+
+本轮放行缺口是 V05 Linux Resume 异常仍未定位，故新 D2 暂不发布／部署。V03 的原生产休眠／数据库暂不可达触发原因也仍未证实；当前生产继续运行 C，不声称生产已具备此次恢复修复。Easy-Turn 的独立调度验证见[模型服务记录](model-services.md)，不与数据库回归混为真人整链。下一次用户在场并确认本次 R1 电源事实后，可以在现有 C 上先做一次受控短句验证；这不要求先安装 D2，也不解除 V05 或正式发布门槛。真实效果未知结果、旧 V01／V02、完整语音链、实际双端升级／恢复、24 小时混合负载、AEC 和具体 MCP／插件验收仍独立保留，Companion 保持 shadow。
+
 ## 真人窗口与模型诊断源码增量（2026-10-31）
 
 本轮真人窗口的两个生产VoiceSession均以 `turn model deadline` 结束，原Rust Easy-Turn **5秒／并发1**没有放宽，尚无完整判句→回复播放证据。首会话未提示测试句，第二会话也在短句提示记录之前失败；不能将未知输入直接记为已识别的指定真人短句。原错误、短句无回复和现场收口分开保留，详见[模型记录](model-services.md#真人窗口失败与-easy-turn-诊断补充2026-10-31)。Pi已恢复同一配对身份的全noop运行，PCM关闭并保留本次初始化claim。
