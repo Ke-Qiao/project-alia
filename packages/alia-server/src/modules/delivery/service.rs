@@ -66,6 +66,7 @@ pub struct DeliveryService {
     admission: Mutex<()>,
     active: StdMutex<HashMap<Uuid, (Uuid, CancellationToken)>>,
     failures: StdMutex<Vec<String>>,
+    recovery_failure: StdMutex<Option<String>>,
 }
 
 impl DeliveryService {
@@ -98,6 +99,7 @@ impl DeliveryService {
             admission: Mutex::new(()),
             active: StdMutex::new(HashMap::new()),
             failures: StdMutex::new(Vec::new()),
+            recovery_failure: StdMutex::new(None),
         })
     }
     pub async fn start(self: &Arc<Self>) -> anyhow::Result<()> {
@@ -176,6 +178,9 @@ impl DeliveryService {
             "delivery shutdown failed: {}",
             failures.join("; ")
         );
+        if let Some(failure) = self.recovery_failure.lock().unwrap().as_ref() {
+            anyhow::bail!("delivery shutdown with unresolved recovery: {failure}");
+        }
         Ok(())
     }
     pub async fn prepare(&self, input: NewResponse) -> DeliveryResult<ResponseRecord> {
@@ -296,6 +301,10 @@ impl DeliveryService {
             Err(DeliveryError::InvalidTransition(
                 "delivery admission is closed".into(),
             ))
+        } else if let Some(failure) = self.recovery_failure.lock().unwrap().as_ref() {
+            Err(DeliveryError::InvalidTransition(format!(
+                "delivery recovery is unavailable: {failure}"
+            )))
         } else {
             Ok(())
         }
@@ -316,7 +325,24 @@ impl DeliveryService {
              result=output_tasks.join_next(),if !output_tasks.is_empty()=>{if let Some(Err(error))=result {self.record_failure(format!("output control task panicked: {error}"));self.stop.cancel();}},
              next=outputs.recv(),if output_tasks.len()<MAX_SUPERVISORS=>match next{Some(input)=>{let service=self.clone();output_tasks.spawn(async move {service.supervise_output(input).await;});},None=>break},
              command=receiver.recv(),if tasks.len()<MAX_SUPERVISORS=>match command{Some(command)=>{let service=self.clone();tasks.spawn(async move {let result=service.supervise(command.input, command.media_owner).await;let _=command.reply.send(result);});},None=>break},
-             _=recovery.tick()=>{if let Err(error)=bounded(self.repository.recover_expired(256)).await{self.record_failure(format!("delivery recovery: {error}"));self.stop.cancel();} if let Err(error)=self.repository.recover_expired_controls(256).await{self.record_failure(format!("output control recovery: {error}"));self.stop.cancel();}},
+             _=recovery.tick()=>{
+                // Recovery only retires expired owners. Re-read the ledger after
+                // an uncertain transaction; never replay a dispatch or control.
+                let mut failures = Vec::new();
+                if let Err(error)=bounded(self.repository.recover_expired(256)).await {
+                    failures.push(format!("delivery recovery: {error}"));
+                }
+                if let Err(error)=self.repository.recover_expired_controls(256).await {
+                    failures.push(format!("output control recovery: {error}"));
+                }
+                *self.recovery_failure.lock().unwrap() = if failures.is_empty() {
+                    None
+                } else {
+                    let failure = failures.join("; ");
+                    tracing::warn!(%failure, "delivery recovery failed; next scan will reconcile");
+                    Some(failure)
+                };
+             },
             }
         }
         self.close_admission();

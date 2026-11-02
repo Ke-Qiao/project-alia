@@ -35,15 +35,19 @@ pub(super) async fn run(service: Arc<ExecutionService>) -> anyhow::Result<()> {
                     }
                 }
             }
-            _ = scan.tick() => {
-                if let Err(error) = fill(&service, &mut tasks, worker_id).await {
-                    *service.fault.lock().unwrap() = Some(error.to_string());
-                    failure = Some(error);
-                    service.stop.cancel();
-                }
-            }
-            _ = service.wake.notified() => {
-                if let Err(error) = fill(&service, &mut tasks, worker_id).await {
+            _ = async { tokio::select! { _ = scan.tick() => {}, _ = service.wake.notified() => {} } } => {
+                let candidates = match scan_pending(&service, WORKERS.saturating_sub(tasks.len())).await {
+                    Ok(candidates) => {
+                        *service.scan_fault.lock().unwrap() = None;
+                        candidates
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "execution ledger scan failed; next scan will reconcile");
+                        *service.scan_fault.lock().unwrap() = Some(error.to_string());
+                        continue;
+                    }
+                };
+                if let Err(error) = fill(&service, &mut tasks, worker_id, candidates).await {
                     *service.fault.lock().unwrap() = Some(error.to_string());
                     failure = Some(error);
                     service.stop.cancel();
@@ -63,21 +67,29 @@ pub(super) async fn run(service: Arc<ExecutionService>) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn scan_pending(
+    service: &ExecutionService,
+    available: usize,
+) -> anyhow::Result<Vec<EffectRecord>> {
+    // These transactions only read intents or retire expired claims as unknown;
+    // repeating them never grants permission to dispatch an external effect.
+    tokio::time::timeout(DATABASE_DEADLINE, service.repository.recover_expired(256)).await??;
+    if available == 0 || service.stop.is_cancelled() {
+        return Ok(Vec::new());
+    }
+    Ok(tokio::time::timeout(
+        DATABASE_DEADLINE,
+        service.repository.pending(available as u32),
+    )
+    .await??)
+}
+
 async fn fill(
     service: &Arc<ExecutionService>,
     tasks: &mut JoinSet<anyhow::Result<()>>,
     worker_id: Uuid,
+    candidates: Vec<EffectRecord>,
 ) -> anyhow::Result<()> {
-    tokio::time::timeout(DATABASE_DEADLINE, service.repository.recover_expired(256)).await??;
-    let available = WORKERS.saturating_sub(tasks.len());
-    if available == 0 || service.stop.is_cancelled() {
-        return Ok(());
-    }
-    let candidates = tokio::time::timeout(
-        DATABASE_DEADLINE,
-        service.repository.pending(available as u32),
-    )
-    .await??;
     for effect in candidates {
         if service.stop.is_cancelled() {
             break;

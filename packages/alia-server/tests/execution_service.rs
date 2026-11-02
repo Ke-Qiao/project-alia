@@ -779,6 +779,44 @@ async fn missing_identity_and_revoked_owner_fail_before_executor() {
 }
 
 #[tokio::test]
+async fn ledger_scan_deadline_resumes_without_restarting_or_replaying_effects() {
+    with_fixture(false, 5, 1, |f| async move {
+        f.service.start().await.unwrap();
+        let blocked = f.db.begin().await.unwrap();
+        blocked
+            .execute_unprepared("LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE")
+            .await
+            .unwrap();
+        wait_for_table_waiter(&f, "execution_effects").await;
+        tokio::time::timeout(Duration::from_secs(4), async {
+            while !matches!(f.service.health(), ModuleHealth::Unhealthy(_)) {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("the original two-second ledger deadline must remain visible");
+        assert_eq!(f.probe.calls.load(Ordering::SeqCst), 0);
+        blocked.rollback().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(4), async {
+            while !matches!(f.service.health(), ModuleHealth::Healthy) {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("a successful scan must recover the same worker");
+        let context = f.context().await;
+        let effect = f.service.submit(f.call(), &context).await.unwrap();
+        f.status(effect.effect_id, EffectStatus::Succeeded).await;
+        let retry = f.service.submit(f.call(), &context).await.unwrap();
+        assert_eq!(retry.effect_id, effect.effect_id);
+        assert_eq!(retry.status, EffectStatus::Succeeded);
+        assert_eq!(f.probe.calls.load(Ordering::SeqCst), 1);
+        f.service.shutdown().await.unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn receipt_write_failure_is_shutdown_failure_then_recovers_unknown() {
     with_fixture(false, 5, 1, |f| async move {
         let effect = f.service.submit(f.call(), &f.context().await).await.unwrap();

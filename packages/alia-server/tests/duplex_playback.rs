@@ -46,7 +46,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Condvar, Mutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -272,6 +272,8 @@ struct Wire {
     release_resume: Semaphore,
     controls: Mutex<Vec<BoundControlCommand>>,
     observations: AtomicUsize,
+    last_observed_control: AtomicU64,
+    last_observe_status: AtomicI64,
     pushes: AtomicUsize,
     registrations: Mutex<Vec<OutputRegistration>>,
 }
@@ -339,7 +341,36 @@ impl Playback for Proxy {
         request: Request<proto::ControlRequest>,
     ) -> std::result::Result<Response<proto::ControlResponse>, Status> {
         self.0.observations.fetch_add(1, Ordering::SeqCst);
-        self.0.inner.observe_control(request).await
+        if let Some(command) = request
+            .get_ref()
+            .command
+            .as_ref()
+            .and_then(|bound| bound.command.as_ref())
+        {
+            let action = match &command.action {
+                Some(proto::control_command::Action::Pause(_)) => 1,
+                Some(proto::control_command::Action::Resume(_)) => 2,
+                Some(proto::control_command::Action::ConfirmExplicitWait(_)) => 3,
+                None => 0,
+            };
+            self.0.last_observed_control.store(
+                command
+                    .sequence
+                    .checked_mul(4)
+                    .and_then(|n| n.checked_add(action))
+                    .unwrap_or(u64::MAX),
+                Ordering::SeqCst,
+            );
+        }
+        self.0.last_observe_status.store(-1, Ordering::SeqCst);
+        let result = self.0.inner.observe_control(request).await;
+        self.0.last_observe_status.store(
+            result
+                .as_ref()
+                .map_or_else(|error| error.code() as i64, |_| 0),
+            Ordering::SeqCst,
+        );
+        result
     }
     async fn push(
         &self,
@@ -482,6 +513,8 @@ impl Runtime {
             release_resume: Semaphore::new(0),
             controls: Mutex::new(Vec::new()),
             observations: AtomicUsize::new(0),
+            last_observed_control: AtomicU64::new(0),
+            last_observe_status: AtomicI64::new(-1),
             pushes: AtomicUsize::new(0),
             registrations: Mutex::new(Vec::new()),
         });
@@ -575,6 +608,9 @@ impl Runtime {
         let delivery = AssertUnwindSafe(self.scene.service.shutdown())
             .catch_unwind()
             .await;
+        if let Ok(Err(error)) = &delivery {
+            eprintln!("paired Delivery shutdown error: {error:#}");
+        }
         let pending = self.scene.service.shutdown_pending();
         let embedded = AssertUnwindSafe(self.scene.session.stop())
             .catch_unwind()
@@ -677,11 +713,112 @@ impl Scene {
         }
     }
     async fn command_count(&self, response: &ResponseRecord, count: usize) {
-        eventually(|| async {
+        let observed = AtomicI64::new(-1);
+        let started = std::time::Instant::now();
+        let result = AssertUnwindSafe(eventually(|| async {
             let rows = self.f.db.query_one(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,
                 "SELECT COUNT(*) AS n FROM output_control_commands WHERE response_id=$1 AND status='receipted'", [response.response_id.into()])).await.unwrap().unwrap();
-            rows.try_get::<i64>("", "n").unwrap() == count as i64
-        }).await;
+            let actual = rows.try_get::<i64>("", "n").unwrap();
+            observed.store(actual, Ordering::Relaxed);
+            actual == count as i64
+        }))
+        .catch_unwind()
+        .await;
+        if let Err(primary) = result {
+            // Failure-only, in-memory observations. Keep the original polling,
+            // deadline and panic; no extra async wait or SQL query.
+            let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                let native = self.session.observe_control(&self.scope).ok().map(|snapshot| {
+                json!({
+                    "phase":snapshot.phase,
+                    "retired":snapshot.retired,
+                    "remaining_ms":snapshot.remaining_ms,
+                    "local_remaining_ms":snapshot.local_capture_hold.map(|hold| hold.remaining_ms),
+                    "sequence":snapshot.sequence,
+                })
+            });
+                let controls = self.wire.controls.try_lock().ok().map(|controls| {
+                    controls
+                        .iter()
+                        .rev()
+                        .take(8)
+                        .rev()
+                        .map(|command| {
+                            json!({
+                                "sequence":command.command.sequence,
+                                "action":match command.command.action {
+                                    ControlAction::Pause { .. } => "pause",
+                                    ControlAction::Resume { .. } => "resume",
+                                    ControlAction::ConfirmExplicitWait { .. } => "confirm_wait",
+                                },
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                });
+                eprintln!(
+                    "paired receipt observation failed; {}",
+                    json!({
+                        "expected_receipted":count,
+                        "last_observed_receipted":observed.load(Ordering::Relaxed),
+                        "wait_ms":started.elapsed().as_millis(),
+                        "clock":"test_process_monotonic",
+                        "native_control":native,
+                        "wire_controls_last_eight":controls,
+                        "wire_observations":self.wire.observations.load(Ordering::SeqCst),
+                        "last_observe_sequence":self.wire.last_observed_control.load(Ordering::SeqCst) / 4,
+                        "last_observe_action_code":self.wire.last_observed_control.load(Ordering::SeqCst) % 4,
+                        "last_observe_grpc_code":self.wire.last_observe_status.load(Ordering::SeqCst),
+                        "wire_pushes":self.wire.pushes.load(Ordering::SeqCst),
+                        "original_scope_active":self.session.active_scope().ok().flatten()==Some(self.scope),
+                    })
+                );
+            }));
+            // A single observer query after the original failure; this pool is
+            // independent of the four work connections and owned by the fixture.
+            // Emit transaction/lock metadata only, never SQL text or row values.
+            let _ = AssertUnwindSafe(async {
+                let query = self.f.diagnostic_database().query_one(sea_orm::Statement::from_sql_and_values(
+                    sea_orm::DatabaseBackend::Postgres,
+                    r#"WITH affected AS (
+                        SELECT DISTINCT l.pid FROM pg_locks l JOIN pg_class c ON c.oid=l.relation
+                        JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1 AND l.pid IS NOT NULL
+                    ), involved AS (
+                        SELECT pid FROM affected UNION SELECT unnest(pg_blocking_pids(pid)) FROM affected
+                    ) SELECT jsonb_build_object(
+                        'activity', (SELECT coalesce(jsonb_agg(v),'[]'::jsonb) FROM (
+                            SELECT a.pid,a.state,a.wait_event_type,a.wait_event,
+                                floor(extract(epoch FROM (clock_timestamp()-a.xact_start))*1000) AS transaction_ms,
+                                floor(extract(epoch FROM (clock_timestamp()-a.query_start))*1000) AS query_ms,
+                                pg_blocking_pids(a.pid) AS blocked_by,md5(a.query) AS query_digest,
+                                substring(ltrim(a.query) from '^[A-Za-z]+') AS statement_kind,
+                                (a.query ILIKE '%delivery_responses%') AS mentions_response,
+                                (a.query ILIKE '%output_control%') AS mentions_control,
+                                (a.query ILIKE '%context%') AS mentions_context,
+                                (a.query ILIKE '%FOR NO KEY UPDATE%') AS for_no_key_update
+                            FROM pg_stat_activity a WHERE a.datname=current_database()
+                                AND a.pid IN (SELECT pid FROM involved) AND a.pid<>pg_backend_pid()
+                            ORDER BY a.pid LIMIT 32
+                        ) v),
+                        'locks', (SELECT coalesce(jsonb_agg(v),'[]'::jsonb) FROM (
+                            SELECT l.pid,l.locktype,l.mode,l.granted,c.relname AS relation,
+                                n.nspname=$1 AS failed_schema,l.page,l.tuple
+                            FROM pg_locks l LEFT JOIN pg_class c ON c.oid=l.relation
+                            LEFT JOIN pg_namespace n ON n.oid=c.relnamespace
+                            WHERE l.pid IN (SELECT pid FROM involved)
+                            ORDER BY l.granted,l.pid,l.locktype,c.relname LIMIT 128
+                        ) v)
+                    ) AS record"#,
+                    [self.f.schema_name().to_owned().into()],
+                ));
+                let result = match tokio::time::timeout(Duration::from_secs(2), query).await {
+                    Ok(Ok(Some(row))) => row.try_get::<serde_json::Value>("", "record").unwrap_or(json!({"decode_failed":true})),
+                    Ok(_) => json!({"query_failed":true}),
+                    Err(_) => json!({"observer_deadline_ms":2000,"timed_out":true}),
+                };
+                eprintln!("paired failed-receipt PostgreSQL metadata: {result}");
+            }).catch_unwind().await;
+            std::panic::resume_unwind(primary);
+        }
     }
     fn continue_output(&self, producer: &OutputProducer) {
         self.session

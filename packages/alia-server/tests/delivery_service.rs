@@ -304,6 +304,110 @@ async fn wait_terminal(service: &DeliveryService, owner: Uuid, response: Uuid) -
 }
 
 #[tokio::test]
+async fn delivery_recovery_deadline_resumes_without_restarting_or_replaying() {
+    recovery_deadline_case("deliveries").await;
+}
+
+#[tokio::test]
+async fn output_control_recovery_deadline_resumes_without_restarting_or_replaying() {
+    recovery_deadline_case("output_control_scopes").await;
+}
+
+async fn recovery_deadline_case(table: &'static str) {
+    with_db_context(
+        None::<Arc<DeliveryService>>,
+        |f, service_owner| {
+            Box::pin(async move {
+                let service = DeliveryService::new(f.repo(), &CancellationToken::new());
+                *service_owner = Some(service.clone());
+                service.start().await.unwrap();
+                let input = f.response().await;
+                let channel = channel(&f, Behavior::Submitted);
+                let blocked = f.db.begin().await.unwrap();
+                blocked
+                    .execute_unprepared(&format!("LOCK TABLE {table} IN ACCESS EXCLUSIVE MODE"))
+                    .await
+                    .unwrap();
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    loop {
+                        // An invalid request checks admission synchronously without
+                        // creating an owner or contending on the ledger under test.
+                        let error = service
+                            .begin_voice_output(
+                                f.user,
+                                Uuid::nil(),
+                                channel.scope,
+                                channel.clone(),
+                                CancellationToken::new(),
+                                None,
+                            )
+                            .err()
+                            .expect("nil request must not create an output owner");
+                        let message = error.to_string();
+                        if message.starts_with(
+                            "invalid delivery transition: delivery recovery is unavailable:",
+                        ) || message
+                            == "invalid delivery transition: delivery admission is closed"
+                        {
+                            break;
+                        }
+                        assert_eq!(message, "invalid original output owner");
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                })
+                .await
+                .expect("the original recovery deadline must close admission");
+                assert!(
+                    service.shutdown_pending(),
+                    "recovery must retain the original supervisor"
+                );
+                blocked.rollback().await.unwrap();
+                tokio::time::timeout(Duration::from_secs(8), async {
+                    loop {
+                        match service.prepare(input.clone()).await {
+                            Ok(_) => break,
+                            Err(DeliveryError::InvalidTransition(_)) => {}
+                            Err(error) => panic!("unexpected recovery error: {error}"),
+                        }
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                })
+                .await
+                .expect("successful recovery must reopen the same supervisor");
+                channel.release.add_permits(1);
+                let (response, _producer) = prepared_output(&service, &f, &channel).await;
+                let record = service
+                    .deliver_audio(request(
+                        response.response_id,
+                        channel.clone(),
+                        CancellationToken::new(),
+                    ))
+                    .await
+                    .unwrap();
+                assert_eq!(record.status, DeliveryStatus::Submitted);
+                let retry = service
+                    .deliver_audio(request(
+                        response.response_id,
+                        channel.clone(),
+                        CancellationToken::new(),
+                    ))
+                    .await
+                    .unwrap();
+                assert_eq!(retry.delivery_id, record.delivery_id);
+                assert_eq!(channel.calls.load(Ordering::SeqCst), 1);
+                service.shutdown().await.unwrap();
+            })
+        },
+        |service| async move {
+            if let Some(service) = service {
+                let _ = service.shutdown().await;
+            }
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn dropping_caller_preserves_supervisor_and_shutdown_uses_exact_identity() {
     with_db(|f| async move {
         let stop = CancellationToken::new();

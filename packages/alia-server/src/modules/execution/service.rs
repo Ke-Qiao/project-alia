@@ -35,6 +35,7 @@ pub struct ExecutionService {
     cancellations: StdMutex<HashMap<Uuid, (Uuid, CancellationToken)>>,
     task: Mutex<Option<JoinHandle<anyhow::Result<()>>>>,
     pub(crate) fault: StdMutex<Option<String>>,
+    pub(crate) scan_fault: StdMutex<Option<String>>,
 }
 
 #[derive(Clone)]
@@ -92,6 +93,7 @@ impl ExecutionService {
             cancellations: StdMutex::new(HashMap::new()),
             task: Mutex::new(None),
             fault: StdMutex::new(None),
+            scan_fault: StdMutex::new(None),
         }))
     }
 
@@ -201,6 +203,9 @@ impl ExecutionService {
         if let Some(fault) = self.fault.lock().unwrap().as_ref() {
             anyhow::bail!("execution shutdown reported failure: {fault}");
         }
+        if let Some(fault) = self.scan_fault.lock().unwrap().as_ref() {
+            anyhow::bail!("execution shutdown with unresolved ledger scan: {fault}");
+        }
         Ok(())
     }
 
@@ -231,7 +236,10 @@ impl ExecutionService {
     pub fn health(&self) -> ModuleHealth {
         match self.fault.lock().unwrap().as_ref() {
             Some(fault) => ModuleHealth::Unhealthy(fault.clone()),
-            None => ModuleHealth::Healthy,
+            None => match self.scan_fault.lock().unwrap().as_ref() {
+                Some(fault) => ModuleHealth::Unhealthy(fault.clone()),
+                None => ModuleHealth::Healthy,
+            },
         }
     }
 

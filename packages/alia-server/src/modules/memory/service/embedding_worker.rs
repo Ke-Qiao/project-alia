@@ -91,7 +91,11 @@ impl ProjectionRuntime {
         startup.spawn_loop("Memory embedding rebuild", async move {
             let mut cursor = None;
             loop {
-                match scan(&db, cursor).await {
+                let result = scan(&db, cursor).await;
+                // A successful scan confirms DB access, not a failed projection write.
+                diagnostics.write().await.rebuild_scan_error =
+                    result.as_ref().err().map(ToString::to_string);
+                match result {
                     Ok(seeds) if !seeds.is_empty() => {
                         for seed in seeds {
                             // Advance even when inference or validation fails.
@@ -121,7 +125,6 @@ impl ProjectionRuntime {
                         tokio::time::sleep(SWEEP_INTERVAL).await;
                     }
                     Err(error) => {
-                        diagnostics.write().await.last_error = Some(error.to_string());
                         tracing::warn!(error=?error,"Memory rebuild scan failed");
                         tokio::time::sleep(SWEEP_INTERVAL).await;
                     }

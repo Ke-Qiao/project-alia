@@ -18,7 +18,10 @@ use alia_server::{
             MemoryService,
             context::{ContextPolicy, ContextPolicyStore},
         },
-        platform::{lifecycle::ModuleLifecycle, migrations},
+        platform::{
+            lifecycle::{ModuleHealth, ModuleLifecycle},
+            migrations,
+        },
     },
     providers::adapter::*,
 };
@@ -26,6 +29,7 @@ use async_trait::async_trait;
 use futures::FutureExt;
 use sea_orm::{
     ConnectOptions, ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement,
+    TransactionTrait,
 };
 use serde_json::Value;
 use tokio::sync::{RwLock, Semaphore};
@@ -639,4 +643,117 @@ async fn vector_sql_failure_keeps_canonical_write_and_surfaces_retrieval_failure
         f.db.execute(sql("UPDATE memory_embeddings SET input_digest=$1",vec![embedding_text_digest("wrong canonical body").into()])).await.unwrap();
         assert!(f.memory.retrieve(f.owner,"query",RetrievalOpts::default()).await.is_err());
     }).await;
+}
+
+#[tokio::test]
+async fn successful_empty_scan_clears_only_its_recovered_database_failure() {
+    with_db(|f| async move {
+        let blocked = f.db.begin().await.unwrap();
+        blocked
+            .execute_unprepared("SELECT singleton FROM context_policy FOR UPDATE")
+            .await
+            .unwrap();
+        f.memory.start().await.unwrap();
+        wait_until(|| async {
+            matches!(f.memory.health_check().await,
+                ModuleHealth::Degraded(error) if error == "Memory rebuild scan timed out")
+        })
+        .await;
+        blocked.rollback().await.unwrap();
+
+        // Keep the production 30s sweep interval and the existing 8s assertion budget.
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        wait_until(|| async { matches!(f.memory.health_check().await, ModuleHealth::Healthy) })
+            .await;
+        let diagnostics = f.memory.memory_capabilities().await.diagnostics;
+        assert!(!diagnostics.contains_key("last_error"));
+        assert!(!diagnostics.contains_key("rebuild_scan_error"));
+        assert_eq!(f.probe.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(f.count().await, 0);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn successful_projection_does_not_clear_failed_rebuild_scan() {
+    with_db(|f| async move {
+        let blocked = f.db.begin().await.unwrap();
+        blocked
+            .execute_unprepared("SELECT singleton FROM context_policy FOR UPDATE")
+            .await
+            .unwrap();
+        f.memory.start().await.unwrap();
+        wait_until(|| async {
+            matches!(f.memory.health_check().await,
+                ModuleHealth::Degraded(error) if error == "Memory rebuild scan timed out")
+        })
+        .await;
+        blocked.rollback().await.unwrap();
+
+        f.memory
+            .store(f.owner, node("confirmed inline projection"))
+            .await
+            .unwrap();
+        assert_eq!(f.count().await, 1);
+        assert!(matches!(f.memory.health_check().await,
+            ModuleHealth::Degraded(error) if error == "Memory rebuild scan timed out"));
+        let diagnostics = f.memory.memory_capabilities().await.diagnostics;
+        assert_eq!(diagnostics["last_error"], "Memory rebuild scan timed out");
+        assert_eq!(
+            diagnostics["rebuild_scan_error"],
+            "Memory rebuild scan timed out"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn empty_scan_recovery_does_not_clear_unconfirmed_projection_write() {
+    with_db(|f| async move {
+        f.db.execute_unprepared("CREATE FUNCTION fail_vector_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected vector failure'; END $$; CREATE TRIGGER fail_vector_insert BEFORE INSERT ON memory_embeddings FOR EACH ROW EXECUTE FUNCTION fail_vector_insert()").await.unwrap();
+        let id = f.memory.store(f.owner, node("unconfirmed projection")).await.unwrap();
+        let write_error = match f.memory.health_check().await {
+            ModuleHealth::Degraded(error) => error,
+            health => panic!("failed projection unexpectedly healthy: {health:?}"),
+        };
+        assert!(write_error.contains("injected vector failure"));
+        f.policy(|policy| policy.memory_enabled = false).await;
+
+        let blocked = f.db.begin().await.unwrap();
+        blocked
+            .execute_unprepared("SELECT singleton FROM context_policy FOR UPDATE")
+            .await
+            .unwrap();
+        f.memory.start().await.unwrap();
+        wait_until(|| async {
+            f.memory.memory_capabilities().await.diagnostics.get("rebuild_scan_error")
+                == Some(&Value::String("Memory rebuild scan timed out".into()))
+        })
+        .await;
+        assert!(matches!(f.memory.health_check().await,
+            ModuleHealth::Degraded(error) if error == write_error));
+        blocked.rollback().await.unwrap();
+
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        wait_until(|| async {
+            !f.memory.memory_capabilities().await.diagnostics.contains_key("rebuild_scan_error")
+        })
+        .await;
+        let diagnostics = f.memory.memory_capabilities().await.diagnostics;
+        assert_eq!(diagnostics["last_error"], write_error);
+        assert!(matches!(f.memory.health_check().await,
+            ModuleHealth::Degraded(error) if error == write_error));
+        assert_eq!(f.probe.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(f.count().await, 0);
+
+        f.db.execute_unprepared("DROP TRIGGER fail_vector_insert ON memory_embeddings").await.unwrap();
+        f.policy(|policy| policy.memory_enabled = true).await;
+        f.memory.update(f.owner, &id, MemoryPatch {
+            content: Some("confirmed replacement projection".into()),
+            ..Default::default()
+        }).await.unwrap();
+        assert_eq!(f.count().await, 1);
+        assert!(matches!(f.memory.health_check().await, ModuleHealth::Healthy));
+    })
+    .await;
 }

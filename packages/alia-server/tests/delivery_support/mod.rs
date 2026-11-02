@@ -271,6 +271,9 @@ impl Fixture {
     pub(crate) fn schema_name(&self) -> &str {
         &self.schema
     }
+    pub(crate) fn diagnostic_database(&self) -> &DatabaseConnection {
+        &self.admin
+    }
     async fn cleanup(self) {
         let work_pool = if matches!(self.db, DatabaseConnection::Disconnected) {
             Ok(())

@@ -119,6 +119,7 @@ struct RuntimeDiagnostics {
     embedding_dimension: Option<usize>,
     retrieval: String,
     last_error: Option<String>,
+    rebuild_scan_error: Option<String>,
 }
 
 impl Default for RuntimeDiagnostics {
@@ -131,6 +132,7 @@ impl Default for RuntimeDiagnostics {
             embedding_dimension: None,
             retrieval: "keyword_overlap".to_string(),
             last_error: None,
+            rebuild_scan_error: None,
         }
     }
 }
@@ -1753,10 +1755,14 @@ impl ModuleLifecycle for MemoryService {
 
     async fn health_check(&self) -> ModuleHealth {
         let diagnostics = self.diagnostics.read().await;
-        if diagnostics.persistence == "postgres" && diagnostics.last_error.is_none() {
+        let error = diagnostics
+            .last_error
+            .as_ref()
+            .or(diagnostics.rebuild_scan_error.as_ref());
+        if diagnostics.persistence == "postgres" && error.is_none() {
             ModuleHealth::Healthy
         } else {
-            ModuleHealth::Degraded(diagnostics.last_error.clone().unwrap_or_else(|| {
+            ModuleHealth::Degraded(error.cloned().unwrap_or_else(|| {
                 "memory runtime is using degraded storage or retrieval".to_string()
             }))
         }
@@ -2271,10 +2277,18 @@ impl MemoryService {
             "retrieval".to_string(),
             serde_json::json!(diagnostics.retrieval),
         );
-        if let Some(error) = diagnostics.last_error {
+        if let Some(error) = diagnostics
+            .last_error
+            .or(diagnostics.rebuild_scan_error.clone())
+        {
             capabilities
                 .diagnostics
                 .insert("last_error".to_string(), serde_json::json!(error));
+        }
+        if let Some(error) = diagnostics.rebuild_scan_error {
+            capabilities
+                .diagnostics
+                .insert("rebuild_scan_error".to_string(), serde_json::json!(error));
         }
         capabilities
     }
