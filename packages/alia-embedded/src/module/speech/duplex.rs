@@ -357,6 +357,7 @@ impl Session {
             .sample_offset
             .checked_add(frame.pcm.len() as u64)
             .context("capture sample clock overflow")?;
+        let frame_samples = frame.pcm.len();
         self.playback
             .accept_capture(&self.capture, self.sequence, frame.speech_active, || {
                 self.tx
@@ -366,7 +367,22 @@ impl Session {
                         pcm_s16le: pcm16_to_le_bytes(&frame.pcm),
                         speech_active: frame.speech_active,
                     })
-                    .context("voice upload queue full or disconnected; session cannot continue")
+                    .map_err(|error| {
+                        let reason = match error {
+                            mpsc::error::TrySendError::Full(_) => "full",
+                            mpsc::error::TrySendError::Closed(_) => "closed",
+                        };
+                        // Keep the cause in the outer message consumed by Runtime.
+                        // Capacity is sampled after failure; never format the PCM frame.
+                        anyhow::anyhow!(
+                            "voice upload queue {reason}; session cannot continue; sequence={} sample_offset={} frame_samples={} capacity={} max_capacity={}",
+                            self.sequence,
+                            self.sample_offset,
+                            frame_samples,
+                            self.tx.capacity(),
+                            self.tx.max_capacity(),
+                        )
+                    })
             })?;
         self.sequence = next_sequence;
         self.sample_offset = next_offset;

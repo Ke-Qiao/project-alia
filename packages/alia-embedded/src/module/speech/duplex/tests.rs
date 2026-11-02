@@ -899,9 +899,7 @@ async fn native_capture_loss_clears_partial_wake_before_accepting_new_audio() {
     }
 }
 
-#[tokio::test]
-async fn full_upload_queue_cancels_and_joins_without_waiting_for_network() {
-    let (tx, _rx) = mpsc::channel(1);
+fn stalled_upload_session(tx: mpsc::Sender<CaptureFrame>) -> Session {
     let cancel = CancellationToken::new();
     let waiting = cancel.clone();
     let task = tokio::spawn(async move {
@@ -912,7 +910,7 @@ async fn full_upload_queue_cancels_and_joins_without_waiting_for_network() {
     let cue_task = tokio::spawn(async move {
         cue_cancel.cancelled().await;
     });
-    let mut session = Session {
+    Session {
         playback: Arc::new(PlaybackSession::new(Arc::new(LocalAudio::default()))),
         capture: CaptureControlBarrier::default(),
         tx,
@@ -921,20 +919,28 @@ async fn full_upload_queue_cancels_and_joins_without_waiting_for_network() {
         cue_task,
         sequence: 0,
         sample_offset: 0,
-    };
+    }
+}
+
+#[tokio::test]
+async fn full_upload_queue_cancels_and_joins_without_waiting_for_network() {
+    let (tx, _rx) = mpsc::channel(1);
+    let mut session = stalled_upload_session(tx);
     session
         .enqueue(Captured {
             pcm: vec![1; 320],
             speech_active: true,
         })
         .unwrap();
-    assert!(
-        session
-            .enqueue(Captured {
-                pcm: vec![2; 320],
-                speech_active: true
-            })
-            .is_err()
+    let error = session
+        .enqueue(Captured {
+            pcm: vec![2; 320],
+            speech_active: true,
+        })
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "voice upload queue full; session cannot continue; sequence=1 sample_offset=320 frame_samples=320 capacity=0 max_capacity=1"
     );
     assert_eq!((session.sequence, session.sample_offset), (1, 320));
     tokio::time::timeout(
@@ -944,6 +950,99 @@ async fn full_upload_queue_cancels_and_joins_without_waiting_for_network() {
     .await
     .unwrap()
     .unwrap();
+}
+
+#[tokio::test]
+async fn closed_upload_queue_preserves_frame_clock_and_joins() {
+    let (tx, rx) = mpsc::channel(1);
+    let mut session = stalled_upload_session(tx);
+    drop(rx);
+    let error = session
+        .enqueue(Captured {
+            pcm: vec![7456; 320],
+            speech_active: true,
+        })
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "voice upload queue closed; session cannot continue; sequence=0 sample_offset=0 frame_samples=320 capacity=1 max_capacity=1"
+    );
+    assert_eq!((session.sequence, session.sample_offset), (0, 0));
+    assert!(
+        session
+            .playback
+            .accept_capture(&session.capture, 0, false, || Ok(()))
+            .unwrap_err()
+            .to_string()
+            .contains("capture owner retired")
+    );
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        end_session(&mut Some(session), &EventBus::new(4)),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+}
+
+#[tokio::test]
+async fn full_upload_queue_before_ready_keeps_audio_local_and_joins() {
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let mut harness = harness_with_ready_gate(16, Some(gate.clone())).await;
+    let mut session = harness.runtime.start_session(None, None);
+    let Seen::Opened { output, .. } = received(&mut harness.seen).await else {
+        panic!("expected Open before Ready");
+    };
+    for _ in 0..harness.runtime.config.upload_queue_frames {
+        session
+            .enqueue(Captured {
+                pcm: vec![7456; 320],
+                speech_active: true,
+            })
+            .unwrap();
+    }
+    let error = session
+        .enqueue(Captured {
+            pcm: vec![7456; 320],
+            speech_active: true,
+        })
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "voice upload queue full; session cannot continue; sequence=8 sample_offset=2560 frame_samples=320 capacity=0 max_capacity=8"
+    );
+    assert_eq!((session.sequence, session.sample_offset), (8, 2560));
+    assert!(
+        harness.seen.try_recv().is_err(),
+        "audio escaped before Ready"
+    );
+    assert!(
+        harness
+            .runtime
+            .playback_session
+            .active_scope()
+            .unwrap()
+            .is_none()
+    );
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        end_session(&mut Some(session), &harness.events),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    // Release the fake server only after the original upload task has joined.
+    gate.add_permits(1);
+    drop(output);
+    harness.shutdown.cancel();
+    tokio::time::timeout(Duration::from_secs(3), harness.server)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        harness.seen.try_recv().is_err(),
+        "retired capture was uploaded"
+    );
 }
 
 #[tokio::test]
