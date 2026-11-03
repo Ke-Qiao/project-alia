@@ -1,5 +1,28 @@
 # 软件发布资料与真实模型链前置
 
+## 连续对话与主动打断现场结果（2026-11-04）
+
+双端独立提交 `588c434`（Mac PID96139／Pi PID8106）完成一次用户反馈结束的真人窗口。**用户确认两轮正常对话和主动打断成功；第一条完整提交，第二条输出后主动取消，播放线程持续存活。** 第一条End=true、offered／accepted／submitted均406612源帧，Delivery为submitted／submission_finished；第二条已提交228670源帧后Pause Applied并cancelled，不能把主动打断终态判为无声失败，也不能把它写成自然完整End。第三条又成功注册并提交193470帧，后来进入WAIT，按原60秒hold到期取消；`original hold expired`错误保留，对该段声源／意图不作额外认定。见[本轮现场详情](model-services.md#连续对话与主动打断现场结果2026-11-04)、[完整原始日志](../../run/voice-acceptance-20261104-followup/next-window/live-01/acceptance-complete.private.log)与[审阅报告](../../run/voice-acceptance-20261104-followup/next-window/live-01/review-preparation/review-final.md)。
+
+三个新response均cache_miss并有新LLM结果，Juno实际目标文本无旧“勒莱特”话题。Pi PID8106、播放8113／采集8114及原采集trigger保持；无新增EPIPE、backend dead或unknown。五claims与身份／配置摘要一致。170.522秒后用户反馈结束，Start／Stop各一次，精确Stop为同boot、generation3 inactive／available，没有断电或重复初始化。采集只读SQL一次、SSH一次，各维持5秒限制，原始结果与sha摘要见[证据清单](../../run/voice-acceptance-20261104-followup/next-window/live-01/review-preparation/evidence-manifest.json)；本窗没有追加软件回归，不与下方各平台测试数量相加。
+
+用户随后明确要求**默认关闭barge-in、扬声器音量最大**，并纠正了先前“麦克风”用词。扬声器已一次写到Device硬件上限 **37,37／100%／0dB**，播放开关on；一次生产`alsactl store Device`成功后读回一致，其他声卡保存内容逐字未变。软件mic volume仍1.0，Pi PID8106、capture8114／原trigger与play8113保持，没有重启、CaptureStart或播放。见[硬件与持久化原始结果](../../run/voice-acceptance-20261104-followup/speaker-level/set-speaker-max.stdout.json)及[执行记录](../../run/voice-acceptance-20261104-followup/speaker-level/set-speaker-max-execution.json)。本次没有重启或热插拔还原验收，最大音量的新听感仍待真人确认。
+
+默认关闭barge-in的主线提交为 **`7f9d4f879c554852e223d944ef69874911075f47`**，独立候选 **`d7126a9556a87bd7685b2fea8d0c1a9a31689c27`**。开关默认false并严格加载已保存设置；抑制普通回复期间的麦克风判句，仍验证帧序号／clock／鉴权，保留系统Stop和主动输出独立安全检查。跨回复结尾的讲话需等silence后再说新句；口头停止也属于被关闭的语音打断。六个Mac ARM64目标各执行一次，默认并发及原期限保持，结果分别如下：
+
+| 目标 | 通过／失败／忽略 | 原始日志 |
+| --- | --- | --- |
+| VoiceSession actor | 32／0／0 | [actor](../../run/voice-preferences-20261104/validation/voice-actor.log) |
+| Duplex配置 | 2／0／0 | [config](../../run/voice-preferences-20261104/validation/config.log) |
+| 设置保存／重载 | 1／0／0 | [settings](../../run/voice-preferences-20261104/validation/settings.log) |
+| 默认关闭下系统Start／Stop | 1／0／0 | [system-stop](../../run/voice-preferences-20261104/validation/system-stop.log) |
+| 显式启用后的原打断行为 | 1／0／0 | [enabled-interruption](../../run/voice-preferences-20261104/validation/enabled-interruption.log) |
+| 原输出所有权与软件尾部 | 1／0／0 | [output-owner-tail](../../run/voice-preferences-20261104/validation/output-owner-tail.log) |
+
+[验证清单](../../run/voice-preferences-20261104/validation/results.json)固定源码与日志摘要；真实隔离PostgreSQL已[清理](../../run/voice-preferences-20261104/validation/database-cleanup.json)。不相加、不重复完整workspace，不把Mac软件结果算作新偏好真人验收。**独立d7126a9已正式切换到Mac，PID5817，默认关闭已经生效。** 二进制SHA256为`edc05a0dd8c62507b815138b36cb48fc27eadd980b22962e1ae29da06ac6cb09`，有效配置SHA256为`1158d62edc03e42a14b2a13e1d6ec0a12262c80e2555392b898b10ddb4f99306`；启动日志唯一一条`barge_in_enabled=false`。旧PID96139以exit0在约0.117秒停止，新进程HTTP health约4.948秒返回，只代表HTTP就绪，不能写成当时全链Ready。UTC17:04:52.078147出现一次transport warning，17:04:57.147825自动connected；签名确认Pi仍同boot、generation3 inactive／available，未开新讲话窗口，见[切换后连接与身份审阅](../../run/voice-preferences-20261104/mac-deploy/activation-review.json)及[含连接事件的完整日志](../../run/voice-preferences-20261104/mac-deploy/activation-server.out.log)。凭据、管理员、33项迁移、embedding固定身份与终态账本保持，Companion仍shadow；Pi仍588c434／PID8106，未重启。见[Mac构建验证](../../run/voice-preferences-20261104/mac-build/validation.json)、[产物清单](../../run/voice-preferences-20261104/mac-build/artifacts.json)、[实际切换记录](../../run/voice-preferences-20261104/mac-deploy/activation.json)与[完整启动日志](../../run/voice-preferences-20261104/mac-deploy/start-server.out.log)。
+
+新偏好尚未真人复验；下一步验证回复期间讲话不打断、回复结束后新句可答，以及最大音量听感，不重复已通过的连续两轮。[延迟分析](../../run/voice-acceptance-20261104-followup/next-window/live-01/latency-review.md)已交付，优化取舍安排在新偏好验收之后。正常换气长句、无主动打断的连续结束、取消／恢复与下一轮、系统Start／Stop、实际升级恢复、24小时负载、AEC及具体插件仍分别验收；旧连接transport error和V01—V07不因这一次成功自动关闭。
+
 ## 连续输出启动储备与历史提示修复（2026-11-04）
 
 连续两轮真人窗口中，第一条有可闻回复且技术记录完整：End 收到，offered／accepted／submitted 均为 673420 源帧，Delivery 为 `submitted`。第二条零帧 unknown、没有回复，Pi 报 EPIPE 并退出输出线程；第三次注册失败，采集保持。第一条额外回答“勒莱特”已追到同一会话的旧 user 消息及重复 system 提示，当前三条转写正确。完整结果与限制见[本轮现场记录](model-services.md#连续两轮首条完整提交第二条播放退出2026-11-04)，不与前一窗口“用户确认听到完整回复”混为一次结果。

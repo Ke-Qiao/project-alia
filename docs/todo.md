@@ -1,6 +1,6 @@
 # Project Alia TODO
 
-更新：2026-11-04。**连续两轮测试中第一条有回复且 End／提交帧数完整，第二条因 Pi EPIPE 无声；双端修复均已安装，等待下一次连续真人验收。** 第一条技术结果为 submitted，三类帧数均 673420；第二条零帧 unknown，播放线程退出但采集保持。“勒莱特”已追到旧 user 历史和重复 system 提示，已删除冗余引用，保留原历史和当前最后 user。主线330e282、独立588c434；Pi PID8106，generation1 inactive／available，五 claims 保持，无初始化；Mac 同为588c434／PID96139，旧14258正常退出，33条迁移、embedding pins、账本、管理员与凭据保持。HTTP健康接口4.918秒返回后，连接Pi又经历三次transport error才自动连上，原因未定；不把4.918秒写成全链就绪。Linux ALSA **9/0/0**、共用播放 **56/0/0**，Mac播放 **56/0/0**、提示词 **5/0/0**分别通过；旧代码反例 **0/1/0**保留，不相加。新版本连续真人结果仍待验证。见[当前记录](operations/model-services.md#连续两轮首条完整提交第二条播放退出2026-11-04)与[软件和日志](operations/software-release.md#连续输出启动储备与历史提示修复2026-11-04)。下一步直接在双端已就绪状态下做连续两轮短句，由用户反馈结束，不需要断电、不设整场倒计时。
+更新：2026-11-04。**用户已确认连续两轮正常对话及主动打断成功；播放线程保持，旧“勒莱特”话题未再出现。** 该真人窗口双端588c434，Mac PID96139、Pi PID8106。第一条End完整、三类源帧均406612；第二条已有输出后主动打断取消；第三条随后输出并进入WAIT，原60秒hold到期取消，`original hold expired`原错误保留。没有新增EPIPE、backend dead或unknown，五claims与采集trigger保持，精确Stop为generation3 inactive。三个新回答均cache_miss，不用旧缓存掩盖修复。见[本轮现场结果](operations/model-services.md#连续对话与主动打断现场结果2026-11-04)与[完整日志](../run/voice-acceptance-20261104-followup/next-window/live-01/acceptance-complete.private.log)。用户最新要求是默认关闭语音打断、**扬声器音量最大**；扬声器已改为37,37／100%／0dB并持久保存，麦克风1.0和Pi持续采集保持。默认关闭代码已提交主线7f9d4f8、独立d7126a9，Mac六个定向目标分别通过；生产Mac已切换为d7126a9／PID5817，启动日志唯一记录barge_in_enabled=false，凭据、管理员、33项迁移、embedding与终态账本保持，Companion仍shadow。Pi仍588c434／PID8106，未重启。见[实际切换](../run/voice-preferences-20261104/mac-deploy/activation.json)；HTTP health约4.948秒返回；之后一次transport warning，经自动重试于UTC17:04:57.147825连接Pi，同boot／generation3 inactive，没有新讲话窗口，见[切换审阅](../run/voice-preferences-20261104/mac-deploy/activation-review.json)。下一步验回复期间讲话不打断、回复结束后新句可答及最大音量听感；这些新偏好尚未真人复验，不重复已通过的两轮。[延迟报告](../run/voice-acceptance-20261104-followup/next-window/live-01/latency-review.md)已完成；先验新偏好，再决定延迟优化，长句／恢复等门槛仍开放，不要求反复断电，不设整场倒计时。
 
 最新实现：[架构概览](architecture/overview.md)、[Embodiment](architecture/embodiment.md)、[工具构建](concepts/skills-and-tools.md)、[MCP](operations/mcp-tools.md)、[WASM 插件](operations/wasm-plugins.md)。验证结果统一引用[软件发布记录](operations/software-release.md)，不将不同源码、平台或重复测试相加为项目完成率。
 
@@ -38,13 +38,13 @@ S01—S03 是 10 月 20 日的交付与部署出口，该轮没有新增生产�
 
 - [ ] **V06 · VoiceSession Ready 前上传终止。** 11月3日第一次 Start 后约0.703秒、Ready前出现合并的 Full／Closed 错误，无法回溯分型。已补最小诊断元数据并完成双平台定向验证；独立 `d392401` 只携带该增量，已安装到 Pi。随后唯一一次无讲话检查取得 Ready，并在约0.795秒内完成 Start／精确 Stop ACK，没有复现故障；**不因此关闭根因**。原容量、期限、并发和首错保持，不重复现场求绿。下一次真人窗口直接复用诊断件，若再失败按具体 Full／Closed 和同窗日志有界定位。见[原失败](operations/model-services.md#voicesession-ready-前上传终止2026-11-03)与[诊断启动](operations/model-services.md#诊断版无讲话启动核对2026-11-03)。
 
-- [ ] **V07 · R1 冷启动版本握手超时与免唤醒恢复。** UART准备已前移，修复版58bb11e在用户确认的新冷启动中一次完成版本查询和beam0命令，原期限不变；PID4532的原生采集保持至本轮升级正常停止。旧版本超时和错误关闭流的记录保留，不把一次初始化成功写成日常断电、USB重连均已恢复。后续指定句已正确识别，feedback04的无声已定位为独立播放worker退出，不能继续归因R1输入。138ee28普通重启未发UART，实际指定句识别与用户可闻回复已取得；后续ALSA underrun属于输出错误；3bd88c8连续窗口第一条提交完整、第二条仍EPIPE，现已装588c434等待双端修复后复验。不能因此前单次成功认定日常断电／USB重连全部恢复；连续输出按M01继续验收。见[当前结果](operations/model-services.md#播放后端退出与显式-start-恢复2026-11-03-晚)和[初始化软件修复](operations/software-release.md#r1-冷启动顺序修复2026-11-03-晚)。
+- [ ] **V07 · R1 冷启动版本握手超时与免唤醒恢复。** UART准备已前移，修复版58bb11e在用户确认的新冷启动中一次完成版本查询和beam0命令，原期限不变；PID4532的原生采集保持至本轮升级正常停止。旧版本超时和错误关闭流的记录保留，不把一次初始化成功写成日常断电、USB重连均已恢复。后续指定句已正确识别，feedback04的无声已定位为独立播放worker退出，不能继续归因R1输入。138ee28普通重启未发UART，实际指定句识别与用户可闻回复已取得；后续ALSA underrun属于输出错误；3bd88c8连续窗口第一条提交完整、第二条仍EPIPE，588c434双端复验已取得连续对话和主动打断反馈，播放线程保持。不能因此前单次成功认定日常断电／USB重连全部恢复；连续输出按M01继续验收。见[当前结果](operations/model-services.md#播放后端退出与显式-start-恢复2026-11-03-晚)和[初始化软件修复](operations/software-release.md#r1-冷启动顺序修复2026-11-03-晚)。
 
 ## 待输入或明确恢复后推进
 
 | ID | 任务与当前状态 | 恢复条件与完成标准 |
 | --- | --- | --- |
-| M01 | **首条可闻且提交完整；第二条无声，双端修复已就绪待真人** | 3bd88c8上第一条End／673420源帧完整、用户有回复反馈；第二条零帧unknown并EPIPE，第三次注册失败。旧问题被重复为system已修正，历史保留；缓存pending／safe=false／hit0，active未过期0，无需清理。独立588c434已装Pi/PID8106，启动前填满原缓冲静音，原缓冲和期限不变；Mac同为588c434/PID96139，提示词修复已启用；旧进程exit0，迁移／embedding pins／终态账本和身份保持。HTTP健康返回早于Pi实际连接；三次transport error后自动连上，原错误保留。下一窗不要求断电，用户反馈结束，同时核对两轮可闻、End／帧数、播放线程和新LLM生成，再验长句／打断／恢复／取消。见[当前记录](operations/model-services.md#连续两轮首条完整提交第二条播放退出2026-11-04)。 |
+| M01 | **连续对话与主动打断获用户确认；新偏好已生效，听感及行为待真人验收** | 双端588c434本窗第一条End完整／406612源帧，第二条输出后被用户主动打断，第三条WAIT原60秒到期取消。播放8113／采集8114保持，无新增EPIPE、backend dead或unknown，旧话题未出现；不能写成两条都自然完整End。扬声器已37,37／100%／0dB并store Device成功，麦克风未改；默认关闭barge-in的7f9d4f8／独立d7126a9已通过Mac定向验证，生产Mac已d7126a9／PID5817，启动实际false；Pi仍588c434／PID8106。先验回复中讲话不打断、结束后新句可答、最大音量听感，再验正常换气长句、取消／恢复／下一轮、Start／Stop等剩余项；延迟报告已完成，优化取舍放在新偏好验收之后；本窗错误与限制保留。见[现场结果及日志](operations/model-services.md#连续对话与主动打断现场结果2026-11-04)。 |
 | E01 | **ROS 与具体具身适配器暂缓**：Embodiment 地基已完成，默认没有实际物理适配器 | 用户指定首个设备、通信协议／ROS 版本和目标能力后，实现 `PhysicalAdapter`；核对设备身份、反馈、停止证据、迟到请求终结、断线／重启和共享执行器仲裁。先仿真再实机，沿用 Execution；不扩大 expression 的设备权限。见[接入契约](architecture/embodiment.md)。 |
 | R02-F | **R1 固件改造由用户明确暂缓**：新旧资料、镜像及两份不同虚拟机已核查，未找到匹配板端 SDK；未开发、构建或烧录新固件 | 用户明确恢复后，再取得匹配的最小板端应用 SDK／ABI，或满足契约的受支持常开模式，并补齐当前 1.9.6 恢复路径。核查与候选方案见[硬件记录](operations/hardware-deployment-readiness.md#r1-通用固件工作2026-10-21)，[商家资料清单](operations/r1-firmware-vendor-inputs.md)仅保留为参考，不继续调查或索取。 |
 | R02 | **当前软件接入与分阶段验证已收口；整体验收按条件恢复** | 真实模型整链统一归 M01；AEC 归 R02-AEC。其他方向／安装标定及长稳在实际部署时随 R05 明确范围，不默认重做已通过的 R1 基线。模块正常，R02-F 暂缓不阻断 Alia 主线；FYP ROS 验收不等于 Alia ROS 接入。见[硬件资料](operations/hardware-deployment-readiness.md)。 |
@@ -57,9 +57,9 @@ S01—S03 是 10 月 20 日的交付与部署出口，该轮没有新增生产�
 
 ## 下一步执行顺序
 
-1. **下一步直接做连续两轮短句**：双端均已安装588c434，Mac PID96139、Pi PID8106，上传inactive、五claims与身份保持。Mac旧进程已正常关闭，新启动及33条迁移／embedding pins／终态账本核对完成，模型服务没有停启或调用；健康接口先返回，Pi连接经历三次transport error后自动恢复，无手动Start／Stop重试，原因仍待查。新鲜签名状态和Pi采播线程已核对。用户在场时刷新本窗状态与日志offset，取得Ready再提示讲话。第一条回复后继续第二轮，由用户反馈结束，核对两条可闻结果、各自End／提交帧数、播放线程仍在，以及cache_miss和新LLM结果。不要求断电／UART初始化，不设整场倒计时，不修改模型／RPC／打断期限。
+1. **先验新偏好效果，再继续其余真人验收**：默认关闭barge-in已在生产Mac d7126a9／PID5817生效，扬声器最大音量已写入硬件并持久保存，麦克风未改；Pi仍588c434／PID8106，无重启。先确认回复期间讲话不会打断、结束后安静一下再说新句能回答，以及最大音量实际听感。此前双端588c434的连续对话和主动打断已有用户反馈及日志，不重复同样两轮求通过；延迟报告已完成，新偏好验收后再决定延迟优化，并按剩余门槛安排长句、取消／恢复和下一轮。HTTP health返回不等于Pi会话Ready；真人窗口仍先取得当窗Ready，再提示讲话，由用户反馈结束，不要求断电／UART初始化、不设整场倒计时、不放宽原期限。
 2. **新Rust候选仍留在软件门槛**：V03具体恢复修复已提交、构建产物保留，但V05两次Resume失败未解释，最后一次通过不算根因修复，不部署为已通过候选。下一次有具体假设或新失败时使用已准备的失败专用状态／PG锁诊断，不扩大期限、并发或忽略项，也不重新整套求绿。
-3. 短句通过后集中完成正常换气长句、打断／恢复、输出取消、成功Stop／新Start和下一轮；随后在维护窗口完成应用级成套升级恢复、登录／进程异常／休眠唤醒／resolver重启恢复，以及至少24小时混合故障和资源上界。分阶段结果不合并为整链完成。
+3. 短句连续对话与主动打断已有本次结果；继续完成正常换气长句、无主动打断的连续结束、恢复、输出取消、成功Stop／新Start和下一轮；随后在维护窗口完成应用级成套升级恢复、登录／进程异常／休眠唤醒／resolver重启恢复，以及至少24小时混合故障和资源上界。分阶段结果不合并为整链完成。
 4. AEC等待商家确认后单独验；首版实际MCP／第三方插件按目标验。V01／V02／V03／V04／V05／V06／V07保持各自证据，Companion仍为shadow，固件／ROS／执行器／全面前端及其他平台范围不扩展。
 
 ## 按具体需求再立项

@@ -9,6 +9,26 @@ component checks and actual deployment evidence. The dated sections below retain
 their original scope; the latest validation status is recorded first. Example
 URLs and model names alone are not evidence of deployment or acceptance.
 
+## 连续对话与主动打断现场结果（2026-11-04）
+
+**用户确认第一轮和第二轮都能正常对话，主动打断也可以工作；本轮播放线程保持存活，没有再出现 EPIPE 或 backend dead。** 双端均为独立提交 `588c434`，Mac PID96139、Pi PID8106。本窗由用户反馈结束，持续约170.522秒，Start／Stop各一次，没有整场倒计时、断电或重复UART初始化。用户原反馈、精确Stop和全部Mac／Pi／SQL证据在[完整原始日志](../../run/voice-acceptance-20261104-followup/next-window/live-01/acceptance-complete.private.log)，另有[审阅报告](../../run/voice-acceptance-20261104-followup/next-window/live-01/review-preparation/review-final.md)和[结构化对应关系](../../run/voice-acceptance-20261104-followup/next-window/live-01/review-preparation/review-final.json)。
+
+| 本轮输出 | 实际技术结果 | 判定 |
+| --- | --- | --- |
+| 第一条介绍，`694535f3…` | 54字新回答；offered／accepted／submitted均406612源帧，End=true、submitted／submission_finished | 完整提交；32kHz源音频约12.707秒，用户确认对话正常 |
+| 第二条帮助问题，`143414bf…` | 50字新回答；offered298950／accepted262968／submitted228670，Pause收到Applied后cancelled，End=false | 已输出后被新讲话打断，与用户主动打断反馈一致，不算无声失败 |
+| 后续回复，`de791291…` | 44字新回答；offered193706／accepted193706／submitted193470；随后Pause、ConfirmExplicitWait，再按原60秒hold到期cancelled | 保留等待到期事实，不能写成第三条完整播放或全部归为用户主动测试 |
+
+三个response都有cache_miss及独立LLM调用，约0.796／0.779／0.976秒；实际三次Juno目标文本均无旧“勒莱特”话题，没有复用旧90字答案。Easy-Turn九个输入片段均native成功，最大1176.222ms，无服务timeout；片段数不作为独立验收数量。Juno三次POST为HTTP200；同份日志中的空文本GET400来自只读就绪检查，不是合成失败。
+
+Pi播放线程8113、采集线程8114、同一输出backend instance以及采集trigger保持，五claims、二进制、配置和设备身份摘要一致；结束后输出PREPARED、采集RUNNING。精确Stop回执为同boot、generation3 inactive／available，本地采集连接仍打开。没有新增unknown；presented帧数仍未知，实际听感以用户反馈为准。**本窗不是“两条都自然播完”**：第一条收齐End，第二条被用户主动打断。第三条在UTC16:41:58按原hold截止取消，16:42:04.992出现`original hold expired`，原错误保留；对应后段WAIT的具体声源／意图未单独确认，不把它算成播放线程故障，也不把整窗写成无错误。
+
+用户最新偏好是**默认关闭语音打断，并把扬声器音量调到最大**；此前“麦克风”表述已由用户纠正。扬声器已完成一次硬件写入：独立输出声卡Device的PCM Playback Volume从23,23／−14dB改为 **37,37／100%／0dB**，播放开关保持on；随后一次`alsactl store Device`成功写入生产`asound.state`，重新读取仍为最大值，其他声卡保存内容逐字不变。软件capture／playback volume仍1.0，R1麦克风内容未改；Pi PID8106、采集8114／原trigger及播放8113保持，没有重启、播放或新CaptureStart。见[实际读写与持久化原始结果](../../run/voice-acceptance-20261104-followup/speaker-level/set-speaker-max.stdout.json)和[执行记录](../../run/voice-acceptance-20261104-followup/speaker-level/set-speaker-max-execution.json)。保存成功不等于已验证重启／热插拔恢复，最大音量的真人听感尚未验证。
+
+默认关闭barge-in已实现：主线`7f9d4f8`、独立`d7126a9`；生成、分段和软件媒体尾部期间不判句、不因麦克风输入暂停或替换普通回复，跨尾讲话等silence后再接新句。显式系统Stop／取消与鉴权撤销保持；口头“停止”在关闭期间同样被忽略，用户重新启用并重启Server后才恢复语音打断。SettingsRegistry保存值会在启动时严格加载，Companion独立安全保护保持。Mac actor **32/0/0**、config **2/0/0**、settings／system-stop／enabled-interruption／output-owner-tail各 **1/0/0**，分别记录，不相加；真实隔离PG已清理，未重跑全workspace。见[针对性验证与日志](../../run/voice-preferences-20261104/validation/results.json)。**生产Mac已切换为d7126a9／PID5817，默认关闭已经生效。** 启动日志恰有一条`barge_in_enabled=false`，有效配置SHA256为`1158d62edc03e42a14b2a13e1d6ec0a12262c80e2555392b898b10ddb4f99306`。旧PID96139在约0.117秒内以exit0停止，新进程HTTP health约4.948秒返回；这只表示HTTP可用，不表示当时Pi全链已经Ready。启动后UTC17:04:52.078147有一次transport warning，17:04:57.147825自动connected；签名检查确认为原boot、generation3 inactive／available，未开启新讲话窗口，见[连接与身份审阅](../../run/voice-preferences-20261104/mac-deploy/activation-review.json)及[含连接事件的完整日志](../../run/voice-preferences-20261104/mac-deploy/activation-server.out.log)。凭据、管理员身份、33项迁移、embedding固定身份及终态账本保持，Companion仍shadow；Pi仍588c434／PID8106，未重启。见[正式切换记录](../../run/voice-preferences-20261104/mac-deploy/activation.json)与[完整启动日志](../../run/voice-preferences-20261104/mac-deploy/start-server.out.log)。本窗真人结果仍对应切换前双端588c434，不改写其配置身份。
+
+**新偏好尚未真人复验。** 下一步只针对新增行为确认：回复期间讲话不打断、回复结束后安静一下再说新句可答，以及最大音量的实际听感；不重复已通过的连续两轮。[延迟报告](../../run/voice-acceptance-20261104-followup/next-window/live-01/latency-review.md)及[逐段时间数据](../../run/voice-acceptance-20261104-followup/next-window/live-01/latency-review.json)已完成：第一轮走minor、第二轮直接走major，并非minor回答后升级；两者按有效配置均为Magpie DeepSeek Flash、reasoning_effort=none。Easy-Turn收到片段至首个submitted回执分别约6.225／5.147秒，其中LLM请求约0.796／0.779秒，Delivery dispatch至Juno音频格式可用约2.616／1.800秒。前置Pi默认700ms加Server700ms来自配置和代码推算，未测得说完的精确时刻，也没有耳听起声时间，不能把片段长度或这两项推算当成实测等待。先完成新偏好验收，再决定延迟优化；不以HTTP启动时间代替讲话到回复延迟。其后按实际需要验正常换气长句、取消／恢复与下一轮、Start／Stop及无主动打断的连续结束；24小时负载、真实升级恢复、AEC和具体生产插件仍各自开放。
+
 ## 连续两轮首条完整提交，第二条播放退出（2026-11-04）
 
 **这一轮第一条有可闻回复，技术记录也收齐 End；第二条无声，Pi 又发生 EPIPE 并退出播放线程。** 用户反馈是“第一轮有回复、提到 zerlight、比较慢；第二轮没有回答”，没有把本轮第一条听感扩大成“确认完整听完”。第一条 Delivery 为 `submitted`，offered／accepted／submitted 都是 **673420** 个 32 kHz 源帧，收到 End 和 `submission_finished`，源音频约 21.044 秒；声卡没有提供 presented 完成记录。第二条为零帧 `unknown`、没有 End，第三次输出注册报 `playback backend is not running`。采集线程仍在，Stop 精确回执已收到，本轮由用户反馈结束，没有整场倒计时。见[用户原反馈](../../run/voice-acceptance-20261103-fixed/alsa-stream-gap/next-window/live-01/human-feedback.json)、[完整审阅](../../run/voice-acceptance-20261103-fixed/alsa-stream-gap/next-window/live-01/review-preparation/review-final.md)、[Pi 原始日志](../../run/voice-acceptance-20261103-fixed/alsa-stream-gap/next-window/live-01/embedded.stdout.log.window.private.log)和[同窗 SQL](../../run/voice-acceptance-20261103-fixed/alsa-stream-gap/next-window/live-01/sql-review/raw.private.json)。
