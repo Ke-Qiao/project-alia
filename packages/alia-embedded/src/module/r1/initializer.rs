@@ -13,6 +13,7 @@ pub struct InitializationReport {
     pub cold_boot_id: Uuid,
     pub serial_path: PathBuf,
     pub guard_path: PathBuf,
+    /// Expected value in a claim; an accepted report confirms it was verified.
     pub firmware: String,
     pub beam: u8,
     pub command_id: u16,
@@ -261,6 +262,19 @@ mod linux {
         run(serial, transaction, guard, report, &cancel)
     }
 
+    #[derive(Default)]
+    struct IoDiagnostics {
+        rx_bytes: u64,
+        decoded_frames: u64,
+        handshake_ack_attempted: u64,
+        handshake_ack_completed: u64,
+        version_requery_attempted: u64,
+        version_requery_completed: u64,
+        partial_clears: u64,
+        manual_write_attempted: bool,
+        manual_write_completed: bool,
+    }
+
     fn run(
         mut serial: serial::Serial,
         mut transaction: Transaction,
@@ -269,58 +283,91 @@ mod linux {
         cancel: &CancellationToken,
     ) -> Result<InitializationReport> {
         let start = Instant::now();
-        serial.write(&protocol::version_query(transaction.version_id), cancel)?;
-        let mut decoder = protocol::Decoder::default();
-        let mut partial_since = None;
-        let mut bytes = [0u8; 1024];
-        loop {
-            ensure!(
-                !cancel.is_cancelled(),
-                "R1 initialization cancelled; outcome may be unknown, do not retry"
-            );
-            transaction.check_deadline(start.elapsed())?;
-            let count = serial.read(&mut bytes)?;
-            let now = start.elapsed();
-            ensure!(
-                !cancel.is_cancelled(),
-                "R1 initialization cancelled; outcome may be unknown, do not retry"
-            );
-            if partial_since
-                .is_some_and(|since| now.saturating_sub(since) >= Duration::from_millis(250))
-            {
-                decoder.clear();
-                partial_since = None;
-            }
-            let frames = decoder.push(&bytes[..count]);
-            if decoder.is_empty() {
-                partial_since = None;
-            } else if partial_since.is_none() || !frames.is_empty() {
-                partial_since = Some(now);
-            }
-            for frame in frames {
-                if let Some(ack) = transaction.receive(&frame, start.elapsed())? {
-                    serial.write(&ack, cancel)?;
+        let mut io = IoDiagnostics::default();
+        let result = (|| {
+            serial.write(&protocol::version_query(transaction.version_id), cancel)?;
+            let mut decoder = protocol::Decoder::default();
+            let mut partial_since = None;
+            let mut bytes = [0u8; 1024];
+            loop {
+                ensure!(
+                    !cancel.is_cancelled(),
+                    "R1 initialization cancelled; outcome may be unknown, do not retry"
+                );
+                transaction.check_deadline(start.elapsed())?;
+                let count = serial.read(&mut bytes)?;
+                io.rx_bytes = io.rx_bytes.saturating_add(count as u64);
+                let now = start.elapsed();
+                ensure!(
+                    !cancel.is_cancelled(),
+                    "R1 initialization cancelled; outcome may be unknown, do not retry"
+                );
+                if partial_since
+                    .is_some_and(|since| now.saturating_sub(since) >= Duration::from_millis(250))
+                {
+                    decoder.clear();
+                    io.partial_clears = io.partial_clears.saturating_add(1);
+                    partial_since = None;
+                }
+                let frames = decoder.push(&bytes[..count]);
+                io.decoded_frames = io.decoded_frames.saturating_add(frames.len() as u64);
+                if decoder.is_empty() {
+                    partial_since = None;
+                } else if partial_since.is_none() || !frames.is_empty() {
+                    partial_since = Some(now);
+                }
+                for frame in frames {
+                    if let Some(ack) = transaction.receive(&frame, start.elapsed())? {
+                        io.handshake_ack_attempted = io.handshake_ack_attempted.saturating_add(1);
+                        serial.write(&ack, cancel)?;
+                        io.handshake_ack_completed = io.handshake_ack_completed.saturating_add(1);
+                    }
+                }
+                if let Some(query) = transaction.requery(start.elapsed())? {
+                    io.version_requery_attempted = io.version_requery_attempted.saturating_add(1);
+                    serial.write(&query, cancel)?;
+                    io.version_requery_completed = io.version_requery_completed.saturating_add(1);
+                }
+                if transaction.phase == Phase::Ready {
+                    // Transition before I/O: partial writes and uncertain ACKs consume this attempt.
+                    let command = transaction.manual(start.elapsed())?;
+                    io.manual_write_attempted = true;
+                    serial.write(&command, cancel)?;
+                    io.manual_write_completed = true;
+                }
+                if transaction.phase == Phase::Accepted {
+                    report.command_accepted = true;
+                    serde_json::to_writer(
+                        &mut guard,
+                        &serde_json::json!({"status":"command_accepted", "report":report}),
+                    )?;
+                    guard.write_all(b"\n")?;
+                    guard.sync_all()?;
+                    return Ok(report);
                 }
             }
-            if let Some(query) = transaction.requery(start.elapsed())? {
-                serial.write(&query, cancel)?;
-            }
-            if transaction.phase == Phase::Ready {
-                // Transition before I/O: partial writes and uncertain ACKs consume this attempt.
-                let command = transaction.manual(start.elapsed())?;
-                serial.write(&command, cancel)?;
-            }
-            if transaction.phase == Phase::Accepted {
-                report.command_accepted = true;
-                serde_json::to_writer(
-                    &mut guard,
-                    &serde_json::json!({"status":"command_accepted", "report":report}),
-                )?;
-                guard.write_all(b"\n")?;
-                guard.sync_all()?;
-                return Ok(report);
-            }
-        }
+        })();
+        result.map_err(|error: anyhow::Error| {
+            // Keep the original error visible to to_string callers and retain its
+            // source chain. Only scalar I/O evidence is added, never frame payloads.
+            let message = format!(
+                "{error}; R1 initialization diagnostics phase={:?} version_id={} command_id={} rx_bytes={} decoded_frames={} handshake_ack_attempted={} handshake_ack_completed={} version_requery_attempted={} version_requery_completed={} partial_clears={} manual_write_attempted={} manual_write_completed={} elapsed_ms={}",
+                transaction.phase,
+                transaction.version_id,
+                transaction.command_id,
+                io.rx_bytes,
+                io.decoded_frames,
+                io.handshake_ack_attempted,
+                io.handshake_ack_completed,
+                io.version_requery_attempted,
+                io.version_requery_completed,
+                io.partial_clears,
+                io.manual_write_attempted,
+                io.manual_write_completed,
+                start.elapsed().as_millis(),
+            );
+            error.context(message)
+        })
     }
 
     #[cfg(test)]
@@ -473,6 +520,119 @@ mod linux {
             );
         }
 
+        fn pty_timeout_diagnostics(after_manual: bool) {
+            let directory = tempfile::tempdir().unwrap();
+            let (guard, report) = claim(
+                &config(),
+                &directory.path().join("state.sqlite3"),
+                Uuid::new_v4(),
+                101,
+            )
+            .unwrap();
+            let guard_path = report.guard_path.clone();
+            let (mut board, serial, _) = serial::pty();
+            let (send, receive) = std::sync::mpsc::sync_channel(1);
+            let worker = thread::spawn(move || {
+                send.send(run(
+                    serial,
+                    Transaction::new(100),
+                    guard,
+                    report,
+                    &CancellationToken::new(),
+                ))
+                .unwrap();
+            });
+            assert_eq!(read_frame(&mut board).id, 100);
+            let handshake = protocol::encode(1, 9, &[0xa5, 0, 0, 0]);
+            board.write_all(&handshake).unwrap();
+            assert_eq!(read_frame(&mut board).kind, 255);
+            assert_eq!(read_frame(&mut board).id, 100);
+            let mut rx_bytes = handshake.len();
+            if after_manual {
+                let version = protocol::encode(
+                    5,
+                    100,
+                    &serde_json::to_vec(
+                        &serde_json::json!({"code":0,"content":protocol::MANUAL_CAPTURE_FIRMWARE}),
+                    )
+                    .unwrap(),
+                );
+                board.write_all(&version).unwrap();
+                rx_bytes += version.len();
+                let manual = read_frame(&mut board);
+                assert_eq!((manual.kind, manual.id), (5, 101));
+            } else {
+                let partial = protocol::encode(5, 100, b"private-partial-payload");
+                board.write_all(&partial[..partial.len() - 1]).unwrap();
+                rx_bytes += partial.len() - 1;
+            }
+            let error = receive
+                .recv_timeout(Duration::from_secs(3))
+                .unwrap()
+                .unwrap_err();
+            worker.join().unwrap();
+            let message = error.to_string();
+            let expected = if after_manual {
+                "R1 manual_wakeup ACK timed out; outcome unknown, do not retry"
+            } else {
+                "R1 version response timed out; manual_wakeup was not sent"
+            };
+            assert!(message.starts_with(expected));
+            assert_eq!(error.root_cause().to_string(), expected);
+            for field in [
+                "version_id=100",
+                "command_id=101",
+                "handshake_ack_attempted=1",
+                "handshake_ack_completed=1",
+                "version_requery_attempted=1",
+                "version_requery_completed=1",
+                "elapsed_ms=",
+            ] {
+                assert!(message.contains(field), "missing {field}: {message}");
+            }
+            assert!(message.contains(&format!("rx_bytes={rx_bytes} ")));
+            assert!(!format!("{error:#}").contains("private-partial-payload"));
+            assert!(!format!("{error:#}").contains(protocol::MANUAL_CAPTURE_FIRMWARE));
+            if after_manual {
+                assert!(message.contains("phase=Ack "));
+                assert!(message.contains("decoded_frames=2 "));
+                assert!(
+                    message.contains("manual_write_attempted=true manual_write_completed=true")
+                );
+                assert!(!message.contains("manual_wakeup was not sent"));
+            } else {
+                assert!(message.contains("phase=Version "));
+                assert!(message.contains("decoded_frames=1 "));
+                assert!(
+                    message.contains("manual_write_attempted=false manual_write_completed=false")
+                );
+                let clears: u64 = message
+                    .split("partial_clears=")
+                    .nth(1)
+                    .unwrap()
+                    .split_whitespace()
+                    .next()
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                assert!(clears >= 1);
+            }
+            assert_eq!(
+                std::fs::read_to_string(guard_path).unwrap().lines().count(),
+                1
+            );
+        }
+
+        #[test]
+        fn pty_version_timeout_reports_handshake_and_discarded_partial_without_manual() {
+            pty_timeout_diagnostics(false);
+        }
+
+        #[test]
+        fn pty_ack_timeout_retains_cause_and_reports_manual_write_without_acceptance() {
+            pty_timeout_diagnostics(true);
+        }
+
         #[test]
         fn pty_cancel_or_disconnect_after_manual_keeps_unknown_claim_without_retry() {
             for disconnect in [false, true] {
@@ -513,12 +673,18 @@ mod linux {
                     );
                     cancel.cancel();
                 }
+                let error = receive
+                    .recv_timeout(Duration::from_secs(3))
+                    .unwrap()
+                    .unwrap_err();
+                let message = error.to_string();
+                assert!(message.contains("phase=Ack "));
                 assert!(
-                    receive
-                        .recv_timeout(Duration::from_secs(3))
-                        .unwrap()
-                        .is_err()
+                    message.contains("manual_write_attempted=true manual_write_completed=true")
                 );
+                assert!(!message.contains("manual_wakeup was not sent"));
+                assert!(error.chain().count() >= 2);
+                assert!(!error.root_cause().to_string().contains("diagnostics"));
                 worker.join().unwrap();
                 let contents = std::fs::read_to_string(&guard_path).unwrap();
                 assert_eq!(contents.lines().count(), 1);
