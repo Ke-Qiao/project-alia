@@ -1,5 +1,5 @@
 use super::super::context::{
-    AudioSampleBoundary, AudioStreamClock, AudioStreamOwner, AudioStreamProbe,
+    AudioSampleBoundary, AudioStreamClock, AudioStreamOwner, AudioStreamProbe, ReferenceContent,
 };
 use super::clock::{AlsaTimeOrigin, observe_capture_samples};
 use super::*;
@@ -437,7 +437,7 @@ impl PlaybackSink for AlsaPlaybackSink {
     }
 
     fn pump(&mut self) -> Result<()> {
-        if self.buffer.len() != 0 || self.buffer.is_held() {
+        if self.buffer.len() != 0 || self.buffer.has_control() {
             write_alsa_chunk(
                 &self.runtime.pcm,
                 &mut self.buffer,
@@ -559,8 +559,15 @@ fn write_alsa_chunk(
     timestamps_enabled: bool,
 ) -> Result<()> {
     let channels = channels.max(1);
-    let held_silence = buffer.is_held();
-    let available_frames = if held_silence {
+    let silence = if buffer.is_held() {
+        Some(ReferenceContent::HeldSilence)
+    } else if buffer.len() == 0 && buffer.has_control() {
+        // A streamed response can wait seconds for its next synthesized segment.
+        Some(ReferenceContent::ZeroFill)
+    } else {
+        None
+    };
+    let available_frames = if silence.is_some() {
         chunk_frames.clamp(1, 4096)
     } else {
         buffer.len() / channels
@@ -570,7 +577,7 @@ fn write_alsa_chunk(
     }
 
     let frames_to_write = available_frames.min(chunk_frames.max(1));
-    let (chunk, output_write) = if held_silence {
+    let (chunk, output_write) = if silence.is_some() {
         (vec![0; frames_to_write * channels], None)
     } else {
         buffer.alsa_chunk(frames_to_write)
@@ -590,13 +597,13 @@ fn write_alsa_chunk(
                 "ALSA accepted beyond the offered output buffer"
             );
             let reading = read_clock(pcm, time_origin, &clock.probe, timestamps_enabled);
-            if held_silence {
+            if let Some(content) = silence {
                 super::clock::record_samples(
                     clock,
                     &chunk[..written_frames * channels],
                     reading,
                     SubmissionBoundary::AlsaWriteAccepted,
-                    super::super::context::ReferenceContent::HeldSilence,
+                    content,
                 );
             } else {
                 playback::confirm_alsa_write(
@@ -752,6 +759,107 @@ fn capture_error_reason(errno: i32) -> AudioDiscontinuity {
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn alsa_stream_gaps_write_silence_without_advancing_or_finishing_source_audio() {
+        use crate::module::context::ReferenceContent;
+        use alia_core::delivery::{ObservationEnd, PlaybackIdentity, VoiceScope};
+
+        std::thread::scope(|threads| {
+            let (sender, receiver) = playback::channel(8);
+            let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
+            let bus = AudioBus::new(2).reference();
+            let mut reader = bus.try_claim_reader().unwrap();
+            let reference = bus.clone();
+            let worker = threads.spawn(move || {
+                run_alsa_playback_thread(
+                    AudioConfig {
+                        playback_sample_rate: 16000,
+                        playback_channels: 2,
+                        ..Default::default()
+                    },
+                    receiver,
+                    ready_tx,
+                    "null",
+                    AudioVolumeState::new(Default::default()),
+                    reference,
+                )
+            });
+            ready_rx
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .unwrap();
+            assert_eq!(bus.snapshot(AudioDirection::Playback).unwrap().cursor, 0);
+            let generation = sender.begin().unwrap();
+            let submission = sender
+                .open_submission(
+                    PlaybackIdentity {
+                        scope: VoiceScope {
+                            device_boot_id: uuid::Uuid::new_v4(),
+                            session_id: uuid::Uuid::new_v4(),
+                            generation_epoch: 1,
+                        },
+                        playback_id: uuid::Uuid::new_v4(),
+                        playback_sequence: 1,
+                    },
+                    16000,
+                    generation,
+                )
+                .unwrap();
+            let mut next_content = |content| {
+                let deadline = Instant::now() + Duration::from_secs(1);
+                loop {
+                    if let Some(block) = reader.try_read() {
+                        if block.content == content && block.sample_count > 0 {
+                            assert_eq!(
+                                block.boundary,
+                                Some(AudioSampleBoundary::AlsaWriteAccepted)
+                            );
+                            if content == ReferenceContent::ZeroFill {
+                                assert!(
+                                    block.samples[..block.sample_count]
+                                        .iter()
+                                        .all(|x| *x == 0.0)
+                                );
+                            }
+                            break;
+                        }
+                    }
+                    assert!(
+                        Instant::now() < deadline,
+                        "missing actual {content:?} write"
+                    );
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            };
+            // Before the first segment and between segments, real null writes
+            // must keep the native stream fed without inventing source progress.
+            next_content(ReferenceContent::ZeroFill);
+            assert_eq!(submission.snapshot(1).submitted_source_frames, Some(0));
+            sender.submit(&submission, 0, &[1234; 160], false).unwrap();
+            next_content(ReferenceContent::Media);
+            next_content(ReferenceContent::ZeroFill);
+            let gap = submission.snapshot(2);
+            assert_eq!(gap.submitted_source_frames, Some(160));
+            assert!(!gap.end_accepted && gap.observation_end.is_none());
+            sender
+                .submit(&submission, 160, &[2345; 160], false)
+                .unwrap();
+            sender.submit(&submission, 320, &[], true).unwrap();
+            next_content(ReferenceContent::Media);
+            next_content(ReferenceContent::ZeroFill);
+            let finished = submission.snapshot(3);
+            assert_eq!(finished.submitted_source_frames, Some(320));
+            assert_eq!(
+                finished.observation_end,
+                Some(ObservationEnd::SubmissionFinished)
+            );
+            sender.shutdown();
+            worker.join().unwrap().unwrap();
+            assert!(bus.snapshot(AudioDirection::Playback).unwrap().closed);
+            assert_eq!(submission.snapshot(4).submitted_source_frames, Some(320));
+        });
+    }
 
     #[test]
     fn alsa_null_software_hold_keeps_media_and_records_only_actual_silence_until_resume() {
@@ -977,6 +1085,43 @@ mod tests {
         assert_eq!(state.cursor, 0);
         assert_eq!(state.last_fault, Some(AudioDiscontinuity::BackendError));
         assert_eq!(buffer.len(), 64);
+
+        // An empty controlled stream must surface the same real device error,
+        // without recording the zero fill it attempted but never submitted.
+        buffer.clear();
+        buffer.set_control(Some(
+            crate::module::playback_session::PlaybackControl::new(
+                alia_core::delivery::VoiceScope {
+                    device_boot_id: uuid::Uuid::new_v4(),
+                    session_id: uuid::Uuid::new_v4(),
+                    generation_epoch: 1,
+                },
+                1,
+                SubmissionBackend {
+                    instance_id: clock.probe.stream_id(),
+                    boundary: SubmissionBoundary::AlsaWriteAccepted,
+                    output_sample_rate_hz: runtime.output_sample_rate,
+                    output_channels: 1,
+                },
+            )
+            .unwrap(),
+        ));
+        assert!(
+            write_alsa_chunk(
+                &runtime.pcm,
+                &mut buffer,
+                1,
+                64,
+                &mut clock,
+                &mut AlsaTimeOrigin::default(),
+                true,
+            )
+            .is_err()
+        );
+        while let Some(block) = reader.try_read() {
+            assert_eq!(block.sample_count, 0);
+        }
+        assert_eq!(bus.snapshot(AudioDirection::Playback).unwrap().cursor, 0);
     }
 
     #[test]

@@ -22,7 +22,7 @@ pub enum ReferenceContent {
     MixedHeld,
     /// Includes real zero-valued media and software mute after volume processing.
     Media,
-    /// CPAL actually received a zero-filled callback buffer at this boundary.
+    /// The native backend actually accepted zeros without source media.
     ZeroFill,
     Mixed,
 }
