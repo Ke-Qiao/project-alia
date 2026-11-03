@@ -1,5 +1,29 @@
 # 软件发布资料与真实模型链前置
 
+## 连续输出启动储备与历史提示修复（2026-11-04）
+
+连续两轮真人窗口中，第一条有可闻回复且技术记录完整：End 收到，offered／accepted／submitted 均为 673420 源帧，Delivery 为 `submitted`。第二条零帧 unknown、没有回复，Pi 报 EPIPE 并退出输出线程；第三次注册失败，采集保持。第一条额外回答“勒莱特”已追到同一会话的旧 user 消息及重复 system 提示，当前三条转写正确。完整结果与限制见[本轮现场记录](model-services.md#连续两轮首条完整提交第二条播放退出2026-11-04)，不与前一窗口“用户确认听到完整回复”混为一次结果。
+
+主线提交 **`330e28284f947844d02e39e674c86a66063324be`** 修改四个 Rust 文件；独立部署提交 **`588c434e9b416af0c6f86ddf511fa08236e0f8ec`** 从 `3bd88c8` 只移植这四个文件，继续隔离受 V05 限制的 Server 恢复改动。改动前的反例分别覆盖：首个短块后启动而下次写入来晚；前一轮 Stop 后新一轮重新进入 Prepared；短回答带 End 不能在启动储备未就绪前结算；旧未答问题、新主题和明确继续上题必须保留各自角色。见[范围记录](../../run/voice-acceptance-20261104-followup/scope.json)和[提示词反例](../../run/voice-acceptance-20261104-followup/context-fix/scope.json)。
+
+ALSA 受控输出现在先向原生缓冲写实际静音，使用既有启动阈值，不再在首个小块后强制 `pcm.start()`；空队列维持 2 毫秒活动检查。静音不冒充源音频进度，原 60 毫秒缓冲和所有模型／RPC／打断期限保持。现场实际调度间隔未测量，EPIPE 的具体时序仍待真实窗口验证。Server 删除把历史末尾 user 再复制成 system 的冗余块；历史原角色／文本与当前最后 user 消息保留，普通生成和技能路径一致，不改会话、SQL 历史或模型选择。
+
+| 平台／源码 | 本次目标 | 通过／失败／忽略 | 原始日志 |
+| --- | --- | --- | --- |
+| Linux ARM64／旧逻辑加新增回归 | 启动储备反例，按预期失败 | 0／1／0 | [旧代码失败](../../run/voice-acceptance-20261104-followup/red/gap-red-tests.log) |
+| Linux ARM64／588c434 | ALSA null、启动储备、分段等待、设备错误 | 9／0／0 | [ALSA](../../run/voice-acceptance-20261104-followup/linux/alsa-tests.log) |
+| Linux ARM64／588c434 | 播放队列、取消、退休与进度 | 56／0／0 | [播放控制](../../run/voice-acceptance-20261104-followup/linux/playback-tests.log) |
+| macOS ARM64／330e282 对应最终文件 | 共用播放控制 | 56／0／0 | [Mac 播放控制](../../run/voice-acceptance-20261104-followup/mac-playback/playback-tests.log) |
+| macOS ARM64／330e282 对应最终文件 | 提示词历史／当前输入顺序 | 5／0／0 | [提示词](../../run/voice-acceptance-20261104-followup/context-fix/prompt-tests.log) |
+
+各目标只执行一次，默认并发与原断言／期限不变，按源码和平台分别统计，不相加为完整 workspace。旧逻辑失败于“启动储备前已提交 160 源帧”，原日志保留。Linux 无网络、无设备、无数据库／模型；原 workspace 范围 release **210.388 秒**成功，ELF／loader／ldd和三份 Embedded 配置检查通过，容器已清理。Mac 两组均没有设备、模型或数据库操作；Mac 播放测试不覆盖 Linux ALSA。见[Linux 验证清单](../../run/voice-acceptance-20261104-followup/linux/validation.json)、[release 日志](../../run/voice-acceptance-20261104-followup/linux/release.log)、[原生与配置检查](../../run/voice-acceptance-20261104-followup/linux/results/native-and-config-audit.json)、[Mac 播放结果](../../run/voice-acceptance-20261104-followup/mac-playback/summary.json)和[提示词结果](../../run/voice-acceptance-20261104-followup/context-fix/prompt-tests.json)。
+
+Pi 产物 **70,865,448 字节**，SHA-256 `243bf0d9980194ea5616777574ed001c7032e90c96588144b117c4498dec1d8d`；[不可变候选清单](../../run/voice-acceptance-20261104-followup/candidate-manifest.json)固定源码、锁文件、产物和已有检查。已普通重启安装，PID8106、boot `85c80488-984e-44f0-a797-4a4919b40e43`、generation1 inactive／available；五 claims、绑定、设备 key 和配置保持，无初始化或 CaptureStart。见[Pi 安装核对](../../run/voice-acceptance-20261104-followup/deploy/voice-activation-complete.json)与[启动日志](../../run/voice-acceptance-20261104-followup/deploy/new-process-startup.log)。**Mac Server 已完成构建和正式切换，同为独立提交 `588c434`，PID96139。** 实际运行SHA-256为 `30fcbd6790250ae7356d8ebdf18c987060953338f69bf7bb061a0c296e06c08d`；旧PID14258正常Stop，exit0、0.119秒，新进程4917.981毫秒返回HTTP健康结果；这不是全链就绪时间。33条迁移、embedding pins、终态账本、管理员身份和凭据全部保持，Companion仍shadow。新私有恢复点取自本次停止后的当前生产库，未执行restore；模型服务未停启，模型调用为0，Pi仍PID8106且upload inactive。见[Mac启停与核对](../../run/voice-acceptance-20261104-followup/mac-preparation/activation-review.json)、[身份前后记录](../../run/voice-acceptance-20261104-followup/mac-preparation/activation.json)和[完整启停日志](../../run/voice-acceptance-20261104-followup/mac-preparation/activation-server.out.log)。live模型probe继续关闭，对应LLM健康项degraded是该配置的结果，不算新推理验收。
+
+启动后连接Pi仍有延迟：UTC 16:33:17.250815／23.756890／35.262025三次transport error，16:33:57.196058自动connected，原日志和原因未确定的状态保留。没有手动Start／Stop重试或连接代码变更。随后新鲜签名状态仍是同一boot、generation1 inactive；Pi PID8106、播放8113／采集8114及PCM trigger均未变。见[连接检查](../../run/voice-acceptance-20261104-followup/mac-preparation/connection-review.json)、[完整连接日志](../../run/voice-acceptance-20261104-followup/mac-preparation/server-through-pi-connect.log)、[签名Inspect](../../run/voice-acceptance-20261104-followup/mac-preparation/pi-after-mac-inspect.json)和[进程／设备读取](../../run/voice-acceptance-20261104-followup/mac-preparation/pi-after-mac-read.json)。当前双端已连接，不把HTTP先就绪或后来自动连接成功当成初次连接失败已定位。
+
+针对旧回答的只读检查确认 pending／safe=false／hit0，账号 active 未过期缓存为0；不清缓存或历史，见[缓存结论](../../run/voice-acceptance-20261104-followup/cache-review/conclusion.json)。双端已就绪，下一次用户在场即可做连续两轮，不要求断电或重复初始化，不设整场倒计时，仍由用户反馈结束；同时检查新 LLM 生成和两轮播放结束，不能让旧答案掩盖提示词修正。新软件尚未做连续真人验证；正常长句、打断／恢复／取消、Start／Stop、升级恢复、24小时负载、AEC及具体插件的门槛保持，V01—V07不因本次测试关闭。
+
 ## ALSA 分段等待修复（2026-11-03 深夜）
 
 用户在138ee28上已听到回复，但原始日志确认等待后续Juno音频段时发生underrun，输出线程退出，Delivery为unknown且随后回复注册失败。问题在ALSA空队列时停止向声卡写入，详见[真人结果与根因](model-services.md#已听到回复分段等待导致播放退出2026-11-03-深夜)。
