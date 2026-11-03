@@ -19,6 +19,10 @@ use tonic::{Request, Response, Status};
 struct LocalAudio {
     stops: AtomicU64,
     generation: AtomicU64,
+    playback_unavailable: std::sync::atomic::AtomicBool,
+    playback_starts: AtomicU64,
+    playback_start_fails: std::sync::atomic::AtomicBool,
+    playback_start_gate: std::sync::Mutex<Option<Arc<tokio::sync::Semaphore>>>,
     captured: AtomicU64,
     wake_prefix: std::sync::atomic::AtomicBool,
     wake_checks: AtomicU64,
@@ -30,6 +34,19 @@ struct LocalAudio {
 impl ModuleLifecycle for LocalAudio {
     fn name(&self) -> &'static str {
         "test_audio"
+    }
+    async fn start(&self) -> Result<()> {
+        self.playback_starts.fetch_add(1, Ordering::SeqCst);
+        let gate = self.playback_start_gate.lock().unwrap().clone();
+        if let Some(gate) = gate {
+            let _permit = gate.acquire().await?;
+        }
+        ensure!(
+            !self.playback_start_fails.load(Ordering::SeqCst),
+            "test playback start failed"
+        );
+        self.playback_unavailable.store(false, Ordering::SeqCst);
+        Ok(())
     }
 }
 impl AudioPlaybackBackend for LocalAudio {
@@ -138,7 +155,7 @@ impl AudioPlaybackBackend for LocalAudio {
         self.generation.load(Ordering::SeqCst) == generation
     }
     fn is_available(&self) -> bool {
-        true
+        !self.playback_unavailable.load(Ordering::SeqCst)
     }
 }
 impl VoiceActivityEngine for LocalAudio {

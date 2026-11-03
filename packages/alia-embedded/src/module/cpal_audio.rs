@@ -185,6 +185,25 @@ struct PlaybackRuntime {
     thread: JoinHandle<()>,
 }
 
+fn await_playback_startup(
+    sender: PlaybackSender,
+    thread: JoinHandle<()>,
+    ready: mpsc::Receiver<std::result::Result<(), String>>,
+) -> Result<PlaybackRuntime> {
+    let result = ready
+        .recv()
+        .context("waiting for cpal playback startup")
+        .and_then(|result| result.map_err(anyhow::Error::msg));
+    if let Err(error) = result {
+        sender.shutdown();
+        return match thread.join() {
+            Ok(()) => Err(error),
+            Err(_) => Err(error.context("playback worker panicked during startup")),
+        };
+    }
+    Ok(PlaybackRuntime { sender, thread })
+}
+
 impl CpalAudioPlayback {
     pub fn new(config: AudioConfig, volume: AudioVolumeState) -> Self {
         Self {
@@ -235,27 +254,13 @@ impl CpalAudioPlayback {
             .spawn(move || {
                 let result = run_playback_thread(config, receiver, ready_tx, volume, reference);
                 if let Err(error) = result {
-                    error!(%error, "cpal playback thread stopped with error");
+                    error!(error = %format!("{error:#}"), "cpal playback thread stopped with error");
                 }
             })
             .context("spawning cpal playback thread")?;
 
-        match ready_rx
-            .recv()
-            .context("waiting for cpal playback startup")?
-        {
-            Ok(()) => {
-                *runtime = Some(PlaybackRuntime {
-                    sender: sender.clone(),
-                    thread: handle,
-                });
-                Ok(sender)
-            }
-            Err(error) => {
-                let _ = handle.join();
-                bail!(error);
-            }
-        }
+        *runtime = Some(await_playback_startup(sender.clone(), handle, ready_rx)?);
+        Ok(sender)
     }
 }
 

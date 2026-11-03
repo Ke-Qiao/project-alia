@@ -114,6 +114,62 @@ impl PlaybackSession {
     pub fn shutdown_token(&self) -> tokio_util::sync::CancellationToken {
         self.shutdown.clone()
     }
+    pub(crate) fn is_backend_available(&self) -> bool {
+        self.backend.is_available()
+    }
+    fn ensure_capture_recovery_idle(&self) -> Result<()> {
+        ensure!(!self.shutdown.is_cancelled(), "playback runtime is stopped");
+        ensure!(
+            self.lock()?.is_none(),
+            "previous playback session is still owned"
+        );
+        ensure!(
+            self.retired
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .iter()
+                .all(|owner| {
+                    owner
+                        .control
+                        .as_ref()
+                        .is_none_or(|control| control.is_retired())
+                        && owner.quiescent()
+                }),
+            "previous playback output has not retired and settled"
+        );
+        Ok(())
+    }
+    /// Only explicit capture admission may recover a failed native owner. Old
+    /// scopes and observations remain retired; network output never calls this.
+    pub(crate) async fn recover_backend_for_capture_start(&self) -> Result<()> {
+        let recovery = {
+            let _gate = self
+                .task_gate
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            self.ensure_capture_recovery_idle()?;
+            if self.backend.is_available() {
+                return Ok(());
+            }
+            ensure!(self.tasks.len() < 32, "playback runtime is full");
+            let backend = self.backend.clone();
+            let shutdown = self.shutdown.clone();
+            let runtime = tokio::runtime::Handle::current();
+            // Native startup can block. Retain it in the same tracker as Push
+            // ownership, so shutdown still joins it if this waiter is dropped.
+            self.tasks.spawn_blocking(move || {
+                ensure!(!shutdown.is_cancelled(), "playback runtime is stopped");
+                runtime.block_on(backend.start())
+            })
+        };
+        recovery.await.context("joining playback recovery")??;
+        self.ensure_capture_recovery_idle()?;
+        ensure!(
+            self.backend.is_available(),
+            "playback backend is not running"
+        );
+        Ok(())
+    }
     pub fn spawn_push(
         &self,
         future: impl std::future::Future<Output = Result<()>> + Send + 'static,

@@ -1,5 +1,6 @@
 use super::*;
 use alia_core::delivery::{SubmissionBoundary, VoiceScope};
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::thread;
 mod control;
@@ -594,6 +595,71 @@ fn scoped_ingress_never_initializes_or_resurrects_native_audio() {
         backend.runtime.lock().unwrap().is_none(),
         "no hardware was opened by network admission"
     );
+}
+
+#[test]
+fn playback_startup_failure_shuts_down_and_joins_native_owner() {
+    for rejected in [false, true] {
+        let (sender, receiver) = channel(1);
+        let (ready, startup) = mpsc::sync_channel(1);
+        let (finished, completion) = mpsc::channel();
+        let exited = Arc::new(AtomicBool::new(false));
+        let worker_exited = exited.clone();
+        let worker = thread::spawn(move || {
+            if rejected {
+                ready
+                    .send(Err("synthetic startup rejection".into()))
+                    .unwrap();
+            }
+            drop(ready);
+            while !matches!(receiver.take(false), Some(PlaybackAction::Shutdown)) {
+                receiver.wait([false; 2], true);
+            }
+            worker_exited.store(true, Ordering::Release);
+            finished.send(()).unwrap();
+        });
+        let result = super::super::await_playback_startup(sender.clone(), worker, startup);
+        let joined_before_return = exited.load(Ordering::Acquire);
+        // Also release the fake owner if a regression drops its JoinHandle.
+        sender.shutdown();
+        completion.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(
+            joined_before_return,
+            "startup returned before native cleanup"
+        );
+        let error = result.err().expect("failed startup became available");
+        assert!(error.to_string().contains(if rejected {
+            "synthetic startup rejection"
+        } else {
+            "waiting for cpal playback startup"
+        }));
+    }
+}
+
+#[test]
+fn playback_startup_panic_preserves_ready_failure() {
+    for rejected in [false, true] {
+        let (sender, _receiver) = channel(1);
+        let (ready, startup) = mpsc::sync_channel(1);
+        let worker = thread::spawn(move || {
+            if rejected {
+                ready
+                    .send(Err("synthetic startup rejection".into()))
+                    .unwrap();
+            }
+            panic!("synthetic native startup panic");
+        });
+        let error = super::super::await_playback_startup(sender, worker, startup)
+            .err()
+            .expect("panicked startup became available");
+        let chain = format!("{error:#}");
+        assert!(chain.contains("playback worker panicked during startup"));
+        assert!(chain.contains(if rejected {
+            "synthetic startup rejection"
+        } else {
+            "waiting for cpal playback startup"
+        }));
+    }
 }
 
 #[tokio::test]

@@ -171,26 +171,41 @@ impl Runtime {
             let _ = command.reply.send(Err(error));
             return;
         }
+        if command.start && !self.playback_session.is_backend_available() {
+            let recovery = async {
+                self.binding
+                    .with_current_binding(&command.binding, || {
+                        self.validate_control_command(&command, session)
+                    })
+                    .await?;
+                // Do not hold the binding lock across native startup. This
+                // command owns and joins recovery even when its caller leaves.
+                self.playback_session
+                    .recover_backend_for_capture_start()
+                    .await?;
+                self.binding
+                    .verify_grpc_auth(&command.token, alia_transport::EMBEDDED_CONTROL_SCOPE)
+                    .await
+            }
+            .await;
+            if let Err(error) = recovery {
+                let _ = command.reply.send(Err(error));
+                return;
+            }
+        }
         let admission = self
             .binding
             .with_current_binding(&command.binding, || {
-                ensure!(
-                    !command.reply.is_closed(),
-                    "capture caller cancelled before admission"
-                );
-                ensure!(
-                    self.config.trigger == SpeechTrigger::System,
-                    "system capture requires speech.trigger = system"
-                );
-                self.control.controller.validate(&command.request)?;
+                self.validate_control_command(&command, session)?;
                 if command.start {
-                    ensure!(session.is_none(), "capture session is already active");
+                    ensure!(
+                        self.playback_session.is_backend_available(),
+                        "playback backend is not running"
+                    );
                     self.vad.reset()?;
                     self.control.controller.begin()?;
                     *session = Some(self.start_session(None, Some(command.binding.clone())));
                     self.event_bus.publish(ModuleEvent::SpeechStart);
-                } else {
-                    ensure!(session.is_some(), "capture session is not active");
                 }
                 Ok(())
             })
@@ -216,6 +231,33 @@ impl Runtime {
             }
         };
         let _ = command.reply.send(result);
+    }
+
+    fn validate_control_command(&self, command: &Command, session: &Option<Session>) -> Result<()> {
+        ensure!(
+            !command.reply.is_closed(),
+            "capture caller cancelled before admission"
+        );
+        ensure!(
+            self.config.trigger == SpeechTrigger::System,
+            "system capture requires speech.trigger = system"
+        );
+        self.control.controller.validate(&command.request)?;
+        if command.start {
+            ensure!(session.is_none(), "capture session is already active");
+            ensure!(
+                !self.cancel.is_cancelled()
+                    && !self.playback_session.shutdown_token().is_cancelled()
+                    && self
+                        .capture_stopped
+                        .as_ref()
+                        .is_none_or(|stopped| !stopped.is_cancelled()),
+                "capture pipeline stopped before admission"
+            );
+        } else {
+            ensure!(session.is_some(), "capture session is not active");
+        }
+        Ok(())
     }
 
     fn accept_frame(

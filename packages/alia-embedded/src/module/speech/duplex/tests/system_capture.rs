@@ -106,12 +106,14 @@ async fn system_start_stop_is_explicit_scoped_and_waits_for_original_native_writ
         .await
         .unwrap();
     assert!(lease.submission.output_quiescent() && !lease.submission.is_live());
+    assert_eq!(local.playback_starts.load(Ordering::SeqCst), 0);
+    local.playback_unavailable.store(true, Ordering::SeqCst);
 
     let second = command(&control, &binding, &stopped, true).await.unwrap();
     let Seen::Opened {
+        boot,
         session: next,
         output,
-        ..
     } = received(&mut seen).await
     else {
         panic!("missing fresh Open");
@@ -122,14 +124,34 @@ async fn system_start_stop_is_explicit_scoped_and_waits_for_original_native_writ
         "old Stop ended replacement"
     );
     assert_eq!(control.inspect().unwrap(), second);
+    publish(&audio, 1, 640);
+    assert!(matches!(received(&mut seen).await, Seen::Audio(_)));
+    let next_binding = alia_core::output_control::OutputBinding {
+        scope: VoiceScope {
+            device_boot_id: Uuid::parse_str(&boot).unwrap(),
+            session_id: Uuid::parse_str(&next).unwrap(),
+            generation_epoch: 1,
+        },
+        response_id: Uuid::new_v4(),
+        context_id: Uuid::new_v4(),
+        server_instance_id: Uuid::new_v4(),
+        initiative_capture: None,
+    };
+    playback.register_output(&next_binding).unwrap();
+    let next_lease = playback
+        .begin_bound(&next_binding, &Uuid::new_v4().to_string(), 1, 24000)
+        .unwrap();
+    assert!(playback.enqueue(&next_lease, &[4, 5, 6]).unwrap());
+    assert!(!playback.enqueue(&lease, &[7]).unwrap());
+    assert_eq!(local.playback_starts.load(Ordering::SeqCst), 1);
     output
         .send(Err(Status::unavailable("test disconnect")))
         .await
         .unwrap();
     inactive(&control).await;
     reached(&local.wake_resets, 2).await;
-    publish(&audio, 99, 640);
-    reached(&local.captured, 3).await;
+    publish(&audio, 99, 960);
+    reached(&local.captured, 4).await;
     assert!(
         seen.try_recv().is_err(),
         "disconnect automatically reopened system capture"
@@ -220,7 +242,7 @@ async fn capture_rpc_checks_auth_boot_generation_and_joins_stop() {
         mut runtime,
         audio,
         events: _,
-        local: _,
+        local,
         mut seen,
         shutdown,
         server,
@@ -262,6 +284,7 @@ async fn capture_rpc_checks_auth_boot_generation_and_joins_stop() {
         .into_inner();
     let mut stale_boot = request(&idle);
     stale_boot.device_boot_id = Uuid::new_v4().to_string();
+    local.playback_unavailable.store(true, Ordering::SeqCst);
     assert_eq!(
         client
             .start(authorized(stale_boot))
@@ -270,11 +293,31 @@ async fn capture_rpc_checks_auth_boot_generation_and_joins_stop() {
             .code(),
         tonic::Code::FailedPrecondition
     );
+    assert_eq!(local.playback_starts.load(Ordering::SeqCst), 0);
+    local.playback_start_fails.store(true, Ordering::SeqCst);
+    let unavailable = client.start(authorized(request(&idle))).await.unwrap_err();
+    assert_eq!(unavailable.code(), tonic::Code::FailedPrecondition);
+    assert_eq!(unavailable.message(), "test playback start failed");
+    assert_eq!(
+        client
+            .inspect(authorized(InspectCaptureRequest {}))
+            .await
+            .unwrap()
+            .into_inner(),
+        idle,
+        "unavailable playback advanced capture admission"
+    );
+    assert!(seen.try_recv().is_err(), "rejected Start opened a session");
+    assert_eq!(local.generation.load(Ordering::SeqCst), 0);
+    assert_eq!(local.playback_starts.load(Ordering::SeqCst), 1);
+    assert_eq!(local.captured.load(Ordering::SeqCst), 0);
+    local.playback_start_fails.store(false, Ordering::SeqCst);
     let active = client
         .start(authorized(request(&idle)))
         .await
         .unwrap()
         .into_inner();
+    assert_eq!(local.playback_starts.load(Ordering::SeqCst), 2);
     let Seen::Opened { output, .. } = received(&mut seen).await else {
         panic!("missing Open");
     };
@@ -288,12 +331,14 @@ async fn capture_rpc_checks_auth_boot_generation_and_joins_stop() {
             .code(),
         tonic::Code::FailedPrecondition
     );
+    local.playback_unavailable.store(true, Ordering::SeqCst);
     let stopped = client
         .stop(authorized(request(&active)))
         .await
         .unwrap()
         .into_inner();
     assert!(!stopped.active);
+    assert_eq!(local.playback_starts.load(Ordering::SeqCst), 2);
     tokio::time::timeout(Duration::from_secs(3), output.closed())
         .await
         .unwrap();
@@ -323,6 +368,186 @@ async fn capture_rpc_checks_auth_boot_generation_and_joins_stop() {
         .await
         .unwrap()
         .unwrap();
+}
+
+#[tokio::test]
+async fn playback_recovery_rechecks_cancel_binding_and_capture_before_session_admission() {
+    for change in ["caller", "binding", "shutdown", "capture", "stale_stop"] {
+        let Harness {
+            mut runtime,
+            audio: _audio,
+            local,
+            mut seen,
+            shutdown,
+            server,
+            _directory,
+            ..
+        } = harness(8).await;
+        runtime.config.trigger = SpeechTrigger::System;
+        let capture_stopped = CancellationToken::new();
+        runtime.capture_stopped = Some(capture_stopped.clone());
+        let control = runtime.control.controller.clone();
+        let binding = runtime.binding.clone();
+        let cancel = runtime.cancel.clone();
+        let playback = runtime.playback_session.clone();
+        let idle = control.inspect().unwrap();
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        *local.playback_start_gate.lock().unwrap() = Some(gate.clone());
+        local.playback_unavailable.store(true, Ordering::SeqCst);
+        let mut pending = Some(
+            control
+                .enqueue(request(&idle), true, binding.status().await, String::new())
+                .unwrap(),
+        );
+        let task = tokio::spawn(runtime.run());
+        reached(&local.playback_starts, 1).await;
+        assert_eq!(control.inspect().unwrap(), idle);
+        assert!(seen.try_recv().is_err());
+        let mut stale_stop = None;
+        match change {
+            "caller" => drop(pending.take()),
+            "binding" => {
+                let original = binding.status().await;
+                binding
+                    .seed_dev_binding("test", "test", original.server_endpoint.as_ref().unwrap())
+                    .await
+                    .unwrap();
+            }
+            "shutdown" => cancel.cancel(),
+            "capture" => capture_stopped.cancel(),
+            "stale_stop" => {
+                stale_stop = Some(
+                    control
+                        .enqueue(request(&idle), false, binding.status().await, String::new())
+                        .unwrap(),
+                );
+            }
+            _ => unreachable!(),
+        }
+        assert!(!task.is_finished(), "native recovery was abandoned");
+        gate.add_permits(1);
+        if change == "stale_stop" {
+            let active = tokio::time::timeout(Duration::from_secs(3), pending.take().unwrap())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            assert!(active.active && active.generation > idle.generation);
+            assert!(
+                tokio::time::timeout(Duration::from_secs(3), stale_stop.unwrap())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .is_err(),
+                "old Stop retired the recovered generation"
+            );
+            assert_eq!(control.inspect().unwrap(), active);
+            let Seen::Opened { output, .. } = received(&mut seen).await else {
+                panic!("recovered Start did not open a session");
+            };
+            command(&control, &binding, &active, false).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(3), output.closed())
+                .await
+                .unwrap();
+        } else if let Some(pending) = pending {
+            assert!(
+                tokio::time::timeout(Duration::from_secs(3), pending)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .is_err()
+            );
+            if change == "binding" {
+                assert_eq!(control.inspect().unwrap(), idle);
+            }
+        } else {
+            assert!(command(&control, &binding, &idle, false).await.is_err());
+            assert_eq!(control.inspect().unwrap(), idle);
+        }
+        cancel.cancel();
+        tokio::time::timeout(Duration::from_secs(3), task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!control.inspect().unwrap().active);
+        assert_eq!(playback.active_scope().unwrap(), None);
+        assert!(seen.try_recv().is_err());
+        assert_eq!(local.playback_starts.load(Ordering::SeqCst), 1);
+        assert_eq!(local.captured.load(Ordering::SeqCst), 0);
+        shutdown.cancel();
+        tokio::time::timeout(Duration::from_secs(3), server)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn playback_recovery_requires_retired_settled_owners_and_never_revives_old_output() {
+    let local = Arc::new(LocalAudio::default());
+    let playback = PlaybackSession::new(local.clone());
+    let scope = VoiceScope {
+        device_boot_id: Uuid::new_v4(),
+        session_id: Uuid::new_v4(),
+        generation_epoch: 1,
+    };
+    playback.activate(&scope).unwrap();
+    let lease = playback
+        .begin(&scope, &Uuid::new_v4().to_string(), 1, 16000)
+        .unwrap();
+    assert!(playback.enqueue(&lease, &[1, 2, 3]).unwrap());
+    let entered = lease.submission.begin_output().unwrap();
+    let unknown = alia_core::delivery::ObservationEnd::Unknown {
+        reason: "old native device failed".into(),
+    };
+    lease.submission.terminate(unknown.clone());
+    local.playback_unavailable.store(true, Ordering::SeqCst);
+    assert!(playback.recover_backend_for_capture_start().await.is_err());
+    playback.close(&scope).unwrap();
+    assert!(playback.recover_backend_for_capture_start().await.is_err());
+    assert_eq!(local.playback_starts.load(Ordering::SeqCst), 0);
+    drop(entered);
+    playback.recover_backend_for_capture_start().await.unwrap();
+    assert_eq!(local.playback_starts.load(Ordering::SeqCst), 1);
+    assert!(!lease.submission.is_live());
+    assert_eq!(lease.submission.snapshot(1).observation_end, Some(unknown));
+    assert!(!playback.enqueue(&lease, &[4]).unwrap());
+    assert!(playback.activate(&scope).is_err());
+    playback.shutdown_token().cancel();
+    local.playback_unavailable.store(true, Ordering::SeqCst);
+    assert!(playback.recover_backend_for_capture_start().await.is_err());
+    assert_eq!(local.playback_starts.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn playback_shutdown_joins_recovery_after_its_waiter_is_dropped() {
+    let local = Arc::new(LocalAudio::default());
+    let playback = Arc::new(PlaybackSession::new(local.clone()));
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    *local.playback_start_gate.lock().unwrap() = Some(gate.clone());
+    local.playback_unavailable.store(true, Ordering::SeqCst);
+    let pending = {
+        let playback = playback.clone();
+        tokio::spawn(async move { playback.recover_backend_for_capture_start().await })
+    };
+    reached(&local.playback_starts, 1).await;
+    pending.abort();
+    assert!(pending.await.unwrap_err().is_cancelled());
+    let stop = playback.stop();
+    tokio::pin!(stop);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(25), &mut stop)
+            .await
+            .is_err(),
+        "shutdown abandoned a native startup still in progress"
+    );
+    gate.add_permits(1);
+    tokio::time::timeout(Duration::from_secs(3), stop)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(local.playback_starts.load(Ordering::SeqCst), 1);
+    assert_eq!(playback.active_scope().unwrap(), None);
 }
 
 #[tokio::test]

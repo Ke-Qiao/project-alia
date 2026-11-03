@@ -401,15 +401,37 @@ impl PlaybackSink for AlsaPlaybackSink {
         self.clock.probe.mark(AudioDiscontinuity::Cancelled);
         self.renderer.clear();
         self.buffer.clear();
+        let state_before = self.runtime.pcm.state();
         self.runtime
             .pcm
             .drop()
-            .inspect_err(|_| self.clock.probe.mark(AudioDiscontinuity::BackendError))
+            .inspect_err(|error| {
+                self.clock.probe.mark(AudioDiscontinuity::BackendError);
+                error!(
+                    stage = "drop",
+                    ?state_before,
+                    state_after = ?self.runtime.pcm.state(),
+                    errno = error.errno(),
+                    %error,
+                    "ALSA playback stop failed"
+                );
+            })
             .context("stopping ALSA playback")?;
+        let state_before = self.runtime.pcm.state();
         self.runtime
             .pcm
             .prepare()
-            .inspect_err(|_| self.clock.probe.mark(AudioDiscontinuity::BackendError))
+            .inspect_err(|error| {
+                self.clock.probe.mark(AudioDiscontinuity::BackendError);
+                error!(
+                    stage = "prepare",
+                    ?state_before,
+                    state_after = ?self.runtime.pcm.state(),
+                    errno = error.errno(),
+                    %error,
+                    "ALSA playback stop failed"
+                );
+            })
             .context("preparing ALSA after stop")?;
         Ok(())
     }
