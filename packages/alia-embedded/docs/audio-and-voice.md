@@ -105,9 +105,12 @@ alia-embedded --initialize-r1 /absolute/private/embedded.toml <cold-boot-uuid>
 ```
 
 This is a runtime startup command, not an initialization process that exits.
-It opens native ALSA capture first, checks an actual 16 kHz mono frame without
-resampling, then runs the bounded UART initialization while preserving that
-capture stream. The current firmware must match the exact validated UART_REAL
+It first claims the cold boot and opens the control UART, including clearing
+stale input, before starting native ALSA capture. After checking an actual
+16 kHz mono frame without resampling, it runs the bounded initialization on
+that same UART descriptor without reopening or clearing it. This preserves a
+handshake arriving during capture startup and follows the validated cold-03
+order. The capture stream remains open throughout initialization and the runtime. The current firmware must match the exact validated UART_REAL
 1.9.6 build. There is one `manual_wakeup` with fixed **directional beam 0**;
 this is neither omnidirectional pickup nor natural direction detection. The
 control UART closes when initialization finishes, while the capture stream

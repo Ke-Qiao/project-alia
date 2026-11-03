@@ -1,5 +1,29 @@
 # 软件发布资料与真实模型链前置
 
+## R1 冷启动顺序修复（2026-11-03 晚）
+
+用户明确要求修复正常断电后的软件恢复，诊断增量不作为收口。已确认生产顺序与通过的 cold-03 不同：原实现先启动音频并等待首帧，再持久化 claim、打开 UART 和清空输入；采集启动期间排入 UART 的握手可能因此丢失。现改为先持久化 claim 并持有唯一 UART，随后才启动模块（包括播放）和 native capture；原生 16 kHz mono PCM 校验通过后，在同一个 UART 上执行原事务，不重新打开或清空接收缓冲。取消或启动失败会释放已准备的串口并保留 claim，准备线程会先 join；不放宽串口错误、2 秒事务、写期限或增加 manual 重试。当前日志不足以证明此机制就是现场版本超时的唯一原因。
+
+主线修复为 **`1a7a118484876c41b77e7e6a5f15db907dffaba3`**，仅改 initializer／R1内部导出／registry 三文件。最终 Pi 候选 **`58bb11e08d50971afa4224232fa835611824abdc`** 直接从 `cc7ffef` 移植这三文件，最终内容与主线一致；Mac 继续保持 `8481b0f`，不引入受 V05 限制的 Server 恢复改动。早期仅诊断的 `cc7ffef` 已上传到独立 release 目录，但未启用，Pi 当时仍是 d392401／PID3810；见[暂存证据](../../run/voice-acceptance-20261103-human/initializer-diagnostic-deploy-plan/stage-execution.json)。
+
+Mac 首版代码的 R1 目标 21/0/0、registry 1/0/0 和 CLI preflight 6/0/0 通过；runtime 首次受沙箱本地 bind EPERM 阻断，7 条失败、1 条通过、2 个 fixture 等待，没有完整结果，随后停止仅该测试组并保留原日志。最终源码只把同一准备块进一步前移到播放等模块 start 之前；在允许本地监听的环境补验最终 registry **1/0/0**、runtime **10/0/0**，不重跑已通过且输入未变的 R1 和 CLI 目标。两轮源码关系、完整与不完整结果见[Mac 首轮及对照](../../run/voice-acceptance-20261103-human/initializer-ordering-mac/source-reconciliation.json)和[最终影响回归](../../run/voice-acceptance-20261103-human/initializer-ordering-mac-final/test-run.json)。不能相加成一次整套通过，也不把 Mac 当作 Linux UART 实测。
+
+Linux ARM64 最终独立源码的四个目标分别通过：R1 **40/0/0**、registry **1/0/0**、runtime **11/0/0**、CLI preflight **6/0/0**。原默认并发和期限不变，不相加为一次完整 workspace 回归。两个新增 PTY 用例验证准备好的 UART 保留早到握手，以及准备后取消／丢弃不发送命令、claim 保留；PTY 不支持 modem ioctl，因此复用既有 fixture，未放宽真实 `Serial::open`。
+
+单独把晚 `clear_input` 放回的隔离副本，唯一握手用例按预期失败 **0/1/0**，证明回归能抓住丢帧机制。随后验证脚本误复用该副本的 Cargo 测试产物：名义最终 R1 39/1/0，实际没有重编，二进制／depfile 仍指向 `/mutation-workspace`；这不是最终源码的有效回归。原始输出完整保留。只清理 `alia-embedded` 本包构建缓存后，先 no-run 核对实际 `Compiling /workspace`、新的测试二进制 hash 和 depfile，再执行上述四个真实目标；没有重跑已有效的红例、放宽期限或更改产品源码。见[首轮与缓存调查](../../run/voice-acceptance-20261103-human/initializer-ordering-candidate/validation.json)、[最终R1](../../run/voice-acceptance-20261103-human/initializer-ordering-candidate/final-validation/r1-tests.json)、[runtime](../../run/voice-acceptance-20261103-human/initializer-ordering-candidate/final-validation/runtime-tests.json)及[CLI](../../run/voice-acceptance-20261103-human/initializer-ordering-candidate/final-validation/preflight-tests.json)。原 default workspace release 已通过（194.495秒），ELF／loader／ldd和三份Embedded配置预检通过；仅保留Embedded产物。固定产物70,847,880字节，SHA-256 `bea1e8f7aac97f29202df276b45d4b07172cbeffc0112c18235079595ba7def5`；3189个源码Git blob核对一致，最终源码未变，独立容器已清理。源码、锁、50份证据和有效／无效运行关系见[最终候选清单](../../run/voice-acceptance-20261103-human/initializer-ordering-candidate/candidate-manifest.json)。实际安装由部署证据单独记录，不能由软件回归宣称现场恢复。原失败和四份 claim 均保留。新 claim 先于任何模块 start，存在 claim 不再说明 PCM 已验证；后续模块／PCM 失败也不自动回收 cold UUID。一般断电自动恢复、仅 Pi 重启和 USB／流重开后的人声仍需各自验收，不能用进程 active 或协议 Ready 替代。
+
+最终修复版已实际安装到 Pi 的 `/home/ke-qiao/.local/share/alia/releases/58bb11e/alia-embedded`，当前全 noop PID4239。只换两处 systemd 二进制路径；旧进程正常停止，四份 claim、设备 key、SQLite 逻辑行和 `.local` 绑定保持。签名 Inspect 为 generation0、active=false、available=false；两路 PCM closed、硬件 FD 为0，没有初始化或 Capture Start。新私有备份 `backups/pre-initializer-ordering-20261103` 已核对，未演练还原。见[实际安装](../../run/voice-acceptance-20261103-human/initializer-ordering-deploy-plan/activate-execution.json)与[签名收口](../../run/voice-acceptance-20261103-human/initializer-ordering-deploy-plan/noop-activation-complete.json)。Mac 原 Server PID14258、Easy-Turn／Juno 和固定 embedding 只读健康核对通过，身份／配置未变，三项 LLM degraded仍仅因为关闭 live probe；未发送新推理，见[当前Mac就绪](../../run/voice-acceptance-20261103-human/mac-final-ready/mac-readiness.json)。
+
+## R1 初始化失败元数据增量（2026-11-03 晚）
+
+先完成了免唤醒方案审查：首轮初始化后原生流被noop收口关闭，第二轮普通重启后的人声条件没有历史声学验证支持；后续验收必须在初始化后保持同一runtime／UAC流，窗口间仅CaptureControl Start／Stop。用户再次确认新上电后，唯一初始化在原2秒版本查询阶段失败，manual_wakeup未发送，第四份claim保留。该版本握手故障与V06上传失败分开，详见[现场与流程审查](model-services.md#免唤醒方案复核与真人窗口2026-11-03-晚)。
+
+最小Rust增量仅 `packages/alia-embedded/src/module/r1/initializer.rs`：UART已打开后的事务失败保留原错误正文／cause链，追加阶段、version／command ID、接收字节／解码完整帧、握手ACK／版本重查的尝试与写完次数、partial清理、manual写入尝试／写完标记和elapsed。没有payload或固件正文；不改原开流顺序、clear_input、2秒期限、单次重查／manual、claim结构或成功路径。`firmware`注释澄清claimed记录是预期值，不能当实读成功。新诊断不覆盖Serial::open前的错误，也不能证明此次清空UART丢了握手。
+
+主线提交 **`dc7bfffb5ccb5de074060fed1336c155dad7681d`**；独立诊断提交 **`cc7ffef61d89392fb94c12a2324df16bc80ad765`**，父提交为实际Pi诊断版 `d39240111617a4c741f8dc5fdd4aa32159df6012`，只移植此文件，未带入受V05限制的Server恢复代码。3189个源码文件与Git blob逐一一致，Mac Server仍为8481。独立审阅无阻塞，fmt和whitespace通过，见[源码与审阅](../../run/voice-acceptance-20261103-human/initializer-diagnostics/commit-review.json)。
+
+Linux ARM64唯一一次initializer目标 **15 passed／0 failed／0 ignored**，320 filtered、测试耗时2.12秒；新增PTY覆盖Version timeout含握手与partial清理、manual写完后的ACK timeout，强化原cancel／disconnect的unknown与错误链断言。原默认并发、2秒产品期限和测试期限保持。见[实际结果](../../run/voice-acceptance-20261103-human/initializer-diagnostic-candidate/initializer-tests.json)。新增行为是Linux专属路径，本轮没有把Mac检查冒充该覆盖，也没有重复完整workspace回归；原default workspace release及静态audit单独记录，测试数不与历史相加。
+
 ## 上传诊断增量与独立 Pi 诊断件（2026-11-03）
 
 本轮现场 Start 在 Ready 前终止，旧错误把上传队列 Full／Closed 合并，无法回溯分型，见 [V06 现场记录](model-services.md#voicesession-ready-前上传终止2026-11-03)。最小 Rust 改动只保留具体错误类别，以及 sequence、sample_offset、frame_samples 和队列容量标量，不格式化 PCM／CaptureFrame／文本／凭据；失败后采样的剩余容量不冒充失败瞬间的队列快照。原容量、非阻塞入队、采样时钟、5 秒握手、清理期限与零重试均保持。这是诊断改进，不是已证明的现场根因修复。

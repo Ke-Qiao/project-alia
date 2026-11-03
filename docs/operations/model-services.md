@@ -9,6 +9,22 @@ component checks and actual deployment evidence. The dated sections below retain
 their original scope; the latest validation status is recorded first. Example
 URLs and model names alone are not evidence of deployment or acceptance.
 
+## 免唤醒方案复核与真人窗口（2026-11-03 晚）
+
+本轮软件、现场失败和最终关闭状态的统一索引见[收口记录](../../run/voice-acceptance-20261103-human/summary.json)。
+
+**真人短句尚未通过；先修正免唤醒验收的采集生命周期，新的版本握手失败另行保留。** 用户确认Pi和R1均断电后，本轮按新cold UUID `3b6f378b-bb0a-45f3-91c5-803256b8ad0d`初始化一次，PID2170收到beam0命令ACK。第一窗口Ready后提示，但用户明确没来得及讲话，记为未执行。该窗口的30秒从Start开始；提示后的本地记录写入距Start回执约24.458秒，不能冒充用户界面即时送达证据。第二窗口调整为首次工具等待2秒直接读取Ready，原30秒、5秒RPC和模型期限均不变。没有把第一窗口零模型记录当成识别故障。
+
+两次之间主流程错误地结束整个语音runtime并恢复noop，明确关闭了初始化时的原生UAC采集流（PID2170→noop2620、PCMclosed），然后普通启动PID2897进行第二次真人窗口。用户确认说了指定句但没有回复。虽然普通重启被软件允许、传输Ready有效，历史普通重启仅验证无语音传输，**没有证明重新打开采集流后免唤醒人声仍有效**。因此第二窗口不满足已验证“冷启动初始化一次、同一UAC流持续保持”的声学条件；这是已确认的编排／验收依据偏离，不能进一步认定关闭UAC必然重置R1或它是本次无回复的唯一原因。见[逐证据审阅](../../run/voice-acceptance-20261103-human/r1-scheme-readonly-review.json)和[原启动契约](../../packages/alia-embedded/docs/audio-and-voice.md#r1-system-controlled-capture)。
+
+第二窗口实际有两次Easy-Turn请求，各为4.180／4.020秒PCM，native1582.878／535.268ms，均返回complete；有一次Juno POST HTTP200。它们不证明指定句保真、合成完成或播放可闻。只读SQL新增一条14字符用户消息（指定句精确／规范化比较均false，正文未返回）、一条interrupted Response和unknown audio Delivery，offered／accepted为0、submitted／presented为null；AcousticCandidate Pause取得Held，之后scope退休。旧两unknown保留，未重派。按用户要求，这些仅作旁证，优先核对R1调用方案，不据此认定模型根因。见[模型元数据](../../run/voice-acceptance-20261103-human/log-review-second/model-metadata-summary.json)与[同窗SQL](../../run/voice-acceptance-20261103-human/sql-after-window-second/summary.json)。
+
+修正后的流程明确：依赖就绪→确认真实新冷启动→初始化一次并保持同一runtime／原生采集流→每个窗口仅CaptureControl Start／Stop→整个验收轮结束才停止runtime恢复noop。窗口间Stop停止上传和输出，并不关闭本地原生采集，不能同时向用户声称物理麦克风已关闭。若初始化流确实中断，不能仅凭普通重启Ready继续声学验收。见[修正流程](../../run/voice-acceptance-20261103-human/r1-continuous-plan/README.md)。
+
+用户随后按步骤重新上电，本轮只以新UUID `cf884e24-7c85-43e5-a488-e5cc1293171c`尝试一次，实际在原2秒版本阶段失败：`R1 version response timed out; manual_wakeup was not sent`。没有发出manual_wakeup，没有进入讲话窗口，保留第四份claimed_outcome_unknown记录且不换UUID重试。claim内firmware是UART打开前写入的预期常量，不能当作实读成功；此前口头推断已更正。原握手ACK、同ID一次版本重查机制与cold-03一致，但旧独立工具先开UART再开采集，该次d392401 runtime先开采集和claim后开UART，存在顺序差异；没有本次UART帧证据，尚不能证明该差异导致超时。见[本次失败](../../run/voice-acceptance-20261103-human/r1-continuous-attempt/pi-initialize.json)与[握手对照](../../run/voice-acceptance-20261103-human/r1-continuous-attempt/version-handshake-readonly-review.json)。
+
+失败后恢复d392401全noop PID3810、PCMclosed、硬件FD0，四份claim完整保留；Mac原8481 PID14258运行。用户进一步要求实际修复，已将初始化改为先持久claim／准备UART，再启动音频并校验PCM，随后在同一UART执行原事务，避免晚清空丢掉采集启动期间的握手；原期限与一次manual约束不变。修复身份、离线机制验证和最终安装以[冷启动修复记录](software-release.md#r1-冷启动顺序修复2026-11-03-晚)为准。该修复不证明现场失败已全部解决，也不新增自动冷启动识别。下一次现场验收严格保持同一持续流，不能靠反复断电求成功。最终58bb11e已安装为noop PID4239，签名确认采播关闭，四claims及原绑定保持；软件验证通过，实际新冷启动还未执行。Mac原Server／模型服务的只读就绪检查保持通过。V06上传故障未在本日两个窗口复现，但未关闭；V03／V05、AEC、24小时负载和完整升级恢复仍独立。
+
 ## 诊断版无讲话启动核对（2026-11-03）
 
 **独立诊断版已安装，Start→Ready→Stop 通过一次；指定短句仍未执行。** 用户在准备期间表示暂时不能讲话，因此本窗口只检查会话启动，取得新鲜 Ready 后立即进入原签名清理，不发讲话提示、不等待人工反馈。Mac 仍为 `8481b0f`，Pi 为仅增加 Full／Closed 元数据的 `d392401`；没有带入受 V05 限制的 Server 恢复代码，也没有扩大队列、模型／握手期限或重复 R1 初始化。安装前后设备 key、Bound `.local`、SQLite 逻辑行、完整两份 claim 均一致，见[诊断部署](../../run/voice-acceptance-20261103/diagnostic-deploy-plan/deployment-summary.json)。

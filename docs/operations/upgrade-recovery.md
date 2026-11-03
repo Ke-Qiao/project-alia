@@ -1,8 +1,39 @@
 # Server／Embedded 成套升级与失败恢复
 
-更新：2026-11-03。本页是现有软件改动的成套升级步骤，对应 [S03](../todo.md)。当前 Mac 保持 `8481b0f`／PID77141；Pi 使用直接基于该版本的独立 `d392401` 日志诊断件，完成一次无讲话提示的 Start→Ready→Stop 后恢复全 noop／PID6015，PCM closed、硬件 FD 为 0。两份 R1 claim、原身份／绑定及历史 unknown Delivery 保留，未恢复生产数据库或补发初始化。`e2831e4` 仍因 V05 不放行；本次 Ready 成功不关闭更早上传异常 V06。当天数据库依赖恢复、旧 Server exit 1 和新恢复点的未还原边界仍保留。下方按日期保存历史事实，实际最新诊断组合与恢复入口见紧接一节；完整真人链、24 小时负载、AEC 和实际双端升级恢复仍分别待验。
+更新：2026-11-03。本页是现有软件改动的成套升级步骤，对应 [S03](../todo.md)。当前 Mac 为原 `8481b0f`／PID14258；Pi 已安装独立顺序修复版 `58bb11e`／全 noop PID4239，active／disabled／Restart=no，PCM closed、硬件 FD 为 0。最新真实冷启动初始化在原 2 秒 version 阶段失败，manual_wakeup 未发送；第四份 unknown claim 与前三份记录全部保留，未重试、未还原数据库。当天真人窗口暴露了先关闭已初始化原生采集、再普通重开的操作偏离，不能用 Ready 当作声学基线或把无回复归为已定位模型故障。主线 `1a7a118` 已修正显式初始化的先持有 UART、后启动音频顺序，独立 Embedded `58bb11e` 的影响验证及 noop 安装核验已通过；旧 `cc7ffef` 只完成 stage、从未激活。本次没有初始化或 Capture Start，不能据 noop 安装关闭现场恢复验收。`e2831e4` 仍因 V05 不放行，V06 仍未关闭。下方保留各历史时点，最新恢复边界见紧接一节；完整真人链、24 小时负载、AEC 和实际双端升级恢复仍分别待验。
 
 新安装的版本目录、Mac LaunchDaemon／Pi systemd 模板、配对和日志入口见[无前端部署操作](server-embedded.md#mac-与-pi-的安装和常驻入口)。当前 Mac 实际安装采用用户 LaunchAgent，见[Mac 正式启用](server-embedded.md#mac-正式启用2026-10-28)；通用系统域模板仍为备选材料；Pi 当前无音频配对与真人窗口边界见下节。
+
+## 连续采集操作偏离与失败初始化的恢复边界（2026-11-03）
+
+晚间只恢复原 PostgreSQL 容器及原 volume、固定 embedding 和原 `8481b0f` Server，未新建或还原生产数据；原错误与新鲜门禁分别保留。当前 Mac PID14258、二进制／配置身份不变，见[依赖恢复](../../run/voice-acceptance-20261103-human/mac-recovery-after-engine/summary.json)及[恢复后门禁](../../run/voice-acceptance-20261103-human/mac-baseline-ready/summary.json)。这次受控启动不证明自动恢复通过，也不安装 V03／V05 的 held 候选。
+
+新的真实冷启动曾在 PID2170 完成一次初始化，第三份 claim 为 `3b6f378b-bb0a-45f3-91c5-803256b8ad0d`。首次窗口用户未讲话，随后编排恢复 noop PID2620，关闭了同一原生采集流；再以 PID2897 普通重开、未初始化后做第二窗口，用户说了指定句但无回复。操作偏离了已验证的同进程／同 native capture 条件，不能将普通重启的传输 Ready 当作免唤醒声学成功；也不能据此断言关闭／重开就是唯一故障根因。修正的[同轮连续流方案](../../run/voice-acceptance-20261103-human/r1-continuous-plan/plan.json)保留一次初始化后同 PID／boot／native capture，只用 CaptureControl Stop／Start 在同轮窗口间切换；全部窗口结束或 native 流异常才关闭进程。进入 noop 是安全收口，但不能在其后把旧声学基线直接沿用到新流。
+
+用户再次确认真实 R1 冷启动后，cold_boot_id `cf884e24-7c85-43e5-a488-e5cc1293171c` 的唯一启动 exit 1。实际错误明确为版本回复在原 2 秒绝对期限内未满足条件，manual_wakeup 未发送；不能写成手动命令 ACK 超时、已观察到固件版本或已证明 PCM 丢失。claim 仍按产品规则为 `claimed_outcome_unknown`，不能人工修改为成功／未执行后重试。临时初始化 override 已移除，原失败保留，见[初始化结果](../../run/voice-acceptance-20261103-human/r1-continuous-attempt/pi-initialize.json)和[错误边界核对](../../run/voice-acceptance-20261103-human/r1-continuous-attempt/version-handshake-readonly-review.json)。随后源码核对确认旧实现晚于原生音频启动／首 PCM 才 open／clear UART，偏离 cold03 的先持有 UART 顺序；已按下文修正这一具体偏离。现场缺少逐阶段收发证据，仍不能把晚清输入认定为本次唯一根因，原期限、协议检查和不重复初始化规则保持。
+
+当前 `/home/ke-qiao/.local/share/alia/state/embedded.sqlite3.r1-initialization/` 的完整集合为以下四份，恢复任何旧配置／SQLite／二进制前都必须完整保留；前三份旧记录未变，第四份未知结果也不可删：
+
+| claim | SHA-256 |
+| --- | --- |
+| `d9b21420-fa34-43ee-bc55-2406fc696442.jsonl` | `45103ccdf47cc0ea1227e04db8145ede5feff349307e4ac0b6c13646abfe95ee` |
+| `0797886f-48b2-401d-958b-08f0620d0111.jsonl` | `37a93185fbffc1013f7bfcf80c8aec7fd30bf405e6a85ee0ec1f546f3e7b4cff` |
+| `3b6f378b-bb0a-45f3-91c5-803256b8ad0d.jsonl` | `26084fda73fd9f806da0f9d4e2f5fdc12c103bce473eae607c157377c58a0e7e` |
+| `cf884e24-7c85-43e5-a488-e5cc1293171c.jsonl`（unknown） | `99d5812f830a9070b1883010621efba511751ceab376fd60fd2f9d9019fd6ca6` |
+
+恢复原 active noop 后为诊断版 PID3810、disabled／Restart=no，PCM closed、硬件 FD 为 0；新私有 `/home/ke-qiao/.local/share/alia/backups/failed-r1-continuous-20261103` 保存此次配置、状态与完整 claim，见[最终状态与备份](../../run/voice-acceptance-20261103-human/r1-continuous-attempt/restored-noop.json)。该备份未演练还原，也不是跨端原子快照。任何早先空／一份／两份／三份 claim 的备份都不可覆盖当前集合；同 UUID 冲突须保留双方证据，不删除记录、改 state_path 或为同一上电周期新造 UUID。数据库及 unknown 业务记录没有用旧快照覆盖；**数据库迁移后不能只换回旧二进制**仍是恢复边界。
+
+先行独立初始化日志诊断为源码 `cc7ffef61d89392fb94c12a2324df16bc80ad765`／Embedded SHA-256 `efcf9da176ff2db40faaaf437870b6feeb1efa49ea714ec61a1251955027c406`，已另存 stage 并核对，**未激活**。它只在 Pi `d392401` 之上移植诊断，不包含 held 的 Server 恢复代码；Linux ARM64 initializer 的一次 15／0／0 和原 workspace release／ELF／配置预检继续作为该旧产物的历史证据保留，见[诊断身份](../../run/voice-acceptance-20261103-human/initializer-diagnostic-candidate/diagnostic-manifest.json)。这些结果不能代替随后顺序修复的验证，也不能把 staging 当作生产版本切换。
+
+主线 `1a7a118` 的两阶段修复先执行 durable claim＋UART open／唯一 clear_input，等待准备线程结束，再启动包括播放在内的模块与 native capture。实际 PCM 校验通过后，同一 UART owner 执行原事务并在取消时 join；不重新打开串口或额外清输入，不改变原 2 秒／250 ms 期限、一次 manual 或同 ID 单次 version requery。见[修复身份与静态检查](../../run/voice-acceptance-20261103-human/initializer-order-review/final-source.json)。**claim 先于模块 start，因此模块或 PCM 启动失败也可能留下未发命令的 unknown claim；该记录不自动删除或回收，不能原 ID 重试或为同一上电周期另造 UUID。** 普通进程启动与重连仍不初始化。
+
+独立 Embedded 源码 `58bb11e08d50971afa4224232fa835611824abdc` 以 `cc7ffef` 为父，只移植主线 `1a7a118` 三个文件。固定产物 70,847,880 bytes，SHA-256 `bea1e8f7aac97f29202df276b45d4b07172cbeffc0112c18235079595ba7def5`；源码、锁文件、产物和证据由[候选清单](../../run/voice-acceptance-20261103-human/initializer-ordering-candidate/candidate-manifest.json)对应。Linux ARM64 有效目标分别为 R1 40／0／0、registry 1／0／0、runtime 11／0／0、preflight 6／0／0，原 workspace release 194.495 秒及 ELF／loader／链接／三配置预检通过。Mac 最终 registry 1／0／0、runtime 10／0／0，见[Mac 记录](../../run/voice-acceptance-20261103-human/initializer-ordering-mac-final/test-run.json)。以上均为通过／失败／忽略，保持原期限与默认并发，未重跑完整 workspace 或操作真实设备。
+
+晚清输入机制突变的单例 0／1／0、exit 101 是预期失败。首次 final 调用误复用共享 Cargo target 内的突变二进制，其 39／1／0 原始记录保留，不能当作最终源码回归；核对 depfile／二进制后只清本包 dev cache，重新编译 final 并确认身份，才执行上述一次有效目标。见[缓存原因核对](../../run/voice-acceptance-20261103-human/initializer-ordering-candidate/cache-investigation/conclusion.json)。Mac 最初沙箱禁止 loopback bind 的不完整运行也保留，扩大对应权限后仅补影响目标；没有以调整产品期限、断言或隐藏失败求通过。软件结果不证明真实断电恢复或现场唯一根因；实际 noop 安装与恢复点如下。
+
+已将新二进制另存并安装，当前全 noop PID4239，active／disabled／Restart=no；unit SHA-256 为 `42a7b4b56b48adbb2eb8021ee283349c0502a6c69ab1021037d20c8fcf4ecfd4`，二进制摘要与上述产物一致。原配置、key、SQLite、完整四份 claim 保持，PCM closed、硬件 FD 为 0。签名 Inspect 为 boot `77c887c2-8722-4419-a6d6-de0b754ba429`、generation 0、inactive／available=false，符合 noop 无采集 pipeline 的边界。安装前新私有恢复点为 `/home/ke-qiao/.local/share/alia/backups/pre-initializer-ordering-20261103`，尚未演练还原；旧 `d392401` 及只 stage、从未激活的 `cc7ffef` 均保留。见[安装执行](../../run/voice-acceptance-20261103-human/initializer-ordering-deploy-plan/activate-execution.json)与[签名核验](../../run/voice-acceptance-20261103-human/initializer-ordering-deploy-plan/noop-activation-complete.json)。本次没有初始化或 Capture Start，Mac 原 `8481b0f` 未更换，也未带入 `e2831e4`。这是明确记录的局部修复组合，不是同源码双端正式 Release；后续存在插件时仍须核对新宿主 pin。若撤回新 Embedded，先保存新增证据和 claim，停止并确认所有 owner 退出后再恢复旧二进制路径；本次没有 schema 变更也不能据此清状态，通用的数据库迁移后不可只回退二进制边界保持。
+
+进入修复后的真人轮仍须确认真实新上电事实、用户可即时讲话，以及当前有效 Ready。一次初始化成功后，窗口之间只用签名 CaptureControl Stop／Start，保持同一长期 PID／device boot／native capture；Stop 结束会话而不关闭原生流，到整轮结束或流异常退休才停止进程。新一轮成功只能形成相应恢复与声学证据，不能替代其他历史故障根因、完整升级恢复、24 小时负载或 AEC 验收。
 
 ## 独立诊断件与窗口后恢复（2026-11-03）
 
@@ -93,6 +124,8 @@ Mac 本次故障恢复有明确失败边界：数据库直接查询／登录已�
 [真人窗口准备与配置审核](../../run/pi-production-20261030/human-window/README.md) 对比了 10 月 24 日 R1 系统控制基线：模块、串口、16 kHz mono 采集、48 kHz stereo 播放、线性增益、独立时钟和 system trigger 一致；生产身份、持久路径、LAN 地址和 channel 为明确变更，Silero 文件摘要一致。旧现场二进制与当前候选不同，不能写成同一产物已现场验收。USB mixer 的 −14 dB 是历史证据，本轮未重新读取，须在真人窗口前只读确认；不自动改音量或重复旧硬件基线。
 
 进入语音窗口须先确认本次**真实板端冷启动**，再记录该次启动唯一的新非 nil UUID；当前没有预先声明 cold-boot ID。空 claim、Linux／设备 boot ID、配对或进程重启均不能代替物理冷启动确认。选定已审核的 voice 配置后，由同一个长期进程执行一次 `--initialize-r1`，保留原固件检查、beam 0 与期限。按[初始化操作](server-embedded.md#mac-与-pi-的安装和常驻入口)移除临时 override，但不重启已保持同一采集流的进程；失败或结果未知也不自动重发。
+
+采用 `1a7a118` 的显式初始化时，claim 与 UART owner 在模块 start 前准备；后续失败即使未发命令也保留 claim，不存在自动同 ID 恢复。初始化成功后的同轮各窗口只切换 CaptureControl Start／Stop，保持同一进程和原生采集流，不在窗口之间恢复 noop。
 
 生产 claim 路径为 `/home/ke-qiao/.local/share/alia/state/embedded.sqlite3.r1-initialization/`。**回滚不能删除恢复点之后新增的 claim。** 还原旧配置／SQLite 前先独立保留当前完整 claim 目录；同 UUID 的冲突先保留两份证据并诊断，不用旧备份覆盖、换 state_path 或新 UUID 绕过防重。
 
