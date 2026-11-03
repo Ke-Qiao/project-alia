@@ -9,6 +9,38 @@ component checks and actual deployment evidence. The dated sections below retain
 their original scope; the latest validation status is recorded first. Example
 URLs and model names alone are not evidence of deployment or acceptance.
 
+## 播放后端退出与显式 Start 恢复（2026-11-03 晚）
+
+**用户反馈结束的 feedback04 持续约69.875秒，仍没有回复；这次已确认是 Pi 播放 worker 退出后，新回答无法注册播放。** 两次指定句均识别正确，minor分别生成47字和43字回答，随后两次注册收到 `FailedPrecondition: playback backend is not running`；新增Delivery和Juno合成请求均为0。没有整场倒计时，也不是仍在等待聊天模型。该失败发生于Pi `58bb11e`／PID4532；随后已普通重启部署修复版`138ee28`／PID6358，Mac仍为`8481b0f`／PID14258。见[feedback04结果](../../run/voice-acceptance-20261103-fixed/feedback-04-review/report.md)和[用户结束窗口](../../run/voice-acceptance-20261103-fixed/feedback-round-04/window/summary.json)。
+
+Pi日志将退出定位到更早窗口02期间的一次ALSA `pcm.drop()`失败。旧日志只有外层 `stopping ALSA playback`，缺少当时errno与PCM state。后测Pi时钟比Mac快约3.947—5.311秒，更符合首次注册的前置Stop，但不能证明历史时差不变，因此**不能断定最终CaptureStop触发了退出，也不能仅用计时Stop解释窗口02无声**。独立C-Media输出声卡的USB reset／descriptor error -71有内核记录；R1采集是另一路USB。它支持旧输出句柄可能失效的解释，尚未证明该次drop失败的底层根因。见[时序与源码复核](../../run/voice-acceptance-20261103-fixed/playback-lifecycle-review/source-review.md)、[时钟与设备](../../run/voice-acceptance-20261103-fixed/pi-playback-failure/clock-and-cards.json)及[内核事件](../../run/voice-acceptance-20261103-fixed/pi-playback-failure/kernel-audio-events.log)。
+
+随后在同一真实输出声卡上做零样本检查：新句柄open→prepare／drop→prepare／drop→close均成功，没有write或start，原R1采集PID／流未变。这证明当前输出设备可以重新打开，不等于旧worker已恢复，也不证明下一次USB重置已解决。隔离null PCM实验也未复现原故障，不能把空媒体或重复Stop直接定为底层原因。见[真实输出零样本结果](../../run/voice-acceptance-20261103-fixed/playback-regression-review/pi-output-probe-result.json)。
+
+已实现仅恢复输出的修正：显式、已认证的CaptureStart先核对绑定、boot／generation与无活动会话；仅播放worker不可用时，在旧scope已退休、已进入的写入均结束后，调用现有播放模块start。恢复任务登记到既有任务集合，阻塞启动始终等待完成；返回后重新核对调用方取消、绑定、代次和播放可用状态，再创建新会话。采集流与R1初始化不动，网络播放入口不自行打开设备，旧unknown输出不重放。原生播放启动在ready通道断开或明确失败时也会shutdown并join线程；ALSA drop／prepare失败增加阶段、前后state、errno和完整错误链，继续返回原失败，不更改停止行为或任何期限。
+
+本次更换Embedded二进制已正常停止旧PID4532（exit0）、普通启动新PID6358；这与修复生效后在同一进程内仅恢复播放是两个阶段。没有发送UART初始化或CaptureStart，不要求用户再次断电。新进程start ticks为4071196，boot为`905e3d8c-79d5-4c36-b005-22f04e1578d5`，签名Inspect为generation1／inactive／available；capture线程6366的PCM为RUNNING，output线程6365的PCM为PREPARED且hw／appl pointer均为0。原SQLite逻辑内容、设备key、配置和完整五份claim一致。原初始化进程的采集流已随正常停止而关闭，当前是新进程重新打开的采播句柄，不能写成仍保持旧流。见[实际部署](../../run/voice-acceptance-20261103-fixed/playback-recovery-deploy/voice-activation-complete.json)及[签名状态](../../run/voice-acceptance-20261103-fixed/playback-recovery-deploy/signed-inspect-after.json)。
+
+下一次按[已准备的真人入口](../../run/voice-acceptance-20261103-fixed/playback-recovery-next-window/README.md)核对实际安装身份与新鲜Mac就绪，取得本窗Ready才提示讲话，由用户反馈结束。普通重启后实际人声质量、可闻完整回复及真实播放故障恢复仍待验证；这次部署没有打开语音会话。
+
+macOS ARM64已各执行一次：`system_capture` **9通过／0失败／0忽略**，`playback_startup` **2通过／0失败／0忽略**；7文件格式检查通过，验证前后源码hash一致。使用fake后端，没有真实设备或模型调用，Mac不覆盖Linux ALSA分支。见[Mac定向验证](../../run/voice-acceptance-20261103-fixed/playback-recovery-validation/test-run.json)。Linux ARM64也各执行一次：`playback_startup` **2/0/0**、`system_capture` **9/0/0**、`runtime` **11/0/0**、`preflight` **6/0/0**；Embedded no-default all-targets及首份单包release的ELF／链接、三份配置预检通过。首份构建仅选择Embedded，与旧发布的workspace共享依赖feature集合不同，因此不选作部署件；原workspace release已另行完成，231.737秒通过，最终ELF／链接及三份配置检查通过；没有重跑已通过的测试。两次任务容器无网络、无设备、无PG、无真实模型且已清理；这些结果按目标分别记录，不与历史或Mac数目相加。
+
+主线修复`ebb537d`仅移植到现有Pi源码`58bb11e`，得到独立提交`138ee2838a599f5271035bb4e9550254002edf65`。首份单包产物与[原清单](../../run/voice-acceptance-20261103-fixed/playback-recovery-candidate/candidate-manifest.json)保留作证据，最终workspace产物与[清单v2](../../run/voice-acceptance-20261103-fixed/playback-recovery-candidate/candidate-manifest-v2.json)另存，70,865,176字节、SHA-256 `2d2e8f3016e40458794fe8d836503f86bfc1b498c0d5e3c8088069aa85548704`；不覆盖旧结果。实际安装与运行文件已核对该最终产物，完整真人回复尚未通过。Server的V03恢复候选仍受V05限制，没有随本次Embedded修复部署；V01—V07、长句、打断／恢复、取消下一轮、24小时负载、AEC及具体插件各自保留。
+
+## 修复后冷启动成功，回复在播放前取消（2026-11-03 晚）
+
+**本次 R1 初始化成功；用户重复指定句三遍但没有听到回复，短句对话仍未通过。** Pi 使用 `58bb11e`，新冷启动只初始化一次，版本查询和 beam 0 命令成功；随后 PID4532、start ticks3513578及原生采集FD17保持不变。原四份claim未改，新成功claim另存，总计五份。没有在窗口之间重启、恢复noop或再次初始化。见[初始化记录](../../run/voice-acceptance-20261103-fixed/round/initialize.json)与[连续采集核对](../../run/voice-acceptance-20261103-fixed/round/window-01-continuity.json)。
+
+这一窗口 Start→Ready 后立即提示讲话，30.004秒进入清理，精确Stop收到inactive回执。Stop关闭上传和本轮输出，本地原生采集连接继续保持，不能写成物理麦克风关闭。用户确认自己说了三遍；宿舍其他人的声音可能导致打断，但三条保存的转写尚不能逐一归属这些讲话。转写内容都明显不同于指定句，原文仅保存在本机私有记录中。见[窗口](../../run/voice-acceptance-20261103-fixed/round/window-01/summary.json)及[用户补充](../../run/voice-acceptance-20261103-fixed/human-window-01-clarification.json)。
+
+这次无声发生在播放之前：新增两条Response都被取消，新增Delivery为0。第一次在新声音触发暂停约3秒后取消，当时下一段Easy-Turn请求尚未开始；第二次由新的完整输入替换旧回复，事件明确为`superseded_by_new_voice_turn`；第三个turn开始约1.393秒后恰逢窗口Stop，没有获得完整回答时间。前两次取消早于窗口结束，不能归因最终Stop。四次Easy-Turn推理全部成功，耗时分别992／620／660／324ms；一次Juno HTTP200不等于音频已送给Pi。见[同窗SQL汇总](../../run/voice-acceptance-20261103-fixed/sql-window-01/summary.json)、[模型记录](../../run/voice-acceptance-20261103-fixed/log-review-window-01/model-metadata-summary.json)和[取消时序复核](../../run/voice-acceptance-20261103-fixed/output-hold-review/review.md)。
+
+第二窗口保存了准确入模PCM，**指定句已识别正确；测试程序过早Stop和播放worker退出是分别需要记录的问题**。目标片段7.36秒，原判句耗时790ms，文本为“你好艾莉亚请用一句话介绍你自己”；聊天模型生成51字回复。窗口从Start起30秒计时，提示动作记录已晚16.173秒，目标判句结束后仅剩3.945秒；音频输出任务创建约1.8秒后即被Stop取消，offered／accepted为0，本窗没有新声音触发Pause。后续Pi日志另确认窗口期间一次ALSA drop失败使worker退出，不能再把计时Stop视为唯一无声原因，更不能断定最终CaptureStop造成该退出。现有证据不支持归因R1、识别故障或宿舍背景声，也不能把本窗解释套回第一窗口。见[原时间线](../../run/voice-acceptance-20261103-fixed/window-02-review/report.md)与[补充时序复核](../../run/voice-acceptance-20261103-fixed/window-02-review/review.md)。
+
+临时观察只保存了原服务已接收的两段PCM，未增加模型请求或STT；两次保存原PCM分别约0.626／0.426ms，完整保存开销另在日志记录。观察器已关闭，原Easy-Turn启动配置恢复，Pi仍是同一PID4532和原生采集流。音频留在私有目录，不进入公开文档或Git；没有为确认正确文本再运行转写模型。
+
+用户明确要求由现场反馈结束测试，故停止采用20／30秒整场倒计时，也不采用“提示后再等30秒”的替代。流程改为唯一Start→新鲜Ready→提示→用户听到回复或认为等待过久后反馈→精确Stop；EOF／异常／终端退出也走停止逻辑。原模型、RPC和打断期限不改。该流程随后在feedback04实际执行，用户等待约69.875秒仍无回复，结果及播放修复见上节；不能将编排改正当作产品已恢复。完整短句、长句、打断恢复、下一轮对话和日常断电恢复仍待验。
+
 ## 免唤醒方案复核与真人窗口（2026-11-03 晚）
 
 本轮软件、现场失败和最终关闭状态的统一索引见[收口记录](../../run/voice-acceptance-20261103-human/summary.json)。
@@ -19,7 +51,7 @@ URLs and model names alone are not evidence of deployment or acceptance.
 
 第二窗口实际有两次Easy-Turn请求，各为4.180／4.020秒PCM，native1582.878／535.268ms，均返回complete；有一次Juno POST HTTP200。它们不证明指定句保真、合成完成或播放可闻。只读SQL新增一条14字符用户消息（指定句精确／规范化比较均false，正文未返回）、一条interrupted Response和unknown audio Delivery，offered／accepted为0、submitted／presented为null；AcousticCandidate Pause取得Held，之后scope退休。旧两unknown保留，未重派。按用户要求，这些仅作旁证，优先核对R1调用方案，不据此认定模型根因。见[模型元数据](../../run/voice-acceptance-20261103-human/log-review-second/model-metadata-summary.json)与[同窗SQL](../../run/voice-acceptance-20261103-human/sql-after-window-second/summary.json)。
 
-修正后的流程明确：依赖就绪→确认真实新冷启动→初始化一次并保持同一runtime／原生采集流→每个窗口仅CaptureControl Start／Stop→整个验收轮结束才停止runtime恢复noop。窗口间Stop停止上传和输出，并不关闭本地原生采集，不能同时向用户声称物理麦克风已关闭。若初始化流确实中断，不能仅凭普通重启Ready继续声学验收。见[修正流程](../../run/voice-acceptance-20261103-human/r1-continuous-plan/README.md)。
+当时现场轮采用：依赖就绪→确认真实新冷启动→初始化一次并保持同一runtime／原生采集流→每个窗口仅CaptureControl Start／Stop→整个验收轮结束才停止runtime恢复noop。窗口间Stop停止上传和输出，并不关闭本地原生采集，不能同时向用户声称物理麦克风已关闭。该时点未验证初始化流关闭后的真人质量，所以没有把普通重启Ready计为声学验收通过；这是当时证据范围，不是产品每次普通重启都必须断电或重新发UART初始化的条件。后续播放修复的普通重启入口见本文最新章节。原[连续采集流程](../../run/voice-acceptance-20261103-human/r1-continuous-plan/README.md)作为当时操作记录保留。
 
 用户随后按步骤重新上电，本轮只以新UUID `cf884e24-7c85-43e5-a488-e5cc1293171c`尝试一次，实际在原2秒版本阶段失败：`R1 version response timed out; manual_wakeup was not sent`。没有发出manual_wakeup，没有进入讲话窗口，保留第四份claimed_outcome_unknown记录且不换UUID重试。claim内firmware是UART打开前写入的预期常量，不能当作实读成功；此前口头推断已更正。原握手ACK、同ID一次版本重查机制与cold-03一致，但旧独立工具先开UART再开采集，该次d392401 runtime先开采集和claim后开UART，存在顺序差异；没有本次UART帧证据，尚不能证明该差异导致超时。见[本次失败](../../run/voice-acceptance-20261103-human/r1-continuous-attempt/pi-initialize.json)与[握手对照](../../run/voice-acceptance-20261103-human/r1-continuous-attempt/version-handshake-readonly-review.json)。
 

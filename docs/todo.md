@@ -1,6 +1,6 @@
 # Project Alia TODO
 
-更新：2026-11-03 晚。**R1 冷启动顺序已修正、完成软件验证并安装；还没有通过断电后真人验收，不能宣称正常使用恢复。** 主线 `1a7a118` 将持久 claim／UART 准备前移到所有音频 start 之前，首个有效 PCM 后才在同一 UART 执行原事务；同轮窗口也已修正为仅 CaptureControl Start／Stop，保持初始化后的原生流。原第二窗口用户讲话无回复、新冷启动版本超时（manual 未发送）及四份 claim 均保留。当前 Pi 为修复版58bb11e全noop／PID4239，Mac8481／PID14258；最终状态见[冷启动修复](operations/software-release.md#r1-冷启动顺序修复2026-11-03-晚)。V03恢复候选仍受V05限制；完整语音、24小时负载、AEC、恢复及具体插件均未收口。
+更新：2026-11-03 晚。**Pi播放worker退出后的恢复修复已完成双平台定向测试、原workspace release构建并部署为独立138ee28；普通重启后真人回复尚待确认。** 旧PID4532正常退出，新PID6358／boot905e3d8c…签名inactive／available，采集RUNNING、输出PREPARED，未发UART初始化或CaptureStart；原绑定、SQLite、key、配置及五claims一致，Mac8481／PID14258不变。旧采集流已关闭，不能把新进程说成仍保持旧流。feedback04约69.875秒仍无声、窗口02计时缺陷、ALSA drop失败与缺失errno／state均保留；USB reset尚未证实为底层根因。详见[播放故障与修复](operations/model-services.md#播放后端退出与显式-start-恢复2026-11-03-晚)。下一步新鲜就绪后做用户反馈结束的短句，不需要再断电或发UART初始化。完整播放、长句／恢复／24小时负载／AEC及具体插件仍未通过；V03候选仍受V05限制。
 
 最新实现：[架构概览](architecture/overview.md)、[Embodiment](architecture/embodiment.md)、[工具构建](concepts/skills-and-tools.md)、[MCP](operations/mcp-tools.md)、[WASM 插件](operations/wasm-plugins.md)。验证结果统一引用[软件发布记录](operations/software-release.md)，不将不同源码、平台或重复测试相加为项目完成率。
 
@@ -38,13 +38,13 @@ S01—S03 是 10 月 20 日的交付与部署出口，该轮没有新增生产�
 
 - [ ] **V06 · VoiceSession Ready 前上传终止。** 11月3日第一次 Start 后约0.703秒、Ready前出现合并的 Full／Closed 错误，无法回溯分型。已补最小诊断元数据并完成双平台定向验证；独立 `d392401` 只携带该增量，已安装到 Pi。随后唯一一次无讲话检查取得 Ready，并在约0.795秒内完成 Start／精确 Stop ACK，没有复现故障；**不因此关闭根因**。原容量、期限、并发和首错保持，不重复现场求绿。下一次真人窗口直接复用诊断件，若再失败按具体 Full／Closed 和同窗日志有界定位。见[原失败](operations/model-services.md#voicesession-ready-前上传终止2026-11-03)与[诊断启动](operations/model-services.md#诊断版无讲话启动核对2026-11-03)。
 
-- [ ] **V07 · R1 冷启动版本握手超时与免唤醒恢复。** 11月3日晚新的真实冷启动在原2秒版本阶段失败，manual未发送，旧现场缺RX／TX计数。已修正UART晚开／晚清空的顺序偏离并补诊断，离线机制与实际现场因果分别记录；最终断电恢复和有效人声仍待验。首个真人窗口后错误关闭初始化流的编排也已纠正，不能认定它是无回复的唯一原因。见[修复与验证](operations/software-release.md#r1-冷启动顺序修复2026-11-03-晚)。
+- [ ] **V07 · R1 冷启动版本握手超时与免唤醒恢复。** UART准备已前移，修复版58bb11e在用户确认的新冷启动中一次完成版本查询和beam0命令，原期限不变；PID4532的原生采集保持至本轮升级正常停止。旧版本超时和错误关闭流的记录保留，不把一次初始化成功写成日常断电、USB重连均已恢复。后续指定句已正确识别，feedback04的无声已定位为独立播放worker退出，不能继续归因R1输入。现138ee28普通重启不发UART、无需再次断电，重新打开采播句柄后的实际人声与完整输出按M01验证。见[当前结果](operations/model-services.md#播放后端退出与显式-start-恢复2026-11-03-晚)和[初始化软件修复](operations/software-release.md#r1-冷启动顺序修复2026-11-03-晚)。
 
 ## 待输入或明确恢复后推进
 
 | ID | 任务与当前状态 | 恢复条件与完成标准 |
 | --- | --- | --- |
-| M01 | **模型已定；修复冷启动顺序，待现场断电恢复与完整语音验收** | 首窗用户没来得及讲话；第二窗在初始化流关闭／重开后用户说了但无回复，不满足已验证连续流条件。日志有模型处理和unknown输出，仅作旁证。后续新冷启动版本查询超时，manual未发；保存四claims，已补失败诊断并将UART准备前移，保持原2秒与一次manual；未把软件修复等同现场根因确定。修正轮内仅CaptureControl Start／Stop，保持同一runtime和采集流到整轮结束。模型、账号、参考文本不重选，真实短句／长句／回复播放／打断恢复／取消下一轮仍待验。见[复核与后续入口](operations/model-services.md#免唤醒方案复核与真人窗口2026-11-03-晚)。 |
+| M01 | **模型已定；识别和回答已走通，播放恢复修复已部署，待真人完整回复** | feedback04无整场倒计时，两次正确输入分别得到47／43字回答，但注册收到 `playback backend is not running`，新增Delivery／Juno均为0。显式CaptureStart的输出恢复先确认旧scope及写入结束，始终等待启动完成，再复验取消／身份／代次；正常capture不动、旧unknown不重放。Mac两组分别9/0/0、2/0/0；Linux startup／system_capture／runtime／preflight分别2/0/0、9/0/0、11/0/0、6/0/0。最终workspace产物已装为138ee28／PID6358，普通重启没有UART或CaptureStart，Mac8481保持。按已准备入口做用户反馈结束的短句，确认新进程人声质量、完整回复、输出可用与旧unknown未重放；不重选模型／账号／参考文本、不放宽期限。见[当前结果](operations/model-services.md#播放后端退出与显式-start-恢复2026-11-03-晚)。 |
 | E01 | **ROS 与具体具身适配器暂缓**：Embodiment 地基已完成，默认没有实际物理适配器 | 用户指定首个设备、通信协议／ROS 版本和目标能力后，实现 `PhysicalAdapter`；核对设备身份、反馈、停止证据、迟到请求终结、断线／重启和共享执行器仲裁。先仿真再实机，沿用 Execution；不扩大 expression 的设备权限。见[接入契约](architecture/embodiment.md)。 |
 | R02-F | **R1 固件改造由用户明确暂缓**：新旧资料、镜像及两份不同虚拟机已核查，未找到匹配板端 SDK；未开发、构建或烧录新固件 | 用户明确恢复后，再取得匹配的最小板端应用 SDK／ABI，或满足契约的受支持常开模式，并补齐当前 1.9.6 恢复路径。核查与候选方案见[硬件记录](operations/hardware-deployment-readiness.md#r1-通用固件工作2026-10-21)，[商家资料清单](operations/r1-firmware-vendor-inputs.md)仅保留为参考，不继续调查或索取。 |
 | R02 | **当前软件接入与分阶段验证已收口；整体验收按条件恢复** | 真实模型整链统一归 M01；AEC 归 R02-AEC。其他方向／安装标定及长稳在实际部署时随 R05 明确范围，不默认重做已通过的 R1 基线。模块正常，R02-F 暂缓不阻断 Alia 主线；FYP ROS 验收不等于 Alia ROS 接入。见[硬件资料](operations/hardware-deployment-readiness.md)。 |
@@ -57,10 +57,10 @@ S01—S03 是 10 月 20 日的交付与部署出口，该轮没有新增生产�
 
 ## 下一步执行顺序
 
-1. **先验证并安装冷启动顺序修复，再做一次有明确判据的断电恢复验收**：最终源码、产物和noop身份先核对；新现场轮需明确真实冷启动，初始化后同一runtime／UAC保持，窗口间只Start／Stop，整轮结束才noop。成功判据包含指定句正确进入、回复实际播放，以及后续Stop／Start不破坏采集；不能仅凭Ready或旧claim推定可用。若失败先读完整阶段证据，不扩大时限或连续要求用户拔插。一般断电自动恢复、仅Pi重启和USB／流重开仍分别待证，不由本轮排序修复自动关闭。
+1. **下一步直接做修复部署后的真人短句**：138ee28／PID6358及新boot、采播句柄、五claims与v2产物身份已核对，尚未打开会话；执行前刷新Mac就绪并核对部署后身份，依[预备入口](../run/voice-acceptance-20261103-fixed/playback-recovery-next-window/README.md)取得本窗Ready再提示讲话。普通重启已完成，不再要求断电或UART初始化。由用户确认听到回答或等待过久再精确Stop，异常退出也执行停止；不恢复整场倒计时，不修改模型／RPC／打断期限。确认新进程的人声质量、完整输出、旧unknown未重放，再集中安排长句、打断／恢复、取消与下一轮。
 2. **新Rust候选仍留在软件门槛**：V03具体恢复修复已提交、构建产物保留，但V05两次Resume失败未解释，最后一次通过不算根因修复，不部署为已通过候选。下一次有具体假设或新失败时使用已准备的失败专用状态／PG锁诊断，不扩大期限、并发或忽略项，也不重新整套求绿。
 3. 短句通过后集中完成正常换气长句、打断／恢复、输出取消、成功Stop／新Start和下一轮；随后在维护窗口完成应用级成套升级恢复、登录／进程异常／休眠唤醒／resolver重启恢复，以及至少24小时混合故障和资源上界。分阶段结果不合并为整链完成。
-4. AEC等待商家确认后单独验；首版实际MCP／第三方插件按目标验。V01／V02／V03／V04／V05／V06保持各自证据，Companion仍为shadow，固件／ROS／执行器／全面前端及其他平台范围不扩展。
+4. AEC等待商家确认后单独验；首版实际MCP／第三方插件按目标验。V01／V02／V03／V04／V05／V06／V07保持各自证据，Companion仍为shadow，固件／ROS／执行器／全面前端及其他平台范围不扩展。
 
 ## 按具体需求再立项
 

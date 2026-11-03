@@ -1,5 +1,33 @@
 # 软件发布资料与真实模型链前置
 
+## Pi 播放线程恢复修复（2026-11-03 晚）
+
+用户反馈结束的约69.875秒窗口仍无声；两次输入已正确识别并完成聊天回答，但Pi返回 `playback backend is not running`，没有新Delivery或Juno合成。更早窗口中的ALSA drop失败退出了播放线程；旧日志缺少errno，内核USB reset不能单独证明唯一原因。实际日志、计时编排错误与独立设备检查见[本轮现场记录](model-services.md#播放后端退出与显式-start-恢复2026-11-03-晚)。
+
+修复提交 **`ebb537d7f9249372963b19dd946bd4fb1ad5c4bf`**，仅修改Embedded的七个Rust文件及针对性测试。独立Pi提交 **`138ee2838a599f5271035bb4e9550254002edf65`** 直接继承已安装的 `58bb11e`，不带入受V05限制的Server恢复代码。显式CaptureStart只在播放线程已经退出时尝试恢复一次，先保证旧播放会话及在途写入已结束，恢复任务由既有任务集合持有并等待完成；随后重新验证身份、取消、采集存活与代次。恢复不动采集或R1初始化，不重放旧unknown；失败返回本次错误，不循环重试。原生启动失败会关闭并join线程，ALSA失败保留阶段、state、errno和完整错误链。
+
+改动前列出的反例及检查记录包括：播放线程已死而采集仍可用；恢复过程中取消、换绑或采集退出；旧输出写入尚未结束；ready通道断开或线程panic。见[反例与Mac记录](../../run/voice-acceptance-20261103-fixed/playback-recovery-validation/summary.json)。
+
+| 平台／源码 | 实际目标 | 通过／失败／忽略 |
+| --- | --- | --- |
+| macOS ARM64／对应ebb537d的最终文件 | system_capture | 9／0／0 |
+| macOS ARM64／同上 | playback_startup | 2／0／0 |
+| Linux ARM64／独立138ee28 | system_capture | 9／0／0 |
+| Linux ARM64／同上 | playback_startup | 2／0／0 |
+| Linux ARM64／同上 | runtime | 11／0／0 |
+| Linux ARM64／同上 | preflight | 6／0／0 |
+
+每组仅执行一次，原默认并发、产品期限和测试期限保持；没有重跑完整workspace，也没有用假后端结果代表真实USB恢复。Linux先清理Embedded本包缓存，执行前确认最终源码重编和depfile路径；no-default all-targets检查通过，隔离容器无网络、无设备、无生产数据库或模型。见[Linux原始结果](../../run/voice-acceptance-20261103-fixed/playback-recovery-candidate/linux/validation.json)。
+
+首份 `-p alia-embedded` release编译及离线配置检查成功，但与已部署workspace release的共享依赖feature选择不同，未选作部署件；原产物及[首份清单](../../run/voice-acceptance-20261103-fixed/playback-recovery-candidate/candidate-manifest.json)保留。随后仅补原workspace范围release，231.737秒通过，没有重跑成功测试；ELF／loader／ldd及三配置预检通过，任务容器已清理。最终选定产物70,865,176字节，SHA-256 `2d2e8f3016e40458794fe8d836503f86bfc1b498c0d5e3c8088069aa85548704`；源码、锁文件、两平台检查、未选产物及最终构建对应关系见[最终清单v2](../../run/voice-acceptance-20261103-fixed/playback-recovery-candidate/candidate-manifest-v2.json)。普通更新程序无需重新UART初始化或要求R1再次断电，首次安装会正常重启进程、重新打开native设备；这和之后显式Start只恢复播放是两件事。真人可闻回复、普通重启后语音与设备故障后的恢复仍需现场结果。
+
+
+最终产物已实际安装到 `/home/ke-qiao/.local/share/alia/releases/138ee28/alia-embedded`。旧PID4532正常退出（exit0），新PID6358／start ticks4071196普通启动；capture6366为RUNNING，playback6365为PREPARED，输出指针为0。签名Inspect为新boot `905e3d8c-79d5-4c36-b005-22f04e1578d5`、generation1、inactive／available；没有CaptureStart或UART初始化。两处unit程序路径更新，voice配置、设备key、SQLite逻辑内容、`.local`绑定和五份claim一致。备份保存在Pi `backups/pre-playback-recovery-20261103`，只核对未还原。见[实际激活](../../run/voice-acceptance-20261103-fixed/playback-recovery-deploy/activate-execution.json)、[签名与设备状态](../../run/voice-acceptance-20261103-fixed/playback-recovery-deploy/voice-activation-complete.json)及[新进程原始日志](../../run/voice-acceptance-20261103-fixed/playback-recovery-deploy/new-process-startup.log)。
+
+安装后的输出设备与worker已经打开，不等于已听到完整回答。当前本地采集连接开放，上传未开启；unit仍disabled／Restart=no。新日志无启动ERROR，未提示讲话时出现低幅度提醒，不据此判定人声失败。Mac原8481 Server及模型只读就绪通过，没有推理或配置切换，见[Mac核对](../../run/voice-acceptance-20261103-fixed/playback-recovery-mac-ready/mac-readiness.json)。下一次按[已准备入口](../../run/voice-acceptance-20261103-fixed/playback-recovery-next-window/README.md)取得fresh Ready后提示，由用户反馈结束；不恢复整场倒计时。
+
+两项准备差错单独保留：部署草稿曾误替换旧unit校验hash，执行前审查已修正并加断言；上传后本地审阅一度比较整份PCM状态相等，因正常递增的时间戳／环形缓冲指针而失败，随后只核对身份、owner与trigger，未重传或重启。见[部署检查](../../run/voice-acceptance-20261103-fixed/playback-recovery-deploy/selfcheck.json)与[上传后差异解释](../../run/voice-acceptance-20261103-fixed/playback-recovery-deploy/stage-root-review.json)。
+
 ## R1 冷启动顺序修复（2026-11-03 晚）
 
 用户明确要求修复正常断电后的软件恢复，诊断增量不作为收口。已确认生产顺序与通过的 cold-03 不同：原实现先启动音频并等待首帧，再持久化 claim、打开 UART 和清空输入；采集启动期间排入 UART 的握手可能因此丢失。现改为先持久化 claim 并持有唯一 UART，随后才启动模块（包括播放）和 native capture；原生 16 kHz mono PCM 校验通过后，在同一个 UART 上执行原事务，不重新打开或清空接收缓冲。取消或启动失败会释放已准备的串口并保留 claim，准备线程会先 join；不放宽串口错误、2 秒事务、写期限或增加 manual 重试。当前日志不足以证明此机制就是现场版本超时的唯一原因。
