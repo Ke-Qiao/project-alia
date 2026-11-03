@@ -40,7 +40,7 @@ pub(super) fn build_llm_messages(
             ..ChatMessage::default()
         });
     }
-    append_history_with_interrupted_context(&mut messages, history);
+    messages.extend_from_slice(history);
     messages.push(ChatMessage {
         role: "user".into(),
         content: text.to_string(),
@@ -48,33 +48,6 @@ pub(super) fn build_llm_messages(
         ..ChatMessage::default()
     });
     messages
-}
-
-pub(super) fn append_history_with_interrupted_context(
-    messages: &mut Vec<ChatMessage>,
-    history: &[ChatMessage],
-) {
-    if let Some(previous) = unanswered_user_history_tail(history) {
-        messages.push(ChatMessage::new(
-            "system",
-            interrupted_user_context_prompt(&previous.content),
-        ));
-    }
-    messages.extend_from_slice(history);
-}
-
-pub(super) fn unanswered_user_history_tail(history: &[ChatMessage]) -> Option<&ChatMessage> {
-    history.last().filter(|message| message.role == "user")
-}
-
-pub(super) fn interrupted_user_context_prompt(previous_user_message: &str) -> String {
-    format!(
-        "The prior voice turn was interrupted before the assistant could answer. \
-The last user message in conversation history is preserved only as context, not as a completed exchange. \
-Prior interrupted user message: \"{}\". \
-Use the newest user message as the primary instruction. Refer to the interrupted message only when it helps answer the newest request.",
-        preview_for_prompt(previous_user_message, 360)
-    )
 }
 
 pub(super) fn stt_transcript_context_prompt() -> String {
@@ -349,7 +322,7 @@ mod tests {
     }
 
     #[test]
-    fn llm_messages_explain_unanswered_user_history_tail() {
+    fn llm_messages_keep_unanswered_history_as_user_context() {
         let base = vec![ChatMessage::new("system", "Base persona")];
         let history = vec![ChatMessage {
             role: "user".into(),
@@ -358,18 +331,34 @@ mod tests {
             ..ChatMessage::default()
         }];
 
-        let messages = build_llm_messages(&base, &history, None, "继续说重点", "embedded-user");
-
-        assert!(messages.iter().any(|message| {
-            message.role == "system"
-                && message.content.contains("prior voice turn was interrupted")
-                && message.content.contains("终末地")
-        }));
-        assert_eq!(messages.last().unwrap().content, "继续说重点");
+        for current in [
+            "请用一句话介绍你自己",
+            "明天天气怎么样",
+            "继续上一问，先说重点",
+        ] {
+            let messages = build_llm_messages(
+                &base,
+                &history,
+                Some("Route context".into()),
+                current,
+                "embedded-user",
+            );
+            assert_eq!(messages.len(), 4);
+            assert_eq!(messages[0].content, "Base persona");
+            assert_eq!(messages[1].role, "system");
+            assert_eq!(messages[1].content, "Route context");
+            assert_eq!(
+                serde_json::to_value(&messages[2]).unwrap(),
+                serde_json::to_value(&history[0]).unwrap()
+            );
+            assert_eq!(messages[3].role, "user");
+            assert_eq!(messages[3].content, current);
+            assert_eq!(messages[3].user_id.as_deref(), Some("embedded-user"));
+        }
     }
 
     #[test]
-    fn llm_messages_do_not_add_interruption_prompt_for_completed_pair() {
+    fn llm_messages_keep_completed_history_before_current_request() {
         let history = vec![
             ChatMessage::new("user", "上一问"),
             ChatMessage::new("assistant", "上一答"),
@@ -377,11 +366,13 @@ mod tests {
 
         let messages = build_llm_messages(&[], &history, None, "下一问", "embedded-user");
 
-        assert!(
-            !messages
-                .iter()
-                .any(|message| message.content.contains("prior voice turn was interrupted"))
+        assert_eq!(messages.len(), 3);
+        assert_eq!(
+            serde_json::to_value(&messages[..2]).unwrap(),
+            serde_json::to_value(&history).unwrap()
         );
+        assert_eq!(messages[2].role, "user");
+        assert_eq!(messages[2].content, "下一问");
     }
 }
 

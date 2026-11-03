@@ -559,9 +559,11 @@ fn write_alsa_chunk(
     timestamps_enabled: bool,
 ) -> Result<()> {
     let channels = channels.max(1);
+    let controlled = buffer.has_control();
+    let priming = controlled && pcm.state() == AlsaState::Prepared;
     let silence = if buffer.is_held() {
         Some(ReferenceContent::HeldSilence)
-    } else if buffer.len() == 0 && buffer.has_control() {
+    } else if priming || (buffer.len() == 0 && controlled) {
         // A streamed response can wait seconds for its next synthesized segment.
         Some(ReferenceContent::ZeroFill)
     } else {
@@ -576,7 +578,16 @@ fn write_alsa_chunk(
         return Ok(());
     }
 
-    let frames_to_write = available_frames.min(chunk_frames.max(1));
+    let frames_to_write = if priming {
+        // Prime the existing native buffer before accepting even a short End.
+        pcm.get_params()
+            .inspect_err(|_| clock.probe.mark(AudioDiscontinuity::BackendError))
+            .context("reading ALSA startup buffer size")?
+            .0
+            .clamp(1, 4096) as usize
+    } else {
+        available_frames.min(chunk_frames.max(1))
+    };
     let (chunk, output_write) = if silence.is_some() {
         (vec![0; frames_to_write * channels], None)
     } else {
@@ -615,7 +626,12 @@ fn write_alsa_chunk(
                     reading,
                 )?;
             }
-            start_accepted_playback(pcm, written_frames, &clock.probe)
+            if controlled {
+                // ALSA starts only when the configured buffer threshold is met.
+                Ok(())
+            } else {
+                start_accepted_playback(pcm, written_frames, &clock.probe)
+            }
         }
         Err(error) if matches!(error.errno(), libc::EAGAIN | libc::EINTR) => Ok(()),
         Err(error) if error.errno() == libc::EPIPE => {
@@ -759,6 +775,141 @@ fn capture_error_reason(errno: i32) -> AudioDiscontinuity {
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn alsa_controlled_start_primes_native_buffer_before_short_end_across_generations() {
+        use alia_core::delivery::{ObservationEnd, VoiceScope};
+
+        let runtime = create_alsa_playback_runtime(
+            &AudioConfig {
+                playback_sample_rate: 16000,
+                playback_channels: 2,
+                ..Default::default()
+            },
+            "null",
+        )
+        .unwrap();
+        let native_frames = runtime
+            .pcm
+            .hw_params_current()
+            .unwrap()
+            .get_buffer_size()
+            .unwrap() as u64;
+        assert!(native_frames > runtime.chunk_frames as u64);
+        let (sender, receiver) = playback::channel(8);
+        let bus = AudioBus::new(2).reference();
+        let mut reader = bus.try_claim_reader().unwrap();
+        let clock = bus.open_stream(
+            AudioDirection::Playback,
+            AudioFormat {
+                sample_rate_hz: runtime.output_sample_rate,
+                channels: runtime.output_channels as u16,
+            },
+        );
+        receiver.set_backend(SubmissionBackend {
+            instance_id: clock.probe.stream_id(),
+            boundary: SubmissionBoundary::AlsaWriteAccepted,
+            output_sample_rate_hz: runtime.output_sample_rate,
+            output_channels: runtime.output_channels as u32,
+        });
+        let mut sink = AlsaPlaybackSink {
+            _clock_owner: AudioStreamOwner(clock.probe.clone()),
+            clock,
+            time_origin: AlsaTimeOrigin::default(),
+            runtime,
+            buffer: PlaybackBuffer::new(receiver.generation()),
+            renderer: Renderer::default(),
+            volume: AudioVolumeState::new(Default::default()),
+        };
+        let session_id = uuid::Uuid::new_v4();
+        let device_boot_id = uuid::Uuid::new_v4();
+        for epoch in [1, 2] {
+            let generation = sender.begin().unwrap();
+            assert!(matches!(
+                receiver.take(true),
+                Some(playback::PlaybackAction::Stop)
+            ));
+            sink.stop().unwrap();
+            assert_eq!(sink.runtime.pcm.state(), AlsaState::Prepared);
+            let scope = VoiceScope {
+                device_boot_id,
+                session_id,
+                generation_epoch: epoch,
+            };
+            let submission = sender
+                .open_submission(
+                    PlaybackIdentity {
+                        scope,
+                        playback_id: uuid::Uuid::new_v4(),
+                        playback_sequence: epoch,
+                    },
+                    16000,
+                    generation,
+                )
+                .unwrap();
+            // The complete short reply is queued before the first native pump.
+            sender.submit(&submission, 0, &[1234; 160], false).unwrap();
+            sender.submit(&submission, 160, &[], true).unwrap();
+            sink.set_control(Some(sender.playback_control(scope, generation).unwrap()));
+            while let Some(action) = receiver.take(true) {
+                let playback::PlaybackAction::Play(block) = action else {
+                    panic!("unexpected control action")
+                };
+                sink.enqueue(block).unwrap();
+            }
+            while reader.try_read().is_some() {}
+            let before = bus.snapshot(AudioDirection::Playback).unwrap().cursor;
+            sink.pump().unwrap();
+            let first = submission.snapshot(1);
+            assert_eq!(
+                first.submitted_source_frames,
+                Some(0),
+                "controlled startup must prime before submitting short media"
+            );
+            assert!(first.observation_end.is_none());
+            assert_eq!(sink.runtime.pcm.state(), AlsaState::Running);
+            assert_eq!(
+                bus.snapshot(AudioDirection::Playback).unwrap().cursor - before,
+                native_frames
+            );
+            let mut zeros = 0;
+            while let Some(block) = reader.try_read() {
+                if block.sample_count == 0 {
+                    continue;
+                }
+                assert_eq!(block.content, ReferenceContent::ZeroFill);
+                assert_eq!(block.boundary, Some(AudioSampleBoundary::AlsaWriteAccepted));
+                assert!(
+                    block.samples[..block.sample_count]
+                        .iter()
+                        .all(|sample| *sample == 0.0)
+                );
+                zeros += block.timing.frames;
+            }
+            assert_eq!(zeros, native_frames);
+            sink.pump().unwrap();
+            let finished = submission.snapshot(2);
+            assert_eq!(finished.submitted_source_frames, Some(160));
+            assert_eq!(
+                finished.observation_end,
+                Some(ObservationEnd::SubmissionFinished)
+            );
+            assert!(sender.stop_if_current(generation));
+            assert!(matches!(
+                receiver.take(true),
+                Some(playback::PlaybackAction::Stop)
+            ));
+            sink.stop().unwrap();
+            sink.set_control(None);
+            assert_eq!(sink.runtime.pcm.state(), AlsaState::Prepared);
+            let stopped = bus.snapshot(AudioDirection::Playback).unwrap().cursor;
+            sink.pump().unwrap();
+            assert_eq!(
+                bus.snapshot(AudioDirection::Playback).unwrap().cursor,
+                stopped
+            );
+        }
+    }
 
     #[test]
     fn alsa_stream_gaps_write_silence_without_advancing_or_finishing_source_audio() {

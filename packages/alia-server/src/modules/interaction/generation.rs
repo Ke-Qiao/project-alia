@@ -18,9 +18,9 @@ use super::persistence::{
     PendingTextPersistence, persist_interrupted_input_context, persist_text_interaction,
 };
 use super::prompt::{
-    RuntimePromptContext, append_history_with_interrupted_context, build_base_system_messages,
-    build_llm_messages, preview_for_prompt, runtime_context_has_user_memory,
-    stt_transcript_context_prompt, system_message, tts_optimized_output_prompt,
+    RuntimePromptContext, build_base_system_messages, build_llm_messages, preview_for_prompt,
+    runtime_context_has_user_memory, stt_transcript_context_prompt, system_message,
+    tts_optimized_output_prompt,
 };
 use super::services::InteractionServices;
 use super::skills::SkillCatalog;
@@ -723,7 +723,7 @@ async fn route_response(
                 messages.push(ChatMessage::new("system", prompt));
             }
             messages.push(ChatMessage::new("system", "The active skill provides domain context only. Preferred tools are ranking hints, not restrictions; use whichever available tool best matches the user's request."));
-            append_history_with_interrupted_context(&mut messages, history);
+            messages.extend_from_slice(history);
             messages.push(ChatMessage {
                 role: "user".into(),
                 content: text.into(),

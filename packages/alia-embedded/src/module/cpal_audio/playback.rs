@@ -555,7 +555,7 @@ impl PlaybackReceiver {
     }
 
     #[cfg(test)]
-    fn take(&self, accept_media: bool) -> Option<PlaybackAction> {
+    pub(super) fn take(&self, accept_media: bool) -> Option<PlaybackAction> {
         self.take_sources([accept_media; 2])
     }
 
@@ -658,13 +658,13 @@ impl PlaybackReceiver {
             drop(self.0.changed.wait_while(state, waiting));
         } else {
             // Device consumption has no portable stdlib wake handle. Control and
-            // new media wake this wait immediately. An idle scope also checks
-            // capture retirement, which does not take the media admission lock.
-            drop(self.0.changed.wait_timeout_while(
-                state,
-                Duration::from_millis(if idle && !held { 20 } else { 2 }),
-                waiting,
-            ));
+            // new media wake this wait immediately. Controlled empty queues also
+            // feed native silence and must keep the same audio service cadence.
+            drop(
+                self.0
+                    .changed
+                    .wait_timeout_while(state, Duration::from_millis(2), waiting),
+            );
         }
     }
 }
