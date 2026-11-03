@@ -21,22 +21,26 @@ pub struct InitializationReport {
     pub acoustic_capture_verified: bool,
 }
 
-/// Explicit operator-declared cold boot only. Never call from reconnect or capture reset.
-/// The caller keeps its capture stream open before and after this synchronous operation.
-/// Keep the state path on durable, owner-controlled storage; removing claims loses replay protection.
-pub fn initialize(
-    config: &R1Config,
-    state_path: &Path,
-    cold_boot_id: Uuid,
-    cancel: CancellationToken,
-) -> Result<InitializationReport> {
-    #[cfg(target_os = "linux")]
-    {
-        linux::initialize(config, state_path, cold_boot_id, cancel)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
+#[cfg(target_os = "linux")]
+pub(crate) use linux::PreparedInitialization;
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) struct PreparedInitialization;
+
+#[cfg(not(target_os = "linux"))]
+impl PreparedInitialization {
+    pub(crate) fn prepare(
+        config: &R1Config,
+        state_path: &Path,
+        cold_boot_id: Uuid,
+        cancel: CancellationToken,
+    ) -> Result<Self> {
         let _ = (config, state_path, cold_boot_id, cancel);
+        anyhow::bail!("R1 initialization requires Linux; no state or devices were opened")
+    }
+
+    pub(crate) fn run(self, cancel: CancellationToken) -> Result<InitializationReport> {
+        let _ = cancel;
         anyhow::bail!("R1 initialization requires Linux; no state or devices were opened")
     }
 }
@@ -241,25 +245,56 @@ mod linux {
         Ok((guard, report))
     }
 
-    pub(super) fn initialize(
-        config: &R1Config,
-        state_path: &Path,
-        cold_boot_id: Uuid,
-        cancel: CancellationToken,
-    ) -> Result<InitializationReport> {
-        config.validate()?;
-        ensure!(
-            !cancel.is_cancelled(),
-            "R1 initialization cancelled before claiming cold boot"
-        );
-        let transaction = Transaction::new(rand::random());
-        let (guard, report) = claim(config, state_path, cold_boot_id, transaction.command_id)?;
-        ensure!(
-            !cancel.is_cancelled(),
-            "R1 initialization cancelled after claim; do not retry this cold boot ID"
-        );
-        let serial = serial::Serial::open(&config.serial_path)?;
-        run(serial, transaction, guard, report, &cancel)
+    /// Own the durable claim and UART before capture starts. No command is sent here.
+    /// Dropping this owner releases the UART but never removes its one-shot claim.
+    pub(crate) struct PreparedInitialization {
+        serial: serial::Serial,
+        transaction: Transaction,
+        guard: File,
+        report: InitializationReport,
+    }
+
+    impl PreparedInitialization {
+        /// Explicit operator-declared cold boot only, never reconnect or capture reset.
+        /// Keep state on durable, owner-controlled storage; removing claims loses replay protection.
+        pub(crate) fn prepare(
+            config: &R1Config,
+            state_path: &Path,
+            cold_boot_id: Uuid,
+            cancel: CancellationToken,
+        ) -> Result<Self> {
+            config.validate()?;
+            ensure!(
+                !cancel.is_cancelled(),
+                "R1 initialization cancelled before claiming cold boot"
+            );
+            let transaction = Transaction::new(rand::random());
+            let (guard, report) = claim(config, state_path, cold_boot_id, transaction.command_id)?;
+            ensure!(
+                !cancel.is_cancelled(),
+                "R1 initialization cancelled after claim; do not retry this cold boot ID"
+            );
+            let serial = serial::Serial::open(&config.serial_path)?;
+            Ok(Self {
+                serial,
+                transaction,
+                guard,
+                report,
+            })
+        }
+
+        /// Consume the same UART after validating actual native PCM; do not reopen or
+        /// clear input here, because capture startup may have queued a board handshake.
+        /// The caller keeps capture open through completion and joins on cancellation.
+        pub(crate) fn run(self, cancel: CancellationToken) -> Result<InitializationReport> {
+            run(
+                self.serial,
+                self.transaction,
+                self.guard,
+                self.report,
+                &cancel,
+            )
+        }
     }
 
     #[derive(Default)]
@@ -422,8 +457,18 @@ mod linux {
             let state = directory.path().join("state.sqlite3");
             let cancel = CancellationToken::new();
             cancel.cancel();
-            assert!(initialize(&config(), &state, Uuid::new_v4(), cancel).is_err());
-            assert!(initialize(&config(), &state, Uuid::nil(), CancellationToken::new()).is_err());
+            assert!(
+                PreparedInitialization::prepare(&config(), &state, Uuid::new_v4(), cancel).is_err()
+            );
+            assert!(
+                PreparedInitialization::prepare(
+                    &config(),
+                    &state,
+                    Uuid::nil(),
+                    CancellationToken::new()
+                )
+                .is_err()
+            );
             assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
         }
 
@@ -432,9 +477,15 @@ mod linux {
             let directory = tempfile::tempdir().unwrap();
             let state = directory.path().join("state.sqlite3");
             let id = Uuid::new_v4();
-            let first = initialize(&config(), &state, id, CancellationToken::new()).unwrap_err();
+            let first =
+                PreparedInitialization::prepare(&config(), &state, id, CancellationToken::new())
+                    .err()
+                    .unwrap();
             assert!(format!("{first:#}").contains("opening R1 UART"));
-            let second = initialize(&config(), &state, id, CancellationToken::new()).unwrap_err();
+            let second =
+                PreparedInitialization::prepare(&config(), &state, id, CancellationToken::new())
+                    .err()
+                    .unwrap();
             assert!(format!("{second:#}").contains("existing claim must never be retried"));
         }
 
@@ -458,8 +509,7 @@ mod linux {
             }
         }
 
-        #[test]
-        fn pty_cold_handshake_then_single_manual_command_and_durable_ack() {
+        fn pty_cold_handshake(queued_before_run: bool) {
             let directory = tempfile::tempdir().unwrap();
             let (guard, report) = claim(
                 &config(),
@@ -469,21 +519,44 @@ mod linux {
             )
             .unwrap();
             let guard_path = report.guard_path.clone();
-            let (mut board, serial, _) = serial::pty();
-            let worker = thread::spawn(move || {
-                run(
-                    serial,
-                    Transaction::new(100),
-                    guard,
-                    report,
-                    &CancellationToken::new(),
-                )
-            });
+            let (mut board, serial, path) = serial::pty();
+            // PTYs do not implement modem line ioctls. Use the existing UART fixture,
+            // including the input flush that production Serial::open performs.
+            serial.clear_input().unwrap();
+            let prepared = PreparedInitialization {
+                serial,
+                transaction: Transaction::new(100),
+                guard,
+                report,
+            };
+            let handshake = protocol::encode(1, 9, &[0xa5, 0, 0, 0]);
+            if queued_before_run {
+                // Model a handshake arriving while native capture is starting, before
+                // validated PCM allows the initialization transaction to run.
+                board.write_all(&handshake).unwrap();
+                // Observe readable queued input without consuming it, so a misplaced
+                // late TCIFLUSH deterministically discards this already-arrived frame.
+                use std::os::fd::AsRawFd;
+                let observer = OpenOptions::new().read(true).open(path).unwrap();
+                let mut queued = libc::pollfd {
+                    fd: observer.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                };
+                assert_eq!(unsafe { libc::poll(&mut queued, 1, 3000) }, 1);
+                assert_ne!(queued.revents & libc::POLLIN, 0);
+                let mut bytes = [0u8; 1];
+                assert_eq!(
+                    board.read(&mut bytes).unwrap_err().kind(),
+                    ErrorKind::WouldBlock
+                );
+            }
+            let worker = thread::spawn(move || prepared.run(CancellationToken::new()));
             let query = read_frame(&mut board);
             assert_eq!(query.id, 100);
-            board
-                .write_all(&protocol::encode(1, 9, &[0xa5, 0, 0, 0]))
-                .unwrap();
+            if !queued_before_run {
+                board.write_all(&handshake).unwrap();
+            }
             let ack = read_frame(&mut board);
             assert_eq!((ack.kind, ack.id), (255, 9));
             assert_eq!(read_frame(&mut board), query);
@@ -518,6 +591,61 @@ mod linux {
                     .unwrap()
                     .contains("command_accepted")
             );
+        }
+
+        #[test]
+        fn pty_cold_handshake_then_single_manual_command_and_durable_ack() {
+            pty_cold_handshake(false);
+        }
+
+        #[test]
+        fn pty_prepared_uart_preserves_handshake_queued_before_pcm_validation() {
+            pty_cold_handshake(true);
+        }
+
+        #[test]
+        fn pty_prepared_drop_or_cancellation_sends_nothing_and_keeps_claim() {
+            for cancelled in [false, true] {
+                let directory = tempfile::tempdir().unwrap();
+                let state = directory.path().join("state.sqlite3");
+                let id = Uuid::new_v4();
+                let (guard, report) = claim(&config(), &state, id, 101).unwrap();
+                let guard_path = report.guard_path.clone();
+                let (mut board, serial, path) = serial::pty();
+                // Keep a test slave descriptor open so no-data remains WouldBlock,
+                // rather than the PTY's EIO after the prepared UART owner is dropped.
+                let _slave = OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(path)
+                    .unwrap();
+                let prepared = PreparedInitialization {
+                    serial,
+                    transaction: Transaction::new(100),
+                    guard,
+                    report,
+                };
+                if cancelled {
+                    let cancel = CancellationToken::new();
+                    cancel.cancel();
+                    let error = prepared.run(cancel).unwrap_err();
+                    assert_eq!(error.root_cause().to_string(), "R1 UART write cancelled");
+                    assert!(error.to_string().contains("manual_write_attempted=false"));
+                } else {
+                    // Covers invalid/missing PCM or capture-start failure before run.
+                    drop(prepared);
+                }
+                let mut bytes = [0u8; 1];
+                assert_eq!(
+                    board.read(&mut bytes).unwrap_err().kind(),
+                    ErrorKind::WouldBlock
+                );
+                let contents = std::fs::read_to_string(&guard_path).unwrap();
+                assert_eq!(contents.lines().count(), 1);
+                assert!(contents.contains("claimed_outcome_unknown"));
+                assert!(claim(&config(), &state, id, 102).is_err());
+                assert_eq!(std::fs::read_to_string(guard_path).unwrap(), contents);
+            }
         }
 
         fn pty_timeout_diagnostics(after_manual: bool) {

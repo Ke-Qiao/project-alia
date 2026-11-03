@@ -50,6 +50,29 @@ impl EmbeddedModuleRegistry {
         r1_cold_boot: Option<uuid::Uuid>,
     ) -> anyhow::Result<()> {
         let cancel = &ctx.cancel_token;
+        anyhow::ensure!(
+            !cancel.is_cancelled(),
+            "startup cancelled before module start"
+        );
+        let initialization = if let Some(cold_boot_id) = r1_cold_boot {
+            let config = ctx.config.clone();
+            let init_cancel = cancel.child_token();
+            // Join preparation even if startup is cancelled: it owns the claim and
+            // UART. Clear stale input before any native audio stream can start.
+            Some(
+                tokio::task::spawn_blocking(move || {
+                    super::r1::PreparedInitialization::prepare(
+                        &config.r1,
+                        &config.device_runtime.state_path,
+                        cold_boot_id,
+                        init_cancel,
+                    )
+                })
+                .await??,
+            )
+        } else {
+            None
+        };
         start_module(self.wakeword.as_ref(), cancel).await?;
         start_module(self.vad.as_ref(), cancel).await?;
         start_module(self.direct_response.as_ref(), cancel).await?;
@@ -69,7 +92,7 @@ impl EmbeddedModuleRegistry {
         self.audio_capture
             .start_capture(&ctx.audio_bus)
             .map_err(|error| error.context("starting microphone capture"))?;
-        if let Some(cold_boot_id) = r1_cold_boot {
+        if let Some(initialization) = initialization {
             anyhow::ensure!(
                 self.audio_capture.is_available(),
                 "R1 capture is unavailable"
@@ -93,17 +116,9 @@ impl EmbeddedModuleRegistry {
                     && self.audio_capture.is_available(),
                 "R1 capture stopped before initialization"
             );
-            let config = ctx.config.clone();
             let init_cancel = cancel.child_token();
             let worker_cancel = init_cancel.clone();
-            let mut worker = tokio::task::spawn_blocking(move || {
-                super::r1::initialize(
-                    &config.r1,
-                    &config.device_runtime.state_path,
-                    cold_boot_id,
-                    worker_cancel,
-                )
-            });
+            let mut worker = tokio::task::spawn_blocking(move || initialization.run(worker_cancel));
             let result = tokio::select! {
                 result = &mut worker => result?,
                 _ = async {

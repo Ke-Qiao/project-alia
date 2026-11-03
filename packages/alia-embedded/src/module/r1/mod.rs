@@ -7,7 +7,8 @@ mod serial;
 #[cfg(test)]
 mod tests;
 
-pub use initializer::{InitializationReport, initialize};
+pub use initializer::InitializationReport;
+pub(crate) use initializer::PreparedInitialization;
 
 use std::sync::{Arc, Mutex};
 use std::thread;
