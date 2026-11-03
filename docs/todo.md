@@ -1,6 +1,6 @@
 # Project Alia TODO
 
-更新：2026-11-04。**用户已确认连续两轮正常对话及主动打断成功；播放线程保持，旧“勒莱特”话题未再出现。** 该真人窗口双端588c434，Mac PID96139、Pi PID8106。第一条End完整、三类源帧均406612；第二条已有输出后主动打断取消；第三条随后输出并进入WAIT，原60秒hold到期取消，`original hold expired`原错误保留。没有新增EPIPE、backend dead或unknown，五claims与采集trigger保持，精确Stop为generation3 inactive。三个新回答均cache_miss，不用旧缓存掩盖修复。见[本轮现场结果](operations/model-services.md#连续对话与主动打断现场结果2026-11-04)与[完整日志](../run/voice-acceptance-20261104-followup/next-window/live-01/acceptance-complete.private.log)。用户最新要求是默认关闭语音打断、**扬声器音量最大**；扬声器已改为37,37／100%／0dB并持久保存，麦克风1.0和Pi持续采集保持。默认关闭代码已提交主线7f9d4f8、独立d7126a9，Mac六个定向目标分别通过；生产Mac已切换为d7126a9／PID5817，启动日志唯一记录barge_in_enabled=false，凭据、管理员、33项迁移、embedding与终态账本保持，Companion仍shadow。Pi仍588c434／PID8106，未重启。见[实际切换](../run/voice-preferences-20261104/mac-deploy/activation.json)；HTTP health约4.948秒返回；之后一次transport warning，经自动重试于UTC17:04:57.147825连接Pi，同boot／generation3 inactive，没有新讲话窗口，见[切换审阅](../run/voice-preferences-20261104/mac-deploy/activation-review.json)。下一步验回复期间讲话不打断、回复结束后新句可答及最大音量听感；这些新偏好尚未真人复验，不重复已通过的两轮。[延迟报告](../run/voice-acceptance-20261104-followup/next-window/live-01/latency-review.md)已完成；先验新偏好，再决定延迟优化，长句／恢复等门槛仍开放，不要求反复断电，不设整场倒计时。
+更新：2026-11-04。**默认关闭语音打断已获用户现场确认；本轮两条实际输出都完整提交，播放线程保持。** Mac d7126a9／PID5817、Pi 588c434／PID8106未变，扬声器保持最大设置，麦克风未改。第一条回答出现当前输入里没有的“无尽冬日”；限定历史／依赖查询未找到该词的来源，完整最终提示词未落盘，不能直接归因旧历史或缓存。两条均直接走major、cache_miss、未执行工具。后段未完成音频累积超过原30秒上限，Server结束会话；同boot generation5 inactive，控制器未发送旧代次Stop，原错误保留。本轮不再重复讲话，下一步先接收用户的新回答流程要求，并处理内容来源和片段超限后断整场的问题；最大音量听感与第二条完整耳听尚待用户补充。见[本轮结果](operations/model-services.md#默认不打断现场复验与待改回答流程2026-11-04)、[完整日志](../run/voice-preferences-20261104/next-window/live-01/acceptance-complete.private.log)及[既有延迟报告](../run/voice-acceptance-20261104-followup/next-window/live-01/latency-review.md)。
 
 最新实现：[架构概览](architecture/overview.md)、[Embodiment](architecture/embodiment.md)、[工具构建](concepts/skills-and-tools.md)、[MCP](operations/mcp-tools.md)、[WASM 插件](operations/wasm-plugins.md)。验证结果统一引用[软件发布记录](operations/software-release.md)，不将不同源码、平台或重复测试相加为项目完成率。
 
@@ -44,7 +44,7 @@ S01—S03 是 10 月 20 日的交付与部署出口，该轮没有新增生产�
 
 | ID | 任务与当前状态 | 恢复条件与完成标准 |
 | --- | --- | --- |
-| M01 | **连续对话与主动打断获用户确认；新偏好已生效，听感及行为待真人验收** | 双端588c434本窗第一条End完整／406612源帧，第二条输出后被用户主动打断，第三条WAIT原60秒到期取消。播放8113／采集8114保持，无新增EPIPE、backend dead或unknown，旧话题未出现；不能写成两条都自然完整End。扬声器已37,37／100%／0dB并store Device成功，麦克风未改；默认关闭barge-in的7f9d4f8／独立d7126a9已通过Mac定向验证，生产Mac已d7126a9／PID5817，启动实际false；Pi仍588c434／PID8106。先验回复中讲话不打断、结束后新句可答、最大音量听感，再验正常换气长句、取消／恢复／下一轮、Start／Stop等剩余项；延迟报告已完成，优化取舍放在新偏好验收之后；本窗错误与限制保留。见[现场结果及日志](operations/model-services.md#连续对话与主动打断现场结果2026-11-04)。 |
+| M01 | **不打断已现场确认；待用户回答流程要求，处理内容来源和长片段断会话** | 最新Mac d7126a9／Pi588c434本窗两条实际输出均End=true、submitted，播放8113／采集8114保持。用户确认插话未打断；实际输入偏离指定脚本，不能代填指定第二问通过。第一条出现无来源记录的“无尽冬日”，未命中缓存／未执行工具；完整最终messages未落盘。未完成音频累计超过30秒后整场被关闭，原错误和generation5 inactive保留；不延长上限。先按下一轮用户要求明确上下文、分流和回复时序，再针对反例修正并集中真人验收。最大音量听感、正常换气长句、取消／恢复／下一轮和完整Start／Stop仍有未验项。见[本轮结果与日志](operations/model-services.md#默认不打断现场复验与待改回答流程2026-11-04)。 |
 | E01 | **ROS 与具体具身适配器暂缓**：Embodiment 地基已完成，默认没有实际物理适配器 | 用户指定首个设备、通信协议／ROS 版本和目标能力后，实现 `PhysicalAdapter`；核对设备身份、反馈、停止证据、迟到请求终结、断线／重启和共享执行器仲裁。先仿真再实机，沿用 Execution；不扩大 expression 的设备权限。见[接入契约](architecture/embodiment.md)。 |
 | R02-F | **R1 固件改造由用户明确暂缓**：新旧资料、镜像及两份不同虚拟机已核查，未找到匹配板端 SDK；未开发、构建或烧录新固件 | 用户明确恢复后，再取得匹配的最小板端应用 SDK／ABI，或满足契约的受支持常开模式，并补齐当前 1.9.6 恢复路径。核查与候选方案见[硬件记录](operations/hardware-deployment-readiness.md#r1-通用固件工作2026-10-21)，[商家资料清单](operations/r1-firmware-vendor-inputs.md)仅保留为参考，不继续调查或索取。 |
 | R02 | **当前软件接入与分阶段验证已收口；整体验收按条件恢复** | 真实模型整链统一归 M01；AEC 归 R02-AEC。其他方向／安装标定及长稳在实际部署时随 R05 明确范围，不默认重做已通过的 R1 基线。模块正常，R02-F 暂缓不阻断 Alia 主线；FYP ROS 验收不等于 Alia ROS 接入。见[硬件资料](operations/hardware-deployment-readiness.md)。 |
@@ -57,7 +57,7 @@ S01—S03 是 10 月 20 日的交付与部署出口，该轮没有新增生产�
 
 ## 下一步执行顺序
 
-1. **先验新偏好效果，再继续其余真人验收**：默认关闭barge-in已在生产Mac d7126a9／PID5817生效，扬声器最大音量已写入硬件并持久保存，麦克风未改；Pi仍588c434／PID8106，无重启。先确认回复期间讲话不会打断、结束后安静一下再说新句能回答，以及最大音量实际听感。此前双端588c434的连续对话和主动打断已有用户反馈及日志，不重复同样两轮求通过；延迟报告已完成，新偏好验收后再决定延迟优化，并按剩余门槛安排长句、取消／恢复和下一轮。HTTP health返回不等于Pi会话Ready；真人窗口仍先取得当窗Ready，再提示讲话，由用户反馈结束，不要求断电／UART初始化、不设整场倒计时、不放宽原期限。
+1. **先接收用户下一轮的回答流程要求，本轮不再安排讲话**：默认不打断已有现场反馈；两条实际输出完整提交。将无来源话题、上下文可追溯和未完成片段超过30秒直接断会话纳入具体改动，不清空聊天历史掩盖、不放宽期限。既有延迟分段报告供取舍，不能把HTTP健康耗时或模型片段长度当成说完到耳听的等待。新流程明确后先做有针对性的自动验证，再按实际变化集中真人验收；仍先取得当窗Ready、由用户反馈结束，不要求重复断电／UART初始化。
 2. **新Rust候选仍留在软件门槛**：V03具体恢复修复已提交、构建产物保留，但V05两次Resume失败未解释，最后一次通过不算根因修复，不部署为已通过候选。下一次有具体假设或新失败时使用已准备的失败专用状态／PG锁诊断，不扩大期限、并发或忽略项，也不重新整套求绿。
 3. 短句连续对话与主动打断已有本次结果；继续完成正常换气长句、无主动打断的连续结束、恢复、输出取消、成功Stop／新Start和下一轮；随后在维护窗口完成应用级成套升级恢复、登录／进程异常／休眠唤醒／resolver重启恢复，以及至少24小时混合故障和资源上界。分阶段结果不合并为整链完成。
 4. AEC等待商家确认后单独验；首版实际MCP／第三方插件按目标验。V01／V02／V03／V04／V05／V06／V07保持各自证据，Companion仍为shadow，固件／ROS／执行器／全面前端及其他平台范围不扩展。

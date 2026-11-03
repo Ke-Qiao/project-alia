@@ -9,6 +9,25 @@ component checks and actual deployment evidence. The dated sections below retain
 their original scope; the latest validation status is recorded first. Example
 URLs and model names alone are not evidence of deployment or acceptance.
 
+## 默认不打断现场复验与待改回答流程（2026-11-04）
+
+**用户确认插话没有打断原回答；本窗两条实际输出都完整提交，但第一条新回答出现本轮输入中没有的“无尽冬日”。** Mac仍为`d7126a9`／PID5817，Pi仍为`588c434`／PID8106；本轮没有更换源码、配置或模型，没有重启设备或UART初始化。开始前Mac／Pi只读检查均通过，签名Start从generation3变4，并在本次Ready后提示讲话；原RPC／模型期限保持，没有整场倒计时。用户反馈前持续约209.752秒。完整记录见[本轮原始日志](../../run/voice-preferences-20261104/next-window/live-01/acceptance-complete.private.log)与[审阅报告](../../run/voice-preferences-20261104/next-window/live-01/review-preparation/review-final.md)。
+
+| 本窗实际回答 | 技术结果 | 能确认的范围 |
+| --- | --- | --- |
+| `cb26a772…`，75字 | major新生成、cache_miss、未执行工具；End=true，offered／accepted／submitted均474594源帧 | 正常提交；回答中确有“无尽冬日” |
+| `490c26ea…`，144字 | major新生成、cache_miss、未执行工具；End=true，三类源帧均995126 | 正常提交；内容为上一句与自我介绍，不冒充预定“学习前做什么”问题已通过 |
+
+两条都直接走major，仍使用Magpie `deepseek/deepseek-flash`、关闭思考；没有minor生成后升级。用户原话只确认“没有打断”并指出意外话题；最大音量听感和第二条是否完整听完尚未单独反馈，不代填成功。Pi播放8113／采集8114、采集trigger及五份claim保持；无新EPIPE、backend dead或unknown。本轮没有Pause记录，不能因此推断重叠讲话的精确声源／时刻：没有保存本窗PCM，实际识别的两条输入也不等于原定三步测试脚本。
+
+“无尽冬日”不在本轮两条识别文本中。一次限定owner、conversation和本轮response的只读SQL补查确认：第一条回答之前，同一聊天会话中没有该精确词，第一条context引用的消息及最近20条候选历史也没有；记录的memory／cache依赖为0。第二条才引用了本轮第一条含词assistant消息。完整最终messages没有落盘，不能宣称已找到旧历史来源，也不能把原因直接定成模型凭空编造；来源与上下文策略留待用户下一轮回答流程要求一并处理，保留[原始查询](../../run/voice-preferences-20261104/next-window/live-01/sql-review/topic-origin.raw.private.json)。
+
+本窗并非由操作员Stop正常结束。Pi在UTC18:10:44.014650收到Server `InvalidArgument: utterance exceeds the bounded 30 second model window`，会话先自行结束；反馈后的签名Inspect确认为同boot、generation5、inactive／available。控制器因代次变化没有发Stop，原exit2和`identity_or_generation_mismatch_no_stop`原样保留，不改写成精确Stop成功。当前上传已关闭，本地原生采集连接仍保持。
+
+30秒来自Server `CaptureWindow::push`的PCM累计上限，不是Easy-Turn请求超时。最后一个未完成片段在同一代次反复累计到29.80秒，随后下一块越界；长静默停止追加，但不清空未完成片段。25.70秒那次模型返回Complete却未产生第三条消息，具体是文本为空还是结果过期未由本窗记录区分。关闭打断期间的分支会持续清空片段，不能把超限直接归因于这次开关；断开出现在恢复接收后。详见[上限定位](../../run/voice-preferences-20261104/next-window/live-01/utterance-limit-review.md)。下一轮须处理“一个未完成片段达到上限就断整场”的行为，保留原30秒与原失败，不靠延长上限掩盖。
+
+**本轮不再安排重复讲话；下一步先接收用户的回答流程要求。** 默认不打断的现场结果保留；待修项为回答内容来源／上下文可追溯，以及未完成片段超限后的会话处理。新流程明确后先以反例做软件修正，再按实际改动集中安排一次真人验收。正常换气长句、恢复／取消与下一轮、应用级升级恢复、24小时混合负载、AEC及具体生产插件仍分别开放；本窗不改变V01—V07或Companion shadow。
+
 ## 连续对话与主动打断现场结果（2026-11-04）
 
 **用户确认第一轮和第二轮都能正常对话，主动打断也可以工作；本轮播放线程保持存活，没有再出现 EPIPE 或 backend dead。** 双端均为独立提交 `588c434`，Mac PID96139、Pi PID8106。本窗由用户反馈结束，持续约170.522秒，Start／Stop各一次，没有整场倒计时、断电或重复UART初始化。用户原反馈、精确Stop和全部Mac／Pi／SQL证据在[完整原始日志](../../run/voice-acceptance-20261104-followup/next-window/live-01/acceptance-complete.private.log)，另有[审阅报告](../../run/voice-acceptance-20261104-followup/next-window/live-01/review-preparation/review-final.md)和[结构化对应关系](../../run/voice-acceptance-20261104-followup/next-window/live-01/review-preparation/review-final.json)。
