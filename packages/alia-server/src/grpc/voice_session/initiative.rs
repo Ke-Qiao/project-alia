@@ -20,9 +20,10 @@ async fn drain<S: Stream<Item = Result<DeviceFrame, Status>> + Unpin>(
     window: &mut CaptureWindow,
     credentials: &mut SessionCredentials,
     output: Option<&VoiceOutput>,
+    policy: &mut CapturePolicy,
     lease: &SessionLease,
 ) -> anyhow::Result<()> {
-    match drain_pending(stream, window, credentials, output).await {
+    match drain_pending(stream, window, credentials, output, policy).await {
         Ok(true) => Ok(()),
         result => {
             lease.cancel.cancel();
@@ -124,6 +125,7 @@ impl Session {
         lease: &SessionLease,
         credentials: &mut SessionCredentials,
         window: &mut CaptureWindow,
+        capture_policy: &mut CapturePolicy,
         controller: &mut TurnController,
         busy: bool,
         output: &mut Option<VoiceOutput>,
@@ -136,18 +138,47 @@ impl Session {
                     return;
                 }
                 let result = async {
-                    drain(stream, window, credentials, output.as_ref(), lease).await?;
+                    drain(
+                        stream,
+                        window,
+                        credentials,
+                        output.as_ref(),
+                        capture_policy,
+                        lease,
+                    )
+                    .await?;
                     revalidate(credentials, lease).await?;
-                    drain(stream, window, credentials, output.as_ref(), lease).await?;
+                    drain(
+                        stream,
+                        window,
+                        credentials,
+                        output.as_ref(),
+                        capture_policy,
+                        lease,
+                    )
+                    .await?;
                     let current_owner = lease.slot.owner.lock().await;
-                    drain(stream, window, credentials, output.as_ref(), lease).await?;
+                    drain(
+                        stream,
+                        window,
+                        credentials,
+                        output.as_ref(),
+                        capture_policy,
+                        lease,
+                    )
+                    .await?;
                     anyhow::ensure!(
                         current_owner
                             .as_ref()
                             .is_some_and(|(id, _)| *id == lease.id),
                         "original voice session replaced"
                     );
-                    self.available(lease, window, busy, output.as_ref())?;
+                    self.available(
+                        lease,
+                        window,
+                        busy || capture_policy.wait_for_silence,
+                        output.as_ref(),
+                    )?;
                     anyhow::ensure!(
                         credentials
                             .source
@@ -197,6 +228,7 @@ impl Session {
                         lease,
                         credentials,
                         window,
+                        capture_policy,
                         controller,
                         busy,
                         output,
@@ -256,6 +288,7 @@ impl Session {
         lease: &SessionLease,
         credentials: &mut SessionCredentials,
         window: &mut CaptureWindow,
+        capture_policy: &mut CapturePolicy,
         controller: &mut TurnController,
         busy: bool,
         output: &mut Option<VoiceOutput>,
@@ -301,14 +334,44 @@ impl Session {
         self.used_requests
             .insert(request.permit.context().request_id);
         self.used_initiatives.insert(request.permit.initiative_id());
-        drain(stream, window, credentials, output.as_ref(), lease).await?;
-        self.check_request(&request, lease, window, controller, busy, output.as_ref())?;
+        drain(
+            stream,
+            window,
+            credentials,
+            output.as_ref(),
+            capture_policy,
+            lease,
+        )
+        .await?;
+        self.check_request(
+            &request,
+            lease,
+            window,
+            controller,
+            busy || capture_policy.wait_for_silence,
+            output.as_ref(),
+        )?;
         let validated = self
             .context
             .validate(request.permit.context(), ContextUse::OutputAdmission)
             .await?;
-        drain(stream, window, credentials, output.as_ref(), lease).await?;
-        self.check_request(&request, lease, window, controller, busy, output.as_ref())?;
+        drain(
+            stream,
+            window,
+            credentials,
+            output.as_ref(),
+            capture_policy,
+            lease,
+        )
+        .await?;
+        self.check_request(
+            &request,
+            lease,
+            window,
+            controller,
+            busy || capture_policy.wait_for_silence,
+            output.as_ref(),
+        )?;
         anyhow::ensure!(validated.lease.purpose() == crate::modules::memory::context::ContextPurpose::CompanionInvitation
             && validated.lease.dependencies().iter().filter(|dependency| matches!(dependency,
                 crate::modules::memory::context::ContextEvidence::CompanionAdmission { .. })).count() == 1
@@ -316,7 +379,15 @@ impl Session {
                 crate::modules::memory::context::ContextEvidence::CompanionAdmission { id, .. } if *id == request.permit.admission_id())),
             "initiative Context does not carry its committed admission");
         revalidate(credentials, lease).await?;
-        drain(stream, window, credentials, output.as_ref(), lease).await?;
+        drain(
+            stream,
+            window,
+            credentials,
+            output.as_ref(),
+            capture_policy,
+            lease,
+        )
+        .await?;
         let source = credentials
             .source
             .as_ref()
@@ -335,14 +406,29 @@ impl Session {
                 .unwrap_or(request.permit.deadline()),
         );
         let current_owner = lease.slot.owner.lock().await;
-        drain(stream, window, credentials, output.as_ref(), lease).await?;
+        drain(
+            stream,
+            window,
+            credentials,
+            output.as_ref(),
+            capture_policy,
+            lease,
+        )
+        .await?;
         anyhow::ensure!(
             current_owner
                 .as_ref()
                 .is_some_and(|(id, _)| *id == lease.id),
             "original voice session replaced"
         );
-        self.check_request(&request, lease, window, controller, busy, output.as_ref())?;
+        self.check_request(
+            &request,
+            lease,
+            window,
+            controller,
+            busy || capture_policy.wait_for_silence,
+            output.as_ref(),
+        )?;
         // From this point a failed acknowledgement closes this session rather
         // than letting its new epoch masquerade as an unconsumed opportunity.
         let session_guard = lease.cancel.clone().drop_guard();
@@ -357,8 +443,21 @@ impl Session {
         );
         self.opportunity = None;
         fence_output(&channel, scope, false, "initiative_output_admitted").await?;
-        drain(stream, window, credentials, output.as_ref(), lease).await?;
-        self.available(lease, window, busy, output.as_ref())?;
+        drain(
+            stream,
+            window,
+            credentials,
+            output.as_ref(),
+            capture_policy,
+            lease,
+        )
+        .await?;
+        self.available(
+            lease,
+            window,
+            busy || capture_policy.wait_for_silence,
+            output.as_ref(),
+        )?;
         anyhow::ensure!(
             window.revision() == request.permit.opportunity().speech_revision
                 && !request.cancel.is_cancelled()
@@ -398,7 +497,15 @@ impl Session {
         .await?;
         // Capture can arrive while the event queue is backpressured. The newly
         // installed original output receives its hold before the caller runs.
-        drain(stream, window, credentials, output.as_ref(), lease).await?;
+        drain(
+            stream,
+            window,
+            credentials,
+            output.as_ref(),
+            capture_policy,
+            lease,
+        )
+        .await?;
         anyhow::ensure!(
             !request.cancel.is_cancelled() && Utc::now() < deadline,
             "initiative expired before acknowledgement"

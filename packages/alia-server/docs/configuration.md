@@ -228,3 +228,20 @@ Default features enable the common runtime. Optional feature groups include:
 | `embed-openai` | Embedding provider. |
 | `tools-http` | Built-in HTTP/fetch tools. |
 | `insights` | Background insights support. |
+
+
+### Ordinary voice interruption
+
+`policies.duplex.barge_in_enabled` defaults to `false`. During an ordinary reply,
+from generation through sentence gaps and the last owned playback frames, microphone
+input remains clock-checked but is not sent for turn detection and cannot pause or
+replace the reply. Speech that spans the end of playback is ignored until silence;
+start a fresh sentence afterwards. This also means a spoken “stop” during a reply
+is ignored. Explicit system Stop/cancel and authentication/session revocation remain
+active. Set the option to `true` and restart Server to restore voice interruption,
+spoken pause/resume and spoken cancellation. Companion initiative capture protection
+is independent and unchanged; this setting does not enable Companion live output.
+
+The settings API exposes the same restart-required value as
+`core.policies.duplex.barge_in_enabled`. It is not a live switch for an active session.
+`hold_budget_ms` remains a positive bounded hold duration, not an enable/disable switch.

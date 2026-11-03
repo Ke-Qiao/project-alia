@@ -692,6 +692,11 @@ impl SettingsRegistry {
                 schema("Enable Sentence Expression LLM Cache", "bool", true),
             ),
             (
+                "core.policies.duplex.barge_in_enabled",
+                json!(config.policies.duplex.barge_in_enabled),
+                schema("Allow Voice Interruption", "bool", true),
+            ),
+            (
                 "core.policies.conversation.streaming_enabled",
                 json!(config.policies.conversation.streaming_enabled),
                 schema("Streaming", "bool", false),

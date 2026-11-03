@@ -190,6 +190,10 @@ impl OutputProducer {
 }
 
 impl VoiceOutput {
+    pub(crate) fn is_initiative(&self) -> bool {
+        self.0.initiative.get().is_some()
+    }
+
     fn tighten_deadline(&self, deadline: chrono::DateTime<chrono::Utc>) {
         let now = Instant::now();
         let remaining = (deadline - chrono::Utc::now()).to_std().unwrap_or_default();

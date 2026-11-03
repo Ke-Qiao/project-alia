@@ -446,7 +446,8 @@ async fn official_audio(fixture: Fixture) {
         Duration::from_secs(60),
         shutdown.clone(),
         std::sync::Arc::new(alia_server::modules::platform::lifecycle::RuntimeTasks::default()),
-    );
+    )
+    .with_barge_in_enabled(true);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let grpc_endpoint = format!("http://{}", listener.local_addr().unwrap());
     let incoming = async_stream::stream! {

@@ -51,6 +51,7 @@ pub struct VoiceSessionService {
     input: VoiceInputHandle,
     delivery: Arc<DeliveryService>,
     hold_budget: Duration,
+    barge_in_enabled: bool,
     shutdown: CancellationToken,
     runtime_tasks: Arc<crate::modules::platform::lifecycle::RuntimeTasks>,
     sessions: Sessions,
@@ -73,11 +74,18 @@ impl VoiceSessionService {
             input,
             delivery,
             hold_budget,
+            barge_in_enabled: false,
             shutdown,
             runtime_tasks,
             sessions: Arc::default(),
             initiatives: None,
         }
+    }
+
+    /// Ordinary replies are not interrupted by microphone input unless enabled.
+    pub fn with_barge_in_enabled(mut self, enabled: bool) -> Self {
+        self.barge_in_enabled = enabled;
+        self
     }
 
     /// Explicit wiring only; the default service never advertises initiatives.
@@ -94,10 +102,37 @@ impl VoiceSessionService {
 struct OutputRuntime {
     delivery: Arc<DeliveryService>,
     hold_budget: Duration,
+    barge_in_enabled: bool,
     maximum_hold_ms: u64,
     initiatives: Option<(VoiceInitiativeHandle, Arc<ContextService>)>,
     initiative_output_enabled: bool,
     initiative_capture_gate_version: u32,
+}
+
+struct CapturePolicy {
+    barge_in_enabled: bool,
+    wait_for_silence: bool,
+}
+
+impl CapturePolicy {
+    fn suppress(&mut self, output: Option<&VoiceOutput>, speech: bool) -> bool {
+        let active = output.filter(|output| output.is_alive());
+        // Proactive output retains its separate user-presence protection.
+        if self.barge_in_enabled || active.is_some_and(VoiceOutput::is_initiative) {
+            self.wait_for_silence = false;
+            return false;
+        }
+        let suppressed = active.is_some() || self.wait_for_silence;
+        if suppressed && speech && !self.wait_for_silence {
+            tracing::debug!(
+                "voice input suppressed until ordinary reply and current speech finish"
+            );
+        }
+        // An utterance starting during output must not become a truncated new
+        // request when the last native media owner finishes halfway through it.
+        self.wait_for_silence = suppressed && speech;
+        suppressed
+    }
 }
 
 fn negotiated_hold_limit(open: &voice::OpenSession) -> Result<u64, Status> {
@@ -255,6 +290,7 @@ impl VoiceSession for VoiceSessionService {
         let output_runtime = OutputRuntime {
             delivery: self.delivery.clone(),
             hold_budget: self.hold_budget.min(Duration::from_millis(maximum_hold_ms)),
+            barge_in_enabled: self.barge_in_enabled,
             maximum_hold_ms,
             initiatives: open
                 .initiative_admission
@@ -394,12 +430,17 @@ async fn accept_capture(
     window: &mut CaptureWindow,
     credentials: &mut SessionCredentials,
     output: Option<&VoiceOutput>,
+    policy: &mut CapturePolicy,
 ) -> Result<bool, Status> {
     // Only an actual peer frame refreshes transport liveness. Internal
     // opportunity requests must not keep a stalled capture session alive.
     credentials.last_frame_at = tokio::time::Instant::now();
     match frame.payload {
         Some(device_frame::Payload::Audio(frame)) => {
+            let suppressed = policy.suppress(output, frame.speech_active);
+            if suppressed {
+                window.finish_utterance();
+            }
             window
                 .push(
                     frame.sequence,
@@ -409,7 +450,11 @@ async fn accept_capture(
                     std::time::SystemTime::now(),
                 )
                 .map_err(|error| Status::invalid_argument(error.to_string()))?;
-            if frame.speech_active
+            if suppressed {
+                // Keep real sequence, sample, speech revision and receiver time;
+                // discard only the utterance bytes, never the capture stream.
+                window.finish_utterance();
+            } else if frame.speech_active
                 && let Some(output) = output
             {
                 output
@@ -434,6 +479,7 @@ async fn drain_pending<S>(
     window: &mut CaptureWindow,
     credentials: &mut SessionCredentials,
     output: Option<&VoiceOutput>,
+    policy: &mut CapturePolicy,
 ) -> Result<bool, Status>
 where
     S: Stream<Item = Result<DeviceFrame, Status>> + Unpin,
@@ -443,7 +489,7 @@ where
             None => break,
             Some(None) => return Ok(false),
             Some(Some(frame)) => {
-                if !accept_capture(frame?, window, credentials, output).await? {
+                if !accept_capture(frame?, window, credentials, output, policy).await? {
                     return Ok(false);
                 }
                 if drained == MAX_PENDING_FRAMES - 1 {
@@ -568,6 +614,10 @@ where
     .await?;
     credentials.last_frame_at = tokio::time::Instant::now();
     let mut window = CaptureWindow::default();
+    let mut capture_policy = CapturePolicy {
+        barge_in_enabled: output_runtime.barge_in_enabled,
+        wait_for_silence: false,
+    };
     let mut controller = TurnController::default();
     let mut detection: Option<Detection> = None;
     let mut through_sequence = 0;
@@ -603,7 +653,8 @@ where
                 if let Some(request) = request {
                     initiatives.as_mut().expect("initiative receiver").handle(
                         request, &mut stream, tx, lease, &mut credentials, &mut window,
-                        &mut controller, detection.is_some() || retry_at.is_some() || busy_deadline.is_some(),
+                        &mut capture_policy, &mut controller,
+                        detection.is_some() || retry_at.is_some() || busy_deadline.is_some(),
                         &mut output, &mut response_cancel, &output_runtime,
                     ).await;
                 }
@@ -611,7 +662,7 @@ where
             _ = auth_recheck.tick() => {
                 // Refresh already queued with capture takes precedence over a
                 // periodic check of the old token. This drain is also bounded.
-                if !drain_pending(&mut stream, &mut window, &mut credentials, output.as_ref()).await? { return Ok(()); }
+                if !drain_pending(&mut stream, &mut window, &mut credentials, output.as_ref(), &mut capture_policy).await? { return Ok(()); }
                 credentials.revalidate().await?;
             },
             _ = async { tokio::time::sleep_until(retry_at.expect("select guard")).await }, if retry_at.is_some() => {
@@ -620,7 +671,7 @@ where
             frame = tokio::time::timeout_at(credentials.last_frame_at + STREAM_IDLE, stream.next()) => {
                 let frame = frame.map_err(|_| Status::deadline_exceeded("voice capture stalled"))?;
                 let Some(frame) = frame else { return Ok(()); };
-                if !accept_capture(frame?, &mut window, &mut credentials, output.as_ref()).await? { return Ok(()); }
+                if !accept_capture(frame?, &mut window, &mut credentials, output.as_ref(), &mut capture_policy).await? { return Ok(()); }
             }
             result = async { detection.as_mut().expect("select guard").await }, if detection.is_some() => {
                 detection = None;
@@ -644,12 +695,12 @@ where
                 // Give already-arrived speech a chance to invalidate this
                 // snapshot before committing a response. The drain is bounded;
                 // a producer that never yields must not monopolize the runtime.
-                if !drain_pending(&mut stream, &mut window, &mut credentials, output.as_ref()).await? { return Ok(()); }
+                if !drain_pending(&mut stream, &mut window, &mut credentials, output.as_ref(), &mut capture_policy).await? { return Ok(()); }
                 // Revalidation may revoke the original source but cannot replace
                 // it. Drain again after that await before consuming freshness.
                 if observation.state != TurnState::Incomplete {
                     credentials.revalidate().await?;
-                    if !drain_pending(&mut stream, &mut window, &mut credentials, output.as_ref()).await? { return Ok(()); }
+                    if !drain_pending(&mut stream, &mut window, &mut credentials, output.as_ref(), &mut capture_policy).await? { return Ok(()); }
                 }
                 if !controller.accept_evidence(&observation, window.revision()) { continue; }
                 let owner = lease.slot.owner.lock().await;
@@ -1141,6 +1192,20 @@ mod tests {
         F: FnOnce(Harness) -> Fut,
         Fut: Future<Output = ()>,
     {
+        // Existing interruption cases retain their original explicit contract.
+        with_harness_policy(channel, interval, initiatives_enabled, true, test).await;
+    }
+
+    async fn with_harness_policy<F, Fut>(
+        channel: Arc<AuthChannel>,
+        interval: Duration,
+        initiatives_enabled: bool,
+        barge_in_enabled: bool,
+        test: F,
+    ) where
+        F: FnOnce(Harness) -> Fut,
+        Fut: Future<Output = ()>,
+    {
         let database = TestDatabase::new().await;
         let cancel = CancellationToken::new();
         let delivery = DeliveryService::new(DeliveryRepository::new(database.db.clone()), &cancel);
@@ -1164,6 +1229,7 @@ mod tests {
                     delivery.clone(),
                     interval,
                     initiatives,
+                    barge_in_enabled,
                 )
                 .await,
             )
@@ -1201,6 +1267,7 @@ mod tests {
                 delivery,
                 AUTH_RECHECK,
                 Some((VoiceInitiativeHandle::default(), context)),
+                true,
             )
             .await
         }
@@ -1211,6 +1278,7 @@ mod tests {
             delivery: Arc<DeliveryService>,
             auth_recheck_interval: Duration,
             initiatives: Option<(VoiceInitiativeHandle, Arc<ContextService>)>,
+            barge_in_enabled: bool,
         ) -> Self {
             let lease = SessionLease::acquire(Arc::default(), "device".into(), &cancel)
                 .await
@@ -1226,6 +1294,7 @@ mod tests {
             let output_runtime = OutputRuntime {
                 delivery: delivery.clone(),
                 hold_budget: Duration::from_secs(60),
+                barge_in_enabled,
                 maximum_hold_ms: MAX_HOLD_MS,
                 initiatives: initiatives.clone(),
                 initiative_output_enabled: false,
@@ -1292,6 +1361,34 @@ mod tests {
                 .await
                 .unwrap();
             self.sequence += 1;
+        }
+        async fn speech_frame(&mut self) {
+            self.audio
+                .send(Ok(DeviceFrame {
+                    payload: Some(device_frame::Payload::Audio(voice::CaptureFrame {
+                        sequence: self.sequence,
+                        sample_offset: self.sequence * 1600,
+                        pcm_s16le: vec![0; 3200],
+                        speech_active: true,
+                    })),
+                }))
+                .await
+                .unwrap();
+            self.sequence += 1;
+        }
+        async fn capture_barrier(&self, revision: u64) {
+            // RefreshAuth shares the capture lane. Observing this distinct token
+            // proves every preceding audio frame was consumed, without sleeps
+            // or adding silence that would accidentally release suppression.
+            let fresh = token(revision);
+            self.refresh(fresh.clone()).await;
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while !self.channel.checked.lock().unwrap().contains(&fresh) {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("capture/auth barrier was not consumed");
         }
         async fn refresh(&self, token: String) {
             self.audio
@@ -1544,6 +1641,125 @@ mod tests {
             },
         )
         .await;
+    }
+
+    #[tokio::test]
+    async fn disabled_barge_in_keeps_original_reply_and_accepts_the_next_fresh_turn() {
+        with_harness_policy(
+            Arc::new(AuthChannel::default()),
+            AUTH_RECHECK,
+            false,
+            false,
+            |mut h| async move {
+                h.speech().await;
+                h.call().await.answer(TurnState::Complete);
+                assert_eq!(h.event().await.generation_epoch, 2);
+                let original = h.input.recv().await.unwrap();
+                let output = original.output.as_ref().unwrap().producer.output();
+                let fences = h.channel.fences.lock().unwrap().clone();
+                // No audio has been emitted: the original generation/producer owner
+                // already blocks interruption, and keeps doing so across speech gaps.
+                for revision in [1, 2] {
+                    h.speech().await;
+                    h.capture_barrier(revision).await;
+                    assert!(output.is_alive() && !output.is_held());
+                    assert!(!original.cancel.is_cancelled());
+                    assert!(h.calls.try_recv().is_err() && h.input.try_recv().is_err());
+                    assert!(h.events.try_recv().is_err());
+                    assert_eq!(*h.channel.fences.lock().unwrap(), fences);
+                }
+                drop(original);
+                assert!(!output.is_alive());
+                h.speech().await;
+                h.call().await.answer(TurnState::Complete);
+                assert_eq!(h.event().await.generation_epoch, 3);
+                let next = h.input.recv().await.unwrap();
+                assert!(!next.cancel.is_cancelled());
+                h.finish().await;
+                assert!(next.cancel.is_cancelled());
+            },
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn disabled_barge_in_discards_speech_crossing_output_end_until_silence() {
+        with_harness_policy(
+            Arc::new(AuthChannel::default()),
+            AUTH_RECHECK,
+            false,
+            false,
+            |mut h| async move {
+                h.speech().await;
+                h.call().await.answer(TurnState::Complete);
+                h.event().await;
+                let original = h.input.recv().await.unwrap();
+                h.speech_frame().await;
+                h.capture_barrier(1).await;
+                assert!(!original.cancel.is_cancelled());
+                drop(original);
+                // The same utterance continues after output finishes; its remaining
+                // half must not become a new model request or generation.
+                h.speech_frame().await;
+                h.capture_barrier(2).await;
+                assert!(h.calls.try_recv().is_err());
+                for _ in 0..7 {
+                    h.silence().await;
+                }
+                h.capture_barrier(3).await;
+                assert!(h.calls.try_recv().is_err() && h.events.try_recv().is_err());
+                h.speech().await;
+                h.call().await.answer(TurnState::Complete);
+                assert_eq!(h.event().await.generation_epoch, 3);
+                assert!(!h.input.recv().await.unwrap().cancel.is_cancelled());
+                h.finish().await;
+            },
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn disabled_barge_in_preserves_close_and_rejects_broken_capture_clocks() {
+        for broken_clock in [false, true] {
+            with_harness_policy(
+                Arc::new(AuthChannel::default()),
+                AUTH_RECHECK,
+                false,
+                false,
+                |mut h| async move {
+                    h.speech().await;
+                    h.call().await.answer(TurnState::Complete);
+                    h.event().await;
+                    let original = h.input.recv().await.unwrap();
+                    let payload = if broken_clock {
+                        device_frame::Payload::Audio(voice::CaptureFrame {
+                            sequence: h.sequence + 1,
+                            sample_offset: h.sequence * 1600,
+                            pcm_s16le: vec![0; 3200],
+                            speech_active: true,
+                        })
+                    } else {
+                        device_frame::Payload::Close(voice::CloseSession {})
+                    };
+                    h.audio
+                        .send(Ok(DeviceFrame {
+                            payload: Some(payload),
+                        }))
+                        .await
+                        .unwrap();
+                    let result = h.join().await;
+                    if broken_clock {
+                        assert_eq!(result.unwrap_err().code(), tonic::Code::InvalidArgument);
+                    } else {
+                        result.unwrap();
+                    }
+                    assert!(original.cancel.is_cancelled());
+                    assert!(h.channel.fences.lock().unwrap().last().unwrap().1);
+                    assert!(h.calls.try_recv().is_err());
+                },
+            )
+            .await;
+        }
     }
 
     #[tokio::test]

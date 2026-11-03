@@ -102,6 +102,32 @@ fn duplex_hold_budget_defaults_and_explicit_bounds_are_checked_during_deserializ
 }
 
 #[test]
+fn duplex_voice_interruption_is_disabled_unless_explicitly_enabled() {
+    use alia_server::config::PoliciesSection;
+    assert!(!PoliciesSection::default().duplex.barge_in_enabled);
+    for content in ["", "[duplex]", "[duplex]\nbarge_in_enabled = false"] {
+        assert!(
+            !toml::from_str::<PoliciesSection>(content)
+                .unwrap()
+                .duplex
+                .barge_in_enabled
+        );
+    }
+    assert!(
+        toml::from_str::<PoliciesSection>("[duplex]\nbarge_in_enabled = true")
+            .unwrap()
+            .duplex
+            .barge_in_enabled
+    );
+    for invalid in ["0", "1", "\"false\""] {
+        assert!(
+            toml::from_str::<PoliciesSection>(&format!("[duplex]\nbarge_in_enabled = {invalid}"))
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn loads_config_fragments_recursively_in_sorted_order() {
     let root = std::env::temp_dir().join(format!(
         "alia-config-fragments-{}",

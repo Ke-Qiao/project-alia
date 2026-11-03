@@ -278,6 +278,10 @@ impl ServerRuntime {
                 };
                 use alia_proto::voice::voice_session_server::VoiceSessionServer;
                 let auth = VoiceIngressAuth::new(state.channels.clone());
+                tracing::info!(
+                    barge_in_enabled = state.config.policies.duplex.barge_in_enabled,
+                    "ordinary voice interruption policy ready"
+                );
                 let voice = VoiceSessionService::new(
                     auth.clone(),
                     state.turn_detector.clone(),
@@ -287,6 +291,7 @@ impl ServerRuntime {
                     cancel.clone(),
                     state.runtime_tasks.clone(),
                 )
+                .with_barge_in_enabled(state.config.policies.duplex.barge_in_enabled)
                 .with_initiatives(
                     state.voice_initiatives.clone(),
                     state.modules.context.clone(),

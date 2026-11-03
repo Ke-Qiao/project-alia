@@ -518,6 +518,7 @@ impl CompanionFixture {
             stop.clone(),
             state.runtime_tasks.clone(),
         )
+        .with_barge_in_enabled(true)
         .with_initiatives(
             state.voice_initiatives.clone(),
             state.modules.context.clone(),

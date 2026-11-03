@@ -34,6 +34,38 @@ fn private_schema() -> SettingSchema {
 }
 
 #[tokio::test]
+async fn voice_interruption_setting_is_exported_as_restart_required_and_persists() {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config = ServerConfig::load(&workspace.join("config/server.example.toml")).unwrap();
+    let settings = SettingsRegistry::new();
+    settings.seed_from_config(&config).await;
+    let key = "core.policies.duplex.barge_in_enabled";
+    let entry = settings.get_entry(key).await.unwrap();
+    assert_eq!(entry.value, json!(false));
+    let schema = entry.schema.unwrap();
+    assert_eq!(schema.value_type, "bool");
+    assert!(schema.requires_restart && !schema.secret);
+    let directory = SettingsDirectory::new();
+    let path = directory.0.join("settings.toml");
+    settings.set_persist_path(path.clone()).await;
+    settings.set(key, json!(true)).await;
+    settings.save().await.unwrap();
+    let reloaded = SettingsRegistry::new();
+    reloaded.seed_from_config(&config).await;
+    reloaded.load_persisted(&path).await.unwrap();
+    assert_eq!(reloaded.get(key).await, Some(json!(true)));
+    assert!(
+        reloaded
+            .get_entry(key)
+            .await
+            .unwrap()
+            .schema
+            .unwrap()
+            .requires_restart
+    );
+}
+
+#[tokio::test]
 async fn persisted_values_exclude_sql_policy_and_null_and_preserve_registered_schema() {
     let directory = SettingsDirectory::new();
     let path = directory.0.join("nested/settings.toml");

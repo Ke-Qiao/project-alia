@@ -1,0 +1,8 @@
+[policies.duplex]
+# Default: finish the current ordinary voice reply before accepting a new utterance.
+# System Stop/cancel remains available. Microphone speech (including spoken Stop)
+# is ignored during that reply; wait for its end before starting the next sentence.
+# true restores speech pause/resume and replacement of the unfinished reply.
+# Requires a Server restart; proactive Companion safety remains independent.
+barge_in_enabled = false
+hold_budget_ms = 60000

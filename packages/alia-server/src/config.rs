@@ -721,6 +721,9 @@ pub struct PoliciesSection {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DuplexPolicySection {
+    /// Allow speech to pause or replace an unfinished ordinary voice reply.
+    #[serde(default)]
+    pub barge_in_enabled: bool,
     #[serde(
         default = "default_duplex_hold_budget_ms",
         deserialize_with = "deserialize_duplex_hold_budget_ms"
@@ -730,6 +733,7 @@ pub struct DuplexPolicySection {
 impl Default for DuplexPolicySection {
     fn default() -> Self {
         Self {
+            barge_in_enabled: false,
             hold_budget_ms: default_duplex_hold_budget_ms(),
         }
     }

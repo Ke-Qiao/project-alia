@@ -734,7 +734,7 @@ async fn remote_r1_real_server_acceptance(acceptance: Acceptance) {
         live.service = Some(service.clone());
         let (input, mut recognized) = voice_input::channel();
         let (detector, mut calls) = mpsc::channel(1);
-        let voice = VoiceSessionService::new(VoiceIngressAuth::new(channels), Some(Arc::new(Detector(detector))), input, service.clone(), Duration::from_secs(10), live.stop.clone(), live.tasks.clone());
+        let voice = VoiceSessionService::new(VoiceIngressAuth::new(channels), Some(Arc::new(Detector(detector))), input, service.clone(), Duration::from_secs(10), live.stop.clone(), live.tasks.clone()).with_barge_in_enabled(true);
         let (server, endpoint) = serve(VoiceSessionServer::new(voice), "127.0.0.1:0".parse().unwrap(), live.stop.clone()).await;
         live.servers.push(server);
         let state = Arc::new(Mutex::new(RelayState::default()));

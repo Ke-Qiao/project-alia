@@ -368,7 +368,7 @@ async fn speech_upload_and_real_server_playback_share_pause_cancel_and_reconnect
             inner: Arc::new(VoiceSessionService::new(
                 VoiceIngressAuth::new(channels), Some(Arc::new(Detector(detector))), input,
                 s.service.clone(), Duration::from_secs(30), owner.stop.clone(), owner.tasks.clone(),
-            )),
+            ).with_barge_in_enabled(true)),
             disconnect: Arc::default(), events: Arc::default(),
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

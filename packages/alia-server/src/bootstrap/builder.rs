@@ -326,6 +326,14 @@ impl ServerBuilder {
             .await
             .context("loading persisted server settings")?;
         settings.set_persist_path(settings_path).await;
+        Arc::make_mut(&mut self.config)
+            .policies
+            .duplex
+            .barge_in_enabled = settings
+            .get("core.policies.duplex.barge_in_enabled")
+            .await
+            .and_then(|value| value.as_bool())
+            .context("core.policies.duplex.barge_in_enabled must be a boolean")?;
         let mut initial_policies = InteractionPolicies::new(
             self.config.policies.conversation.clone(),
             self.config.policies.tools.clone(),
