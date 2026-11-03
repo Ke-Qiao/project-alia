@@ -958,6 +958,15 @@ impl SettingsRegistry {
             // Provider selection. Core registries/state machines are fixed
             // services and expose extension registries instead of backend slots.
             (
+                "core.llm.roles.routing",
+                json!(config.llm.roles.routing),
+                schema(
+                    "Decision Profile (legacy restores minor classification)",
+                    "string",
+                    true,
+                ),
+            ),
+            (
                 "core.llm.roles.minor",
                 json!(config.llm.roles.minor),
                 schema("Minor LLM Profile", "string", true),
@@ -1026,14 +1035,30 @@ impl SettingsRegistry {
                 json!(match profile.kind {
                     crate::config::LlmProfileKind::Chat => "chat",
                     crate::config::LlmProfileKind::Embedding => "embedding",
+                    crate::config::LlmProfileKind::Decision => "decision",
                 }),
-                schema_select("LLM Profile Kind", &["chat", "embedding"], true),
+                schema_select("LLM Profile Kind", &["chat", "embedding", "decision"], true),
             ));
             profile_entries.push((
                 format!("{prefix}.model"),
                 json!(profile.model),
-                schema("LLM Model", "string", false),
+                schema(
+                    "LLM Model",
+                    "string",
+                    profile.kind == crate::config::LlmProfileKind::Decision,
+                ),
             ));
+            if profile.kind == crate::config::LlmProfileKind::Decision {
+                profile_entries.push((
+                    format!("{prefix}.provider_specific.expected_model"),
+                    profile
+                        .provider_specific
+                        .get("expected_model")
+                        .cloned()
+                        .unwrap_or_else(|| json!(profile.model)),
+                    schema("Exact Decision Response Model", "string", true),
+                ));
+            }
             if profile.kind == crate::config::LlmProfileKind::Embedding {
                 profile_entries.push((
                     format!("{prefix}.dimensions"),
@@ -1042,7 +1067,7 @@ impl SettingsRegistry {
                     })),
                     schema("Embedding Dimensions", "number", false),
                 ));
-            } else {
+            } else if profile.kind == crate::config::LlmProfileKind::Chat {
                 profile_entries.push((
                     format!("{prefix}.temperature"),
                     json!(profile.request.temperature),
@@ -1129,6 +1154,28 @@ impl SettingsRegistry {
                         format!("{prefix}.base_url"),
                         json!(provider.base_url),
                         schema("Gemini Base URL", "string", false),
+                    ));
+                }
+                crate::config::LlmProviderProfileSection::TypeSafe(provider) => {
+                    profile_entries.push((
+                        format!("{prefix}.type"),
+                        json!("typesafe"),
+                        schema_select("Decision Protocol", &["typesafe"], true),
+                    ));
+                    profile_entries.push((
+                        format!("{prefix}.base_url"),
+                        json!(provider.base_url),
+                        schema("TypeSafe Decision Endpoint", "string", true),
+                    ));
+                    profile_entries.push((
+                        format!("{prefix}.api_key"),
+                        json!(provider.api_key),
+                        schema_secret("TypeSafe Decision API Key", true),
+                    ));
+                    profile_entries.push((
+                        format!("{prefix}.api_key_env"),
+                        json!(provider.api_key_env),
+                        schema("Decision API Key Environment Variable", "string", true),
                     ));
                 }
                 crate::config::LlmProviderProfileSection::Noop => {

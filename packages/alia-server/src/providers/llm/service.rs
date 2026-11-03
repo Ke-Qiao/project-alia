@@ -69,6 +69,17 @@ impl LlmService {
         self.name
     }
 
+    /// Current configured identity and output budget for routing, never credentials.
+    /// Injected models without a profile and noop services have no such identity.
+    pub(crate) async fn routing_profile(&self) -> Option<(String, u32)> {
+        self.state
+            .read()
+            .await
+            .config
+            .as_ref()
+            .map(|config| (config.model.clone(), config.request.max_output_tokens))
+    }
+
     pub fn noop() -> Self {
         Self {
             name: "noop_llm",
@@ -106,7 +117,14 @@ impl LlmService {
         profile: &LlmProfileSection,
         provider: LlmProviderProfileRef<'_>,
     ) -> Result<Self> {
+        ensure!(
+            profile.kind == crate::config::LlmProfileKind::Chat,
+            "LLM service requires a chat profile"
+        );
         let (name, api, api_key, base_url, probe) = match provider {
+            LlmProviderProfileRef::TypeSafe(_) => {
+                anyhow::bail!("TypeSafe is a decision provider, not a chat provider")
+            }
             LlmProviderProfileRef::Noop => return Ok(Self::noop()),
             LlmProviderProfileRef::OpenAi(config) => {
                 ensure!(cfg!(feature = "llm-openai"), "profile requires llm-openai");

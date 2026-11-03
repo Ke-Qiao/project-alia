@@ -9,6 +9,12 @@ component checks and actual deployment evidence. The dated sections below retain
 their original scope; the latest validation status is recorded first. Example
 URLs and model names alone are not evidence of deployment or acceptance.
 
+## Jev 独立意图分类（2026-11-04）
+
+用户已明确本轮只将意图分类从 minor 分离到 Jev，并选择 OpenRouter。实现、独立 profile、失败降级、逐条比较与启用／恢复方式集中记录在 [Jev 对话决策接入](decision-routing.md)。当前仍使用已部署的 Mac `d7126a9`／Pi `588c434`；本轮不切换生产路由、不启动采播。minor 的回答、工具候选筛选和记忆提取继续保留，新的分类结果不能代表后续请求都已省掉。
+
+用户补充上一窗口的事实：“无尽冬日是你开始后我就听到的，当时我还没注意到你已经开始测试了，我也不知道我当时有没有说话”。原话保存在 [现场补充](../../run/jev-routing-20261104/human-clarification.json)。因此不能把第一条回答记为对预定测试句的回应，也不能确定当时声源。已有 SQL 查询只排除了列出的精确词命中；话题来源和超过 30 秒片段导致会话结束的问题仍保留，不能用 Jev 接入替代这两项修复。
+
 ## 默认不打断现场复验与待改回答流程（2026-11-04）
 
 **用户确认插话没有打断原回答；本窗两条实际输出都完整提交，但第一条新回答出现本轮输入中没有的“无尽冬日”。** Mac仍为`d7126a9`／PID5817，Pi仍为`588c434`／PID8106；本轮没有更换源码、配置或模型，没有重启设备或UART初始化。开始前Mac／Pi只读检查均通过，签名Start从generation3变4，并在本次Ready后提示讲话；原RPC／模型期限保持，没有整场倒计时。用户反馈前持续约209.752秒。完整记录见[本轮原始日志](../../run/voice-preferences-20261104/next-window/live-01/acceptance-complete.private.log)与[审阅报告](../../run/voice-preferences-20261104/next-window/live-01/review-preparation/review-final.md)。
@@ -26,7 +32,7 @@ URLs and model names alone are not evidence of deployment or acceptance.
 
 30秒来自Server `CaptureWindow::push`的PCM累计上限，不是Easy-Turn请求超时。最后一个未完成片段在同一代次反复累计到29.80秒，随后下一块越界；长静默停止追加，但不清空未完成片段。25.70秒那次模型返回Complete却未产生第三条消息，具体是文本为空还是结果过期未由本窗记录区分。关闭打断期间的分支会持续清空片段，不能把超限直接归因于这次开关；断开出现在恢复接收后。详见[上限定位](../../run/voice-preferences-20261104/next-window/live-01/utterance-limit-review.md)。下一轮须处理“一个未完成片段达到上限就断整场”的行为，保留原30秒与原失败，不靠延长上限掩盖。
 
-**本轮不再安排重复讲话；下一步先接收用户的回答流程要求。** 默认不打断的现场结果保留；待修项为回答内容来源／上下文可追溯，以及未完成片段超限后的会话处理。新流程明确后先以反例做软件修正，再按实际改动集中安排一次真人验收。正常换气长句、恢复／取消与下一轮、应用级升级恢复、24小时混合负载、AEC及具体生产插件仍分别开放；本窗不改变V01—V07或Companion shadow。
+该窗口结束时未安排重复讲话；随后用户已给出独立 Jev 路由要求，进展见上节。默认不打断的现场结果保留；回答内容来源／上下文可追溯，以及未完成片段超限后的会话处理仍待完成。按实际改动集中安排后续真人验收。正常换气长句、恢复／取消与下一轮、应用级升级恢复、24小时混合负载、AEC及具体生产插件仍分别开放；本窗不改变V01—V07或Companion shadow。
 
 ## 连续对话与主动打断现场结果（2026-11-04）
 

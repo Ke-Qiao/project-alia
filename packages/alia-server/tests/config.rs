@@ -360,3 +360,239 @@ fn parses_split_example_config() {
             .contains(&"anxious".to_string())
     );
 }
+
+fn decision_config() -> ServerConfig {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    ServerConfig::load(&workspace.join("config/server.example.toml")).unwrap()
+}
+
+#[test]
+fn decision_profile_is_optional_and_rejects_wrong_protocol_or_mutable_identity() {
+    use alia_server::config::LlmRolesSection;
+    assert_eq!(
+        toml::from_str::<LlmRolesSection>("").unwrap().routing,
+        "legacy"
+    );
+    let mut config = decision_config();
+    assert_eq!(config.llm.roles.routing, "legacy");
+    config.validate_routing_profile().unwrap();
+    config.llm.roles.routing = "jev".into();
+    config.validate_routing_profile().unwrap();
+    for role in ["", "missing", "minor", "embedding", "noop"] {
+        let mut bad = config.clone();
+        bad.llm.roles.routing = role.into();
+        assert!(bad.validate_routing_profile().is_err(), "role {role}");
+    }
+    for model in [
+        "jev",
+        "jev-latest",
+        "jev-preview",
+        "jev-1.14",
+        "jev-1.14.0-preview",
+        "typesafe/jev-router",
+        "typesafe/jev-1.14",
+    ] {
+        let mut bad = config.clone();
+        bad.profiles.llm.get_mut("jev").unwrap().model = model.into();
+        assert!(bad.validate_routing_profile().is_err(), "model {model}");
+    }
+    let mut bad = config.clone();
+    bad.profiles.llm.get_mut("jev").unwrap().provider = "openai".into();
+    assert!(bad.validate_routing_profile().is_err());
+    let mut bad = config.clone();
+    bad.profiles.llm.get_mut("jev").unwrap().kind = LlmProfileKind::Chat;
+    assert!(bad.validate_routing_profile().is_err());
+}
+
+#[test]
+fn decision_openrouter_request_and_returned_identity_are_pinned_separately() {
+    let mut config = decision_config();
+    config.llm.roles.routing = "jev".into();
+    let profile = config.profiles.llm.get_mut("jev").unwrap();
+    profile.model = "typesafe/jev-1.14".into();
+    profile.provider_specific.insert(
+        "expected_model".into(),
+        serde_json::json!("typesafe/jev-1.14-20261014"),
+    );
+    config.validate_routing_profile().unwrap();
+    for expected in [
+        "typesafe/jev-1.14",
+        "typesafe/jev-1.14-latest",
+        "typesafe/jev-1.14-20261399",
+        "typesafe/jev-1.13-20261014",
+        "jev-1.14.0",
+    ] {
+        let mut bad = config.clone();
+        bad.profiles
+            .llm
+            .get_mut("jev")
+            .unwrap()
+            .provider_specific
+            .insert("expected_model".into(), serde_json::json!(expected));
+        assert!(
+            bad.validate_routing_profile().is_err(),
+            "expected {expected}"
+        );
+    }
+    config.profiles.llm.get_mut("jev").unwrap().model = "typesafe/jev-1.14-20261014".into();
+    config
+        .profiles
+        .llm
+        .get_mut("jev")
+        .unwrap()
+        .provider_specific
+        .clear();
+    config.validate_routing_profile().unwrap();
+}
+
+#[test]
+fn decision_settings_validate_atomically_and_do_not_accept_chat_parameters() {
+    use serde_json::json;
+    use std::collections::BTreeMap;
+    let mut config = decision_config();
+    for (key, value) in [
+        ("core.llm.roles.routing", json!(false)),
+        ("core.llm.roles.routing", serde_json::Value::Null),
+        ("core.llm.roles.routing", json!("missing")),
+        ("core.profiles.llm.jev.model", json!("jev-latest")),
+        ("core.profiles.llm.jev.kind", json!("chat")),
+        ("core.profiles.llm.jev.provider", json!("openai")),
+        ("core.profiles.llm.jev.temperature", json!(0.5)),
+        (
+            "core.profiles.llm.jev.provider_specific.expected_model",
+            json!(false),
+        ),
+        ("core.providers.llm.typesafe.type", json!("openai")),
+        (
+            "core.providers.llm.typesafe.base_url",
+            json!("http://example.com/decisions"),
+        ),
+        (
+            "core.providers.llm.typesafe.base_url",
+            json!("https://user:secret@example.com/decisions"),
+        ),
+        ("core.providers.llm.typesafe.api_key_env", json!("BAD=ENV")),
+    ] {
+        let old = config.clone();
+        let changes = BTreeMap::from([
+            ("core.llm.roles.routing".into(), json!("jev")),
+            (key.into(), value),
+        ]);
+        assert!(
+            config.apply_routing_settings(&changes).is_err(),
+            "key {key}"
+        );
+        assert_eq!(config.llm.roles.routing, old.llm.roles.routing);
+        assert_eq!(
+            config.profiles.llm["jev"].model,
+            old.profiles.llm["jev"].model
+        );
+    }
+    config
+        .apply_routing_settings(&BTreeMap::from([
+            ("core.llm.roles.routing".into(), json!("jev")),
+            (
+                "core.providers.llm.typesafe.base_url".into(),
+                json!("http://127.0.0.1:12345/v1/systemone"),
+            ),
+        ]))
+        .unwrap();
+    assert_eq!(config.llm.roles.routing, "jev");
+}
+
+#[test]
+fn decision_credentials_use_only_the_selected_environment_and_preserve_explicit_keys() {
+    const CHILD: &str = "ALIA_TEST_DECISION_CREDENTIAL_CHILD";
+    const FILE: &str = "ALIA_TEST_DECISION_SETTINGS_FILE";
+    if std::env::var_os(CHILD).is_none() {
+        struct Directory(std::path::PathBuf);
+        impl Drop for Directory {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let root = Directory(
+            std::env::temp_dir().join(format!("alia-decision-env-{}", uuid::Uuid::new_v4())),
+        );
+        std::fs::create_dir(&root.0).unwrap();
+        for phase in ["initial", "rotated"] {
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child.args(["--exact", "decision_credentials_use_only_the_selected_environment_and_preserve_explicit_keys"])
+                .env(CHILD, phase)
+                .env(FILE, root.0.join("settings.toml"))
+                .env("TYPESAFE_API_KEY", "isolated-typesafe-key")
+                .env("ALIA_TEST_OTHER_DECISION_KEY", if phase == "initial" { "isolated-other-key" } else { "isolated-other-key-rotated" });
+            for key in [
+                "OPENAI_API_KEY",
+                "ANTHROPIC_API_KEY",
+                "GEMINI_API_KEY",
+                "DATABASE_URL",
+                "ALIA_JWT_SECRET",
+            ] {
+                child.env_remove(key);
+            }
+            assert!(child.status().unwrap().success());
+        }
+        return;
+    }
+    use alia_server::config::{LlmProviderProfileSection, TypeSafeProviderSection};
+    use alia_server::settings::SettingsRegistry;
+    use serde_json::json;
+    let mut config = decision_config();
+    let LlmProviderProfileSection::TypeSafe(provider) = &config.providers.llm["typesafe"] else {
+        panic!("missing provider")
+    };
+    assert!(
+        provider.api_key.is_empty(),
+        "config must retain only explicitly configured credentials"
+    );
+    assert_eq!(provider.resolved_api_key(), "isolated-typesafe-key");
+    let explicit = TypeSafeProviderSection {
+        api_key: "isolated-explicit-key".into(),
+        ..Default::default()
+    };
+    assert_eq!(explicit.resolved_api_key(), "isolated-explicit-key");
+    let path = std::path::PathBuf::from(std::env::var_os(FILE).unwrap());
+    let initial = std::env::var(CHILD).unwrap() == "initial";
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let settings = SettingsRegistry::new();
+        settings.seed_from_config(&config).await;
+        settings.set_persist_path(path.clone()).await;
+        if initial {
+            // Change source A to B without copying A into the desired api_key field.
+            settings
+                .set(
+                    "core.providers.llm.typesafe.api_key_env",
+                    json!("ALIA_TEST_OTHER_DECISION_KEY"),
+                )
+                .await;
+        } else {
+            settings.load_persisted(&path).await.unwrap();
+        }
+        let values = settings
+            .all()
+            .await
+            .into_iter()
+            .map(|(key, entry)| (key, entry.value))
+            .collect();
+        config.apply_routing_settings(&values).unwrap();
+        let LlmProviderProfileSection::TypeSafe(provider) = &config.providers.llm["typesafe"]
+        else {
+            panic!("missing provider")
+        };
+        assert!(provider.api_key.is_empty());
+        assert_eq!(provider.api_key_env, "ALIA_TEST_OTHER_DECISION_KEY");
+        assert_eq!(
+            provider.resolved_api_key(),
+            if initial {
+                "isolated-other-key"
+            } else {
+                "isolated-other-key-rotated"
+            }
+        );
+        settings.save().await.unwrap();
+    });
+    let saved = std::fs::read_to_string(path).unwrap();
+    assert!(!saved.contains("isolated-typesafe-key"));
+    assert!(!saved.contains("isolated-other-key"));
+}

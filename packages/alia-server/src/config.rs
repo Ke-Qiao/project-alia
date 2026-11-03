@@ -205,6 +205,9 @@ impl Default for LlmSection {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct LlmRolesSection {
+    /// `legacy` keeps the existing minor classifier; otherwise a decision profile ID.
+    #[serde(default = "default_routing_profile")]
+    pub routing: String,
     #[serde(default = "default_minor_llm_profile")]
     pub minor: String,
     #[serde(default = "default_major_llm_profile")]
@@ -222,6 +225,7 @@ pub struct LlmRolesSection {
 impl Default for LlmRolesSection {
     fn default() -> Self {
         Self {
+            routing: default_routing_profile(),
             minor: default_minor_llm_profile(),
             major: default_major_llm_profile(),
             memory_capture: None,
@@ -230,6 +234,10 @@ impl Default for LlmRolesSection {
             embedding: default_embedding_profile(),
         }
     }
+}
+
+fn default_routing_profile() -> String {
+    "legacy".to_string()
 }
 
 fn default_minor_llm_profile() -> String {
@@ -296,6 +304,8 @@ pub enum LlmProviderProfileSection {
     OpenAi(OpenAiProviderSection),
     Anthropic(AnthropicProviderSection),
     Gemini(GeminiProviderSection),
+    #[serde(rename = "typesafe")]
+    TypeSafe(TypeSafeProviderSection),
     Noop,
 }
 
@@ -304,6 +314,7 @@ pub enum LlmProviderKind {
     OpenAi,
     Anthropic,
     Gemini,
+    TypeSafe,
     Noop,
 }
 
@@ -312,6 +323,7 @@ pub enum LlmProviderProfileRef<'a> {
     OpenAi(&'a OpenAiProviderSection),
     Anthropic(&'a AnthropicProviderSection),
     Gemini(&'a GeminiProviderSection),
+    TypeSafe(&'a TypeSafeProviderSection),
     Noop,
 }
 
@@ -321,6 +333,7 @@ impl LlmProviderProfileSection {
             LlmProviderProfileSection::OpenAi(_) => LlmProviderKind::OpenAi,
             LlmProviderProfileSection::Anthropic(_) => LlmProviderKind::Anthropic,
             LlmProviderProfileSection::Gemini(_) => LlmProviderKind::Gemini,
+            LlmProviderProfileSection::TypeSafe(_) => LlmProviderKind::TypeSafe,
             LlmProviderProfileSection::Noop => LlmProviderKind::Noop,
         }
     }
@@ -332,6 +345,9 @@ impl LlmProviderProfileSection {
                 LlmProviderProfileRef::Anthropic(provider)
             }
             LlmProviderProfileSection::Gemini(provider) => LlmProviderProfileRef::Gemini(provider),
+            LlmProviderProfileSection::TypeSafe(provider) => {
+                LlmProviderProfileRef::TypeSafe(provider)
+            }
             LlmProviderProfileSection::Noop => LlmProviderProfileRef::Noop,
         }
     }
@@ -343,6 +359,7 @@ impl LlmProviderProfileRef<'_> {
             LlmProviderProfileRef::OpenAi(_) => LlmProviderKind::OpenAi,
             LlmProviderProfileRef::Anthropic(_) => LlmProviderKind::Anthropic,
             LlmProviderProfileRef::Gemini(_) => LlmProviderKind::Gemini,
+            LlmProviderProfileRef::TypeSafe(_) => LlmProviderKind::TypeSafe,
             LlmProviderProfileRef::Noop => LlmProviderKind::Noop,
         }
     }
@@ -519,6 +536,46 @@ impl Default for GeminiProviderSection {
 
 fn default_gemini_base_url() -> String {
     "https://generativelanguage.googleapis.com/v1beta".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeSafeProviderSection {
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_typesafe_key_env")]
+    pub api_key_env: String,
+    #[serde(default = "default_typesafe_base_url")]
+    pub base_url: String,
+}
+
+impl Default for TypeSafeProviderSection {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            base_url: default_typesafe_base_url(),
+            api_key_env: default_typesafe_key_env(),
+        }
+    }
+}
+
+impl TypeSafeProviderSection {
+    /// Resolve only for client construction; environment secrets never become desired settings.
+    pub fn resolved_api_key(&self) -> String {
+        if self.api_key.trim().is_empty() {
+            std::env::var(&self.api_key_env).unwrap_or_default()
+        } else {
+            self.api_key.clone()
+        }
+    }
+}
+
+fn default_typesafe_key_env() -> String {
+    "TYPESAFE_API_KEY".to_string()
+}
+
+fn default_typesafe_base_url() -> String {
+    "https://api.typesafe.ai/v1/systemone".to_string()
 }
 
 fn default_llm_max_tokens() -> u32 {
@@ -1085,6 +1142,7 @@ fn default_voice_profile_id() -> String {
 pub enum LlmProfileKind {
     Chat,
     Embedding,
+    Decision,
 }
 
 impl Default for LlmProfileKind {
@@ -1105,6 +1163,19 @@ pub struct LlmProfileSection {
     pub request: LlmRequestOptionsSection,
     #[serde(default)]
     pub provider_specific: BTreeMap<String, serde_json::Value>,
+}
+
+impl LlmProfileSection {
+    pub fn expected_decision_model(&self) -> anyhow::Result<&str> {
+        self.provider_specific
+            .get("expected_model")
+            .map(|value| {
+                value
+                    .as_str()
+                    .context("decision expected_model must be a string")
+            })
+            .unwrap_or(Ok(self.model.as_str()))
+    }
 }
 
 fn default_llm_profiles() -> BTreeMap<String, LlmProfileSection> {
@@ -2141,6 +2212,7 @@ impl ServerConfig {
                 provider.api_key = key;
             }
         }
+        config.validate_routing_profile()?;
         if config.auth.server_keypair_path.is_relative() {
             config.auth.server_keypair_path =
                 config.config_dir.join(&config.auth.server_keypair_path);
@@ -2193,6 +2265,10 @@ impl ServerConfig {
                 .llm_provider_profile(&profile.provider)
                 .with_context(|| format!("LLM role '{role}', profile '{id}'"))?;
             anyhow::ensure!(
+                provider.kind() != LlmProviderKind::TypeSafe,
+                "LLM role '{role}' cannot use the TypeSafe decision provider"
+            );
+            anyhow::ensure!(
                 kind != LlmProfileKind::Embedding
                     || matches!(
                         provider.kind(),
@@ -2201,6 +2277,135 @@ impl ServerConfig {
                 "LLM role 'embedding', profile '{id}' requires an OpenAI or noop provider"
             );
         }
+        self.validate_routing_profile()
+    }
+
+    /// Routing uses a separate protocol; a valid chat profile is not a decision profile.
+    pub fn validate_routing_profile(&self) -> anyhow::Result<()> {
+        for (id, profile) in self
+            .profiles
+            .llm
+            .iter()
+            .filter(|(_, p)| p.kind == LlmProfileKind::Decision)
+        {
+            anyhow::ensure!(
+                id != "legacy",
+                "'legacy' is reserved for the existing router"
+            );
+            let LlmProviderProfileRef::TypeSafe(provider) =
+                self.llm_provider_profile(&profile.provider)?
+            else {
+                anyhow::bail!("decision profile requires a TypeSafe provider");
+            };
+            validate_jev_identity(&profile.model, profile.expected_decision_model()?)?;
+            validate_typesafe_endpoint(&provider.base_url)?;
+            anyhow::ensure!(
+                valid_credential_env(&provider.api_key_env),
+                "invalid decision API key environment variable name"
+            );
+        }
+        let id = &self.llm.roles.routing;
+        if id == "legacy" {
+            return Ok(());
+        }
+        anyhow::ensure!(
+            !id.trim().is_empty(),
+            "routing profile must be an ID or 'legacy'"
+        );
+        let profile = self.profiles.llm_profile(id)?;
+        anyhow::ensure!(
+            profile.kind == LlmProfileKind::Decision,
+            "routing requires a decision profile"
+        );
+        Ok(())
+    }
+
+    pub fn is_routing_setting(&self, key: &str) -> bool {
+        key == "core.llm.roles.routing"
+            || self.profiles.llm.iter().any(|(id, profile)| {
+                profile.kind == LlmProfileKind::Decision
+                    && key.starts_with(&format!("core.profiles.llm.{id}."))
+            })
+            || self.providers.llm.iter().any(|(id, provider)| {
+                matches!(provider, LlmProviderProfileSection::TypeSafe(_))
+                    && key.starts_with(&format!("core.providers.llm.{id}."))
+            })
+    }
+
+    /// Project only routing settings; reject the complete update before changing configuration.
+    pub fn apply_routing_settings(
+        &mut self,
+        values: &BTreeMap<String, serde_json::Value>,
+    ) -> anyhow::Result<()> {
+        let mut next = self.clone();
+        for (key, value) in values
+            .iter()
+            .filter(|(key, _)| self.is_routing_setting(key))
+        {
+            let value = value
+                .as_str()
+                .with_context(|| format!("{key} must be a string"))?;
+            if key == "core.llm.roles.routing" {
+                next.llm.roles.routing = value.to_owned();
+                continue;
+            }
+            for (id, profile) in next
+                .profiles
+                .llm
+                .iter_mut()
+                .filter(|(_, p)| p.kind == LlmProfileKind::Decision)
+            {
+                let prefix = format!("core.profiles.llm.{id}.");
+                let Some(field) = key.strip_prefix(&prefix) else {
+                    continue;
+                };
+                match field {
+                    "kind" => anyhow::ensure!(
+                        value == "decision",
+                        "routing profile kind must remain decision"
+                    ),
+                    "provider" => profile.provider = value.to_owned(),
+                    "model" => profile.model = value.to_owned(),
+                    "provider_specific.expected_model" => {
+                        profile.provider_specific.insert(
+                            "expected_model".into(),
+                            serde_json::Value::String(value.to_owned()),
+                        );
+                    }
+                    _ => anyhow::bail!("unsupported decision profile setting"),
+                }
+            }
+            for (id, provider) in &mut next.providers.llm {
+                let LlmProviderProfileSection::TypeSafe(provider) = provider else {
+                    continue;
+                };
+                let prefix = format!("core.providers.llm.{id}.");
+                let Some(field) = key.strip_prefix(&prefix) else {
+                    continue;
+                };
+                match field {
+                    "type" => anyhow::ensure!(
+                        value == "typesafe",
+                        "decision provider type must remain typesafe"
+                    ),
+                    "base_url" => {
+                        validate_typesafe_endpoint(value)?;
+                        provider.base_url = value.to_owned();
+                    }
+                    "api_key" => provider.api_key = value.to_owned(),
+                    "api_key_env" => {
+                        anyhow::ensure!(
+                            valid_credential_env(value),
+                            "invalid decision API key environment variable name"
+                        );
+                        provider.api_key_env = value.to_owned();
+                    }
+                    _ => anyhow::bail!("unsupported TypeSafe provider setting"),
+                }
+            }
+        }
+        next.validate_routing_profile()?;
+        *self = next;
         Ok(())
     }
 
@@ -2246,6 +2451,66 @@ impl ServerConfig {
         // so the error message is clear.
         candidates[0].clone()
     }
+}
+
+fn valid_credential_env(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    matches!(bytes.next(), Some(b'A'..=b'Z' | b'a'..=b'z' | b'_'))
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+fn fixed_version(version: &str, fields: usize) -> bool {
+    let parts: Vec<_> = version.split('.').collect();
+    parts.len() == fields
+        && parts.iter().all(|part| {
+            !part.is_empty()
+                && part.bytes().all(|b| b.is_ascii_digit())
+                && (*part == "0" || !part.starts_with('0'))
+                && part.parse::<u32>().is_ok()
+        })
+}
+
+pub(crate) fn validate_jev_identity(model: &str, expected: &str) -> anyhow::Result<()> {
+    let official = model
+        .strip_prefix("jev-")
+        .is_some_and(|version| fixed_version(version, 3))
+        && expected == model;
+    let openrouter = expected
+        .strip_prefix("typesafe/jev-")
+        .and_then(|version| version.rsplit_once('-'))
+        .is_some_and(|(version, date)| {
+            fixed_version(version, 2)
+                && date.len() == 8
+                && date.bytes().all(|b| b.is_ascii_digit())
+                && chrono::NaiveDate::parse_from_str(date, "%Y%m%d").is_ok()
+                && (model == expected || model == format!("typesafe/jev-{version}"))
+        });
+    anyhow::ensure!(
+        official || openrouter,
+        "decision model must pin jev-X.Y.Z or an exact typesafe/jev-X.Y-YYYYMMDD response identity"
+    );
+    Ok(())
+}
+
+fn validate_typesafe_endpoint(endpoint: &str) -> anyhow::Result<()> {
+    let url = rig_reqwest::reqwest::Url::parse(endpoint).context("invalid TypeSafe endpoint")?;
+    let loopback = url.host_str().is_some_and(|host| {
+        host == "localhost"
+            || host
+                .trim_matches(['[', ']'])
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    });
+    anyhow::ensure!(
+        (url.scheme() == "https" || (url.scheme() == "http" && loopback))
+            && url.host_str().is_some()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.query().is_none()
+            && url.fragment().is_none(),
+        "TypeSafe endpoint requires HTTPS or loopback HTTP, without credentials, query or fragment"
+    );
+    Ok(())
 }
 
 pub fn load_config_with_fragments(path: &Path) -> anyhow::Result<String> {

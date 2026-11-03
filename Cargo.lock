@@ -182,6 +182,7 @@ dependencies = [
  "rig-agent",
  "rig-core",
  "rig-reqwest",
+ "rig-typesafeai",
  "rmcp",
  "schemars",
  "sea-orm",
@@ -4478,6 +4479,17 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-tungstenite",
+]
+
+[[package]]
+name = "rig-typesafeai"
+version = "0.44.0"
+source = "git+https://github.com/Ke-Qiao/rig.git?rev=c2ff3e30e6b8d84fc6759eab030656a42cae14ca#c2ff3e30e6b8d84fc6759eab030656a42cae14ca"
+dependencies = [
+ "http",
+ "rig-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -121,6 +121,14 @@ impl Drop for Fixture {
 
 fn assert_example_roles(config: &ServerConfig) {
     config.validate_llm_roles().unwrap();
+    assert_eq!(config.llm.roles.routing, "legacy");
+    let decision = config.profiles.llm_profile("jev").unwrap();
+    assert_eq!(decision.kind, LlmProfileKind::Decision);
+    assert_eq!(decision.model, "jev-1.14.0");
+    assert!(matches!(
+        config.llm_provider_profile(&decision.provider).unwrap(),
+        crate::config::LlmProviderProfileRef::TypeSafe(_)
+    ));
     let major = config
         .profiles
         .llm_profile(&config.llm.roles.major)

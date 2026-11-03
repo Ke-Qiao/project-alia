@@ -347,6 +347,7 @@ impl ServerBuilder {
             .into_iter()
             .map(|(key, entry)| (key, entry.value))
             .collect();
+        Arc::make_mut(&mut self.config).apply_routing_settings(&saved_settings)?;
         initial_policies.apply_settings(&saved_settings);
         sensor_registry.attach_db(db.clone()).await?;
         sensor_registry
@@ -779,14 +780,26 @@ impl ServerBuilder {
             .initialize(persona, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
         let routing = &self.config.policies.routing;
-        let router = Box::new(RouterService::new(
-            RouterConfig {
-                timeout_sec: routing.timeout_sec,
-                minor_llm_enabled: routing.minor_llm_enabled,
-                major_llm_enabled: routing.major_llm_enabled,
-            },
-            Some(minor_llm.clone()),
-        )?);
+        let decision_model =
+            factory::create_router_decision(&self.config, &self.config.llm.roles.routing)?.map(
+                |model| {
+                    Arc::new(
+                        Arc::unwrap_or_clone(model)
+                            .with_chat_models(Some(minor_llm.clone()), Some(major_llm.clone())),
+                    )
+                },
+            );
+        let router = Box::new(
+            RouterService::new(
+                RouterConfig {
+                    timeout_sec: routing.timeout_sec,
+                    minor_llm_enabled: routing.minor_llm_enabled,
+                    major_llm_enabled: routing.major_llm_enabled,
+                },
+                Some(minor_llm.clone()),
+            )?
+            .with_decision_model(decision_model),
+        );
         let router = cleanup
             .initialize(router, &self.cancel_token, ShutdownPhase::Resources)
             .await?;

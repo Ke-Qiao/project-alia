@@ -74,6 +74,20 @@ async fn update_settings(
         return Err(AppError::Forbidden);
     }
     let _update = state.settings.lock_updates().await;
+    if body.keys().any(|key| state.config.is_routing_setting(key)) {
+        let mut desired = state
+            .settings
+            .all()
+            .await
+            .into_iter()
+            .map(|(key, entry)| (key, entry.value))
+            .collect::<BTreeMap<_, _>>();
+        desired.extend(body.clone());
+        let mut candidate = (*state.config).clone();
+        candidate
+            .apply_routing_settings(&desired)
+            .map_err(|error| AppError::Validation(error.to_string()))?;
+    }
     let (current, mut next) = prepare_policy_update(&state, &headers, &body).await?;
     let current_profile = state
         .modules

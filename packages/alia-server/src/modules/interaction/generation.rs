@@ -25,7 +25,7 @@ use super::prompt::{
 use super::services::InteractionServices;
 use super::skills::SkillCatalog;
 use super::streaming::TtsTraceContext;
-use super::tools::{select_all_tools, select_tools_for_skill};
+use super::tools::{ToolSelection, select_all_tools, select_tools_for_skill};
 use super::trace::AgentTrace;
 use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
 use crate::channels::adapter::ChannelAdapter;
@@ -624,10 +624,27 @@ async fn route_response(
             .unwrap_or_default(),
     };
     validate_generation_context(modules, turn).await?;
-    let mut decision =
-        match cancellable_stage(turn, "router", modules.router.route(&route_input)).await? {
+    let routing_started = tokio::time::Instant::now();
+    let mut routed_decision =
+        match cancellable_stage(turn, "router", modules.router.route_observed(&route_input)).await?
+        {
             Some(decision) => decision,
             None => {
+                let mut observation = modules.router.decision_observation();
+                observation.elapsed_ms = routing_started.elapsed().as_secs_f64() * 1000.0;
+                trace
+                    .record(
+                        modules,
+                        "route_decision",
+                        "router",
+                        Some("cancelled".into()),
+                        serde_json::json!({
+                            "route": null,
+                            "routing": observation,
+                            "cancelled": true,
+                        }),
+                    )
+                    .await;
                 if let Some(turn) = turn {
                     persist_interrupted_input_context(
                         modules,
@@ -655,7 +672,8 @@ async fn route_response(
                 return Ok(None);
             }
         };
-    let resolution = if let RouteDecision::Skill { skill_name } = &decision {
+    let decision = &mut routed_decision.decision;
+    let resolution = if let RouteDecision::Skill { skill_name } = decision {
         let catalog = prepared
             .skill_catalog
             .as_ref()
@@ -667,13 +685,28 @@ async fn route_response(
         )
         .await?
         else {
+            trace
+                .record(
+                    modules,
+                    "route_decision",
+                    "router",
+                    Some("cancelled".into()),
+                    serde_json::json!({
+                        "route": null,
+                        "routing": routed_decision.observation,
+                        "cancelled": true,
+                        "stage": "skill_context",
+                    }),
+                )
+                .await;
             return Ok(None);
         };
         if resolution.is_none() {
-            decision = modules
+            *decision = modules
                 .router
                 .fallback(&runtime_context.assistant_name)
                 .await;
+            routed_decision.observation.fallback_reason = Some("skill_catalog_changed");
             tracing::debug!(
                 "selected skill changed during classification; using current model fallback"
             );
@@ -686,7 +719,7 @@ async fn route_response(
         debug_output,
         "router",
         "result",
-        route_decision_name(&decision),
+        route_decision_name(decision),
         Some((channel_id, user_id)),
     );
     trace
@@ -694,14 +727,18 @@ async fn route_response(
             modules,
             "route_decision",
             "router",
-            Some(route_decision_name(&decision).to_string()),
+            Some(route_decision_name(decision).to_string()),
             serde_json::json!({
-                "route": route_decision_name(&decision),
+                "route": route_decision_name(decision),
+                "routing": routed_decision.observation,
+                "clarification_only": routed_decision.clarification_only,
+                "cancelled": false,
             }),
         )
         .await;
 
-    let routed = match decision {
+    let allow_tools = !routed_decision.clarification_only;
+    let routed = match routed_decision.decision {
         RouteDecision::Skill { .. } => {
             let resolution = resolution
                 .ok_or_else(|| anyhow::anyhow!("skill route has no current resolution"))?;
@@ -735,6 +772,7 @@ async fn route_response(
                 prepared,
                 modules.llm.as_ref(),
                 messages,
+                true,
                 Some(&resolution.preferred_tools),
                 "skill",
                 conversation_config.streaming_enabled,
@@ -760,6 +798,7 @@ async fn route_response(
                 prepared,
                 modules.minor_llm.as_ref(),
                 messages,
+                allow_tools,
                 None,
                 "minor_llm",
                 conversation_config.streaming_enabled && escalation_prompt.is_none(),
@@ -792,6 +831,7 @@ async fn route_response(
                     prepared,
                     modules.major_llm.as_ref(),
                     messages,
+                    allow_tools,
                     None,
                     "major_llm_escalated",
                     conversation_config.streaming_enabled,
@@ -821,6 +861,7 @@ async fn route_response(
                 prepared,
                 modules.major_llm.as_ref(),
                 messages,
+                allow_tools,
                 None,
                 "major_llm",
                 conversation_config.streaming_enabled,
@@ -836,6 +877,19 @@ async fn route_response(
             }
         }
     };
+    prepared
+        .trace
+        .record(
+            modules,
+            "route_execution",
+            "router",
+            Some(routed.route.into()),
+            serde_json::json!({
+                "route": routed.route,
+                "clarification_only": routed_decision.clarification_only,
+            }),
+        )
+        .await;
     Ok(Some(routed))
 }
 
@@ -845,6 +899,7 @@ async fn run_model(
     prepared: &mut PreparedTurn,
     llm: &LlmService,
     messages: Vec<ChatMessage>,
+    allow_tools: bool,
     preferred_tools: Option<&[String]>,
     route: &'static str,
     allow_streaming: bool,
@@ -865,6 +920,10 @@ async fn run_model(
     } = *request;
     let admitted_turn = turn.ok_or_else(|| anyhow::anyhow!("input has no admitted turn"))?;
     let selection = async {
+        if !allow_tools {
+            // Missing references must be clarified without advertising any executable tool.
+            return Ok(ToolSelection::default());
+        }
         match preferred_tools {
             Some(preferred) => {
                 select_tools_for_skill(

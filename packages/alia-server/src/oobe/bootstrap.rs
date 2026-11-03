@@ -145,6 +145,10 @@ const EXAMPLE_CONFIG_FRAGMENTS: &[(&str, &str)] = &[
         include_str!("../../../../config/server.example.d/providers/easy_turn.toml"),
     ),
     (
+        "providers/typesafe.toml",
+        include_str!("../../../../config/server.example.d/providers/typesafe.toml"),
+    ),
+    (
         "providers/openai.toml",
         include_str!("../../../../config/server.example.d/providers/openai.toml"),
     ),

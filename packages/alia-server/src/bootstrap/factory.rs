@@ -55,6 +55,35 @@ pub fn create_llm(config: &ServerConfig, profile_id: &str) -> anyhow::Result<Box
     )?))
 }
 
+pub fn create_router_decision(
+    config: &ServerConfig,
+    role: &str,
+) -> anyhow::Result<Option<Arc<crate::modules::interaction::routing::JevRouter>>> {
+    config.validate_routing_profile()?;
+    if role == "legacy" {
+        return Ok(None);
+    }
+    let profile = config.profiles.llm_profile(role)?;
+    anyhow::ensure!(
+        profile.kind == LlmProfileKind::Decision,
+        "routing requires a decision profile"
+    );
+    let LlmProviderProfileRef::TypeSafe(provider) =
+        config.llm_provider_profile(&profile.provider)?
+    else {
+        anyhow::bail!("decision profile requires a TypeSafe provider");
+    };
+    let api_key = provider.resolved_api_key();
+    Ok(Some(Arc::new(
+        crate::modules::interaction::routing::JevRouter::new(
+            &api_key,
+            &provider.base_url,
+            &profile.model,
+            profile.expected_decision_model()?,
+        )?,
+    )))
+}
+
 pub fn create_stt(_config: &ServerConfig, name: &str) -> anyhow::Result<Box<dyn SttAdapter>> {
     match name {
         #[cfg(feature = "stt-whisper")]
@@ -119,7 +148,9 @@ pub fn create_embedding(
             tracing::info!(profile = profile_id, "creating embedding adapter (noop)");
             Ok(Box::new(NoopEmbedding))
         }
-        LlmProviderProfileRef::Anthropic(_) | LlmProviderProfileRef::Gemini(_) => {
+        LlmProviderProfileRef::Anthropic(_)
+        | LlmProviderProfileRef::Gemini(_)
+        | LlmProviderProfileRef::TypeSafe(_) => {
             anyhow::bail!("profile '{profile_id}' selects an unsupported embedding provider")
         }
     }

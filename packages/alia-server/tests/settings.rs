@@ -364,3 +364,73 @@ async fn core_services_are_not_exposed_as_replaceable_module_slots() {
         );
     }
 }
+
+#[tokio::test]
+async fn decision_routing_identity_restarts_and_legacy_restore_survives_persistence() {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut config = ServerConfig::load(&workspace.join("config/server.example.toml")).unwrap();
+    let directory = SettingsDirectory::new();
+    let path = directory.0.join("settings.toml");
+    let settings = SettingsRegistry::new();
+    settings.seed_from_config(&config).await;
+    settings.set_persist_path(path.clone()).await;
+    for key in [
+        "core.llm.roles.routing",
+        "core.profiles.llm.jev.provider",
+        "core.profiles.llm.jev.kind",
+        "core.profiles.llm.jev.model",
+        "core.profiles.llm.jev.provider_specific.expected_model",
+        "core.providers.llm.typesafe.type",
+        "core.providers.llm.typesafe.base_url",
+        "core.providers.llm.typesafe.api_key",
+        "core.providers.llm.typesafe.api_key_env",
+    ] {
+        let entry = settings.get_entry(key).await.unwrap();
+        assert!(entry.schema.unwrap().requires_restart, "{key}");
+    }
+    assert!(
+        settings
+            .get_entry("core.providers.llm.typesafe.api_key")
+            .await
+            .unwrap()
+            .schema
+            .unwrap()
+            .secret
+    );
+    assert!(
+        settings
+            .get_entry("core.profiles.llm.jev.temperature")
+            .await
+            .is_none()
+    );
+    settings.set("core.llm.roles.routing", json!("jev")).await;
+    settings.save().await.unwrap();
+    let reloaded = SettingsRegistry::new();
+    reloaded.seed_from_config(&config).await;
+    reloaded.load_persisted(&path).await.unwrap();
+    let values = reloaded
+        .all()
+        .await
+        .into_iter()
+        .map(|(key, entry)| (key, entry.value))
+        .collect();
+    config.apply_routing_settings(&values).unwrap();
+    assert_eq!(config.llm.roles.routing, "jev");
+    // A non-null disabled value must override even a base config that now enables Jev.
+    reloaded
+        .set("core.llm.roles.routing", json!("legacy"))
+        .await;
+    reloaded.save().await.unwrap();
+    let restored = SettingsRegistry::new();
+    restored.seed_from_config(&config).await;
+    restored.load_persisted(&path).await.unwrap();
+    let values = restored
+        .all()
+        .await
+        .into_iter()
+        .map(|(key, entry)| (key, entry.value))
+        .collect();
+    config.apply_routing_settings(&values).unwrap();
+    assert_eq!(config.llm.roles.routing, "legacy");
+    assert!(std::fs::read_to_string(path).unwrap().contains("legacy"));
+}

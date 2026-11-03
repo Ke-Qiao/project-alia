@@ -49,3 +49,9 @@ provider = "openai"
 kind = "embedding"
 model = "text-embedding-3-small"
 dimensions = 1536
+
+# Dedicated decision protocol; this is not a chat/completions profile.
+[profiles.llm.jev]
+provider = "typesafe"
+kind = "decision"
+model = "jev-1.14.0"

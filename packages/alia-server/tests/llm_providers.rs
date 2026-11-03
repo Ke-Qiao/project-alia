@@ -120,3 +120,27 @@ fn insert_llm_profile(
         },
     );
 }
+
+#[test]
+fn decision_profiles_cannot_be_used_as_chat_or_embedding_and_legacy_needs_no_key() {
+    use alia_server::bootstrap::factory::create_router_decision;
+    use alia_server::providers::llm::LlmService;
+    let mut config = test_config();
+    assert!(create_router_decision(&config, "legacy").unwrap().is_none());
+    assert!(create_llm(&config, "jev").is_err());
+    assert!(create_embedding(&config, "jev").is_err());
+    assert!(create_router_decision(&config, "minor").is_err());
+    let provider = config.llm_provider_profile("typesafe").unwrap();
+    assert!(LlmService::from_profile("jev", &config.profiles.llm["jev"], provider).is_err());
+    let mut chat = config.profiles.llm["minor"].clone();
+    chat.provider = "typesafe".into();
+    config.profiles.llm.insert("wrong_chat".into(), chat);
+    assert!(create_llm(&config, "wrong_chat").is_err());
+    let mut embedding = config.profiles.llm["embedding"].clone();
+    embedding.provider = "typesafe".into();
+    config
+        .profiles
+        .llm
+        .insert("wrong_embedding".into(), embedding);
+    assert!(create_embedding(&config, "wrong_embedding").is_err());
+}

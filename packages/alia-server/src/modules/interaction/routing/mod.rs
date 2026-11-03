@@ -46,9 +46,12 @@ pub enum RouteDecision {
     },
 }
 
+mod jev;
 mod service;
 
+pub use jev::{JevRouter, RULES_VERSION as JEV_RULES_VERSION};
+
 pub use service::{
-    Classification, LlmMode, RouterConfig, RouterService, parse_tool_selection_response,
-    strip_code_fences,
+    Classification, LlmMode, RouteObservation, RoutedDecision, RouterConfig, RouterService,
+    parse_tool_selection_response, strip_code_fences,
 };

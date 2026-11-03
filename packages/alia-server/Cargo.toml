@@ -50,6 +50,7 @@ alia-plugin-runtime.workspace = true
 rig-core.workspace = true
 rig-agent.workspace = true
 rig-reqwest.workspace = true
+rig-typesafeai.workspace = true
 schemars.workspace = true
 jsonschema.workspace = true
 rmcp.workspace = true

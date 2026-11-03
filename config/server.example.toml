@@ -78,6 +78,9 @@ stt = "whisper_cpp"
 tts = "gpt_sovits"
 
 [llm.roles]
+# Set to "jev" only after configuring the isolated decision endpoint and credential.
+# "legacy" is an explicit, persistable return to the existing minor classifier.
+routing = "legacy"
 minor = "minor"
 major = "major"
 default = "major"
