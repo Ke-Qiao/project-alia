@@ -1,5 +1,26 @@
 # 软件发布资料与真实模型链前置
 
+## ALSA 分段等待修复（2026-11-03 深夜）
+
+用户在138ee28上已听到回复，但原始日志确认等待后续Juno音频段时发生underrun，输出线程退出，Delivery为unknown且随后回复注册失败。问题在ALSA空队列时停止向声卡写入，详见[真人结果与根因](model-services.md#已听到回复分段等待导致播放退出2026-11-03-深夜)。
+
+改动前明确四个反例：首段／分段等待时没音频；静音被误计为回复进度；暂停或取消后旧语音泄出；真实设备错误被静音逻辑掩盖。先增加真实libasound null测试，旧实现**0通过／1失败／0忽略**，准确失败于`missing actual ZeroFill write`；原失败[日志](../../run/voice-acceptance-20261103-fixed/alsa-stream-gap/red/gap-red-tests.log)保留。
+
+主线修复**1ca43ef7f05204d017965e9fecaa7d94fa6c12d3**仅修改ALSA播放文件及ReferenceContent注释：等待期间写实际静音；静音参考和媒体提交计数分开，真实EPIPE／ESTRPIPE仍返回错误。新增分段等待／End回归，并扩展空队列设备写失败不伪造参考的回归。独立Pi提交**3bd88c88490c0e719646518e94f6e493cdf73287**继承138ee28，两处文件与主线逐字一致；锁文件、依赖、协议、配置与原生60毫秒缓冲不变。
+
+| 平台／源码 | 本次实际目标 | 通过／失败／忽略 |
+| --- | --- | --- |
+| Linux ARM64／3bd88c8 | ALSA实际null写入、暂停及设备错误 | 8／0／0 |
+| Linux ARM64／3bd88c8 | 播放队列、混音、取消、退休及进度 | 56／0／0 |
+
+修复后两组各运行一次，默认并发及原期限保持，不重复完整workspace；Linux专属逻辑未声称由Mac测试覆盖。原workspace release方式一次构建196.033秒通过，ELF／loader／ldd及三配置预检通过；fmt／whitespace通过。任务容器无网络、无设备、无数据库或模型且已清理；源码前后hash一致、独立worktree干净。见[验证记录及原始日志](../../run/voice-acceptance-20261103-fixed/alsa-stream-gap/linux/validation.json)。
+
+产物**70,865,344字节**，SHA-256 `f0e1ef8c8ca395d4f485bc2712512821a2b36f56133eba6a66e40a472425623d`，保存在[独立产物目录](../../run/voice-acceptance-20261103-fixed/alsa-stream-gap/linux/artifacts/alia-embedded)；[候选清单](../../run/voice-acceptance-20261103-fixed/alsa-stream-gap/candidate-manifest.json)固定提交、源码清单、锁文件、31份检查证据与构建身份。
+
+已安装到Pi `/home/ke-qiao/.local/share/alia/releases/3bd88c8/alia-embedded`。旧6358正常退出，新7162普通启动；签名inactive／available，输出PREPARED、指针0，采集RUNNING。五claims、绑定、SQLite、key及voice配置一致，无UART初始化或CaptureStart。旧包保留，部署快照在 `backups/pre-stream-gap-20261103`，没有执行还原。见[激活](../../run/voice-acceptance-20261103-fixed/alsa-stream-gap/deploy/activate-execution.json)、[签名及身份](../../run/voice-acceptance-20261103-fixed/alsa-stream-gap/deploy/voice-activation-complete.json)和[实际启动日志](../../run/voice-acceptance-20261103-fixed/alsa-stream-gap/deploy/new-process-startup.log)。Mac8481不变，受V05限制的Server候选未部署。
+
+准备时曾取到Stop之前的Inspect回执，断言立即拒绝，改用已确认Stop回执后才只读盘点；未发起错误部署。首次收集启动日志因systemd stderr权限不足失败，后用sudo只读收集，未改权限或重启。两份首错均保留在deploy目录。新修复的连续真人对话仍待用户参与，不能以软件测试和进程就绪代替；历史drop原因、V01—V07和正式发布其他门槛不因本次结果关闭。
+
 ## Pi 播放线程恢复修复（2026-11-03 晚）
 
 用户反馈结束的约69.875秒窗口仍无声；两次输入已正确识别并完成聊天回答，但Pi返回 `playback backend is not running`，没有新Delivery或Juno合成。更早窗口中的ALSA drop失败退出了播放线程；旧日志缺少errno，内核USB reset不能单独证明唯一原因。实际日志、计时编排错误与独立设备检查见[本轮现场记录](model-services.md#播放后端退出与显式-start-恢复2026-11-03-晚)。

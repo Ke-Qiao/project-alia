@@ -9,6 +9,18 @@ component checks and actual deployment evidence. The dated sections below retain
 their original scope; the latest validation status is recorded first. Example
 URLs and model names alone are not evidence of deployment or acceptance.
 
+## 已听到回复，分段等待导致播放退出（2026-11-03 深夜）
+
+**用户已明确听到完整回复；同一窗口随后暴露了第二个播放错误，不能把这次听感成功写成连续对话通过。** 普通重启后的138ee28／PID6358正确识别指定短句，minor生成43字回答，Juno返回HTTP200；窗口由用户反馈结束，约64.350秒进入精确Stop，无整场倒计时。本轮没有重复UART初始化或要求R1再断电，说明这一次普通程序重启后实际人声输入和可闻回复都已走通。用户确认、Mac／Pi原始日志和只读SQL分别保存在[本轮报告](../../run/voice-acceptance-20261103-fixed/playback-recovery-next-window/report.md)及[完整日志](../../run/voice-acceptance-20261103-fixed/playback-recovery-next-window/acceptance-complete.private.log)。
+
+第一条Delivery最终仍为unknown：`audio worker closed; final device state is unknown`，源格式32kHz单声道，offered82702／accepted76302／submitted72830，End未收到。Pi明确报`native underrun lost controlled playback continuity`；之后另一个识别输入生成了57字回答，但注册遇到`playback backend is not running`。用户听感和程序是否正常结束是两项事实，均保留。Easy-Turn三次处理约1215／762／912毫秒，均成功；这次没有判句超时。SQL终止事件因高频progress挤满原查询上限而另做限定owner／两response ID补查，未改数据或重放unknown。
+
+已找到源码中的具体问题：Juno分段合成之间会等待数秒，而ALSA只在有媒体或暂停时写声卡；正常等待下一段时不补静音，60毫秒缓冲耗尽后下一次写入触发致命underrun。旧代码在真实libasound null回归上失败，修复改为受控输出等待期间实际补静音。静音单独记录为ZeroFill，不增加回复帧数、不冒充End；暂停、取消、旧代次和真实设备错误保持原处理。此次EPIPE原因与更早缺少errno的drop错误分开记录，不倒推所有历史故障同因。
+
+修复已普通重启安装为独立Pi版本**3bd88c8**／PID7162／start ticks4272042，boot `b496a261-8ed1-4251-9c5b-1e7e2c9c2c7f`。签名Inspect为generation1、inactive、available；capture7170 RUNNING，playback7169 PREPARED、hw／appl pointer均0。旧PID6358正常退出；绑定、SQLite、设备key、voice配置、五claims全部保持，未发UART初始化或CaptureStart。Mac仍8481／PID14258，模型只读就绪通过，未另做推理。见[部署记录](../../run/voice-acceptance-20261103-fixed/alsa-stream-gap/deploy/voice-activation-complete.json)、[启动日志](../../run/voice-acceptance-20261103-fixed/alsa-stream-gap/deploy/new-process-startup.log)与[软件验证](software-release.md#alsa-分段等待修复2026-11-03-深夜)。
+
+**下一步只需用户在场做连续两轮短句。** [入口与记录要求](../../run/voice-acceptance-20261103-fixed/alsa-stream-gap/next-window/README.md)已准备；取得当窗Ready才讲话，由用户反馈结束。要同时确认两条回复可闻、Delivery收到End并正常结束、原播放线程仍在；不重选模型、不再次初始化、不放宽期限。修复版尚未执行真人窗口。随后再集中做正常换气长句、打断／恢复、取消与下一轮及Start／Stop；24小时负载、应用级升级恢复、AEC和具体插件仍独立未完成。
+
 ## 播放后端退出与显式 Start 恢复（2026-11-03 晚）
 
 **用户反馈结束的 feedback04 持续约69.875秒，仍没有回复；这次已确认是 Pi 播放 worker 退出后，新回答无法注册播放。** 两次指定句均识别正确，minor分别生成47字和43字回答，随后两次注册收到 `FailedPrecondition: playback backend is not running`；新增Delivery和Juno合成请求均为0。没有整场倒计时，也不是仍在等待聊天模型。该失败发生于Pi `58bb11e`／PID4532；随后已普通重启部署修复版`138ee28`／PID6358，Mac仍为`8481b0f`／PID14258。见[feedback04结果](../../run/voice-acceptance-20261103-fixed/feedback-04-review/report.md)和[用户结束窗口](../../run/voice-acceptance-20261103-fixed/feedback-round-04/window/summary.json)。
