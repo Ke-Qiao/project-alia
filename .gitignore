@@ -27,3 +27,15 @@ run/
 
 # secrets and keys
 *.key
+
+# Frontend clients
+clients/web/.next/
+clients/web/out/
+clients/web/*.tsbuildinfo
+clients/web/.env*
+!clients/web/.env.example
+clients/ios/DerivedData/
+clients/ios/**/xcuserdata/
+clients/android/.gradle/
+clients/android/**/build/
+clients/android/local.properties

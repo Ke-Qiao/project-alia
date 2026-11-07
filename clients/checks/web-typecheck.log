@@ -1,0 +1,5 @@
+
+> @alia/web@ typecheck /Users/ke-qiao/Developer/project-alia/clients/web
+> tsc --noEmit
+
+TYPE:0

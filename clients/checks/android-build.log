@@ -1,0 +1,116 @@
+Fetching distribution.
+Downloading https://services.gradle.org/distributions/gradle-9.6.0-bin.zip
+.............10%.............20%..............30%.............40%..............50%.............60%.............70%..............80%.............90%..............100%
+
+Welcome to Gradle 9.6.0!
+
+Here are the highlights of this release:
+ - Improved Configuration Cache hit rates
+ - Additional CLI rendering options
+ - Important project hierarchy lookup deprecations
+
+For more details see https://docs.gradle.org/9.6.0/release-notes.html
+
+Starting a Gradle Daemon (subsequent builds will be faster)
+Checking the license for package Android SDK Platform-Tools in /Users/ke-qiao/Library/Android/sdk/licenses
+License for package Android SDK Platform-Tools accepted.
+Preparing "Install Android SDK Platform-Tools v.37.0.1".
+"Install Android SDK Platform-Tools v.37.0.1" ready.
+Installing Android SDK Platform-Tools in /Users/ke-qiao/Library/Android/sdk/platform-tools
+"Install Android SDK Platform-Tools v.37.0.1" complete.
+"Install Android SDK Platform-Tools v.37.0.1" finished.
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:processDebugNavigationResources
+> Task :app:processDebugNavigationResources FAILED
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:processDebugNavigationResources' (registered by plugin 'com.android.internal.application').
+> Could not resolve all files for configuration ':app:debugRuntimeClasspath'.
+   > Failed to transform foundation.aar (androidx.compose.foundation:foundation-android:1.12.1) to match attributes {artifactType=android-navigation-xml, org.gradle.category=library, org.gradle.jvm.environment=android, org.gradle.libraryelements=aar, org.gradle.status=release, org.gradle.usage=java-runtime, org.jetbrains.kotlin.platform.type=androidJvm}.
+      > Could not download foundation.aar (androidx.compose.foundation:foundation-android:1.12.1)
+         > Could not get resource 'https://dl.google.com/dl/android/maven2/androidx/compose/foundation/foundation-android/1.12.1/foundation-android-1.12.1.aar'.
+            > Could not GET 'https://dl.google.com/dl/android/maven2/androidx/compose/foundation/foundation-android/1.12.1/foundation-android-1.12.1.aar'.
+               > The server may not support the client's requested TLS protocol versions: (TLSv1.2, TLSv1.3). You may need to configure the client to allow other protocols to be used. For more on this, please refer to https://docs.gradle.org/9.6.0/userguide/build_environment.html#sec:gradle_system_properties in the Gradle documentation.
+                  > Remote host terminated the handshake
+   > Failed to transform animation-core.aar (androidx.compose.animation:animation-core-android:1.12.1) to match attributes {artifactType=android-navigation-xml, org.gradle.category=library, org.gradle.jvm.environment=android, org.gradle.libraryelements=aar, org.gradle.status=release, org.gradle.usage=java-runtime, org.jetbrains.kotlin.platform.type=androidJvm}.
+      > Could not download animation-core.aar (androidx.compose.animation:animation-core-android:1.12.1)
+         > Could not get resource 'https://dl.google.com/dl/android/maven2/androidx/compose/animation/animation-core-android/1.12.1/animation-core-android-1.12.1.aar'.
+            > Could not GET 'https://dl.google.com/dl/android/maven2/androidx/compose/animation/animation-core-android/1.12.1/animation-core-android-1.12.1.aar'.
+               > The server may not support the client's requested TLS protocol versions: (TLSv1.2, TLSv1.3). You may need to configure the client to allow other protocols to be used. For more on this, please refer to https://docs.gradle.org/9.6.0/userguide/build_environment.html#sec:gradle_system_properties in the Gradle documentation.
+                  > Remote host terminated the handshake
+   > Failed to transform ui-unit.aar (androidx.compose.ui:ui-unit-android:1.12.1) to match attributes {artifactType=android-navigation-xml, org.gradle.category=library, org.gradle.jvm.environment=android, org.gradle.libraryelements=aar, org.gradle.status=release, org.gradle.usage=java-runtime, org.jetbrains.kotlin.platform.type=androidJvm}.
+      > Could not download ui-unit.aar (androidx.compose.ui:ui-unit-android:1.12.1)
+         > Could not get resource 'https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-unit-android/1.12.1/ui-unit-android-1.12.1.aar'.
+            > Could not GET 'https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-unit-android/1.12.1/ui-unit-android-1.12.1.aar'.
+               > The server may not support the client's requested TLS protocol versions: (TLSv1.2, TLSv1.3). You may need to configure the client to allow other protocols to be used. For more on this, please refer to https://docs.gradle.org/9.6.0/userguide/build_environment.html#sec:gradle_system_properties in the Gradle documentation.
+                  > Remote host terminated the handshake
+   > Failed to transform ui-util.aar (androidx.compose.ui:ui-util-android:1.12.1) to match attributes {artifactType=android-navigation-xml, org.gradle.category=library, org.gradle.jvm.environment=android, org.gradle.libraryelements=aar, org.gradle.status=release, org.gradle.usage=java-runtime, org.jetbrains.kotlin.platform.type=androidJvm}.
+      > Could not download ui-util.aar (androidx.compose.ui:ui-util-android:1.12.1)
+         > Could not get resource 'https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-util-android/1.12.1/ui-util-android-1.12.1.aar'.
+            > Could not GET 'https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-util-android/1.12.1/ui-util-android-1.12.1.aar'.
+               > The server may not support the client's requested TLS protocol versions: (TLSv1.2, TLSv1.3). You may need to configure the client to allow other protocols to be used. For more on this, please refer to https://docs.gradle.org/9.6.0/userguide/build_environment.html#sec:gradle_system_properties in the Gradle documentation.
+                  > Remote host terminated the handshake
+   > Failed to transform ui-text.aar (androidx.compose.ui:ui-text-android:1.12.1) to match attributes {artifactType=android-navigation-xml, org.gradle.category=library, org.gradle.jvm.environment=android, org.gradle.libraryelements=aar, org.gradle.status=release, org.gradle.usage=java-runtime, org.jetbrains.kotlin.platform.type=androidJvm}.
+      > Could not download ui-text.aar (androidx.compose.ui:ui-text-android:1.12.1)
+         > Could not get resource 'https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-text-android/1.12.1/ui-text-android-1.12.1.aar'.
+            > Could not GET 'https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-text-android/1.12.1/ui-text-android-1.12.1.aar'.
+               > The server may not support the client's requested TLS protocol versions: (TLSv1.2, TLSv1.3). You may need to configure the client to allow other protocols to be used. For more on this, please refer to https://docs.gradle.org/9.6.0/userguide/build_environment.html#sec:gradle_system_properties in the Gradle documentation.
+                  > Remote host terminated the handshake
+   > Failed to transform activity-1.13.0.aar (androidx.activity:activity:1.13.0) to match attributes {artifactType=android-navigation-xml, org.gradle.category=library, org.gradle.dependency.bundling=external, org.gradle.libraryelements=aar, org.gradle.status=release, org.gradle.usage=java-runtime}.
+      > Could not download activity-1.13.0.aar (androidx.activity:activity:1.13.0)
+         > Could not get resource 'https://dl.google.com/dl/android/maven2/androidx/activity/activity/1.13.0/activity-1.13.0.aar'.
+            > Could not GET 'https://dl.google.com/dl/android/maven2/androidx/activity/activity/1.13.0/activity-1.13.0.aar'.
+               > The server may not support the client's requested TLS protocol versions: (TLSv1.2, TLSv1.3). You may need to configure the client to allow other protocols to be used. For more on this, please refer to https://docs.gradle.org/9.6.0/userguide/build_environment.html#sec:gradle_system_properties in the Gradle documentation.
+                  > Remote host terminated the handshake
+   > Failed to transform activity-compose-1.13.0.aar (androidx.activity:activity-compose:1.13.0) to match attributes {artifactType=android-navigation-xml, org.gradle.category=library, org.gradle.dependency.bundling=external, org.gradle.libraryelements=aar, org.gradle.status=release, org.gradle.usage=java-runtime}.
+      > Could not download activity-compose-1.13.0.aar (androidx.activity:activity-compose:1.13.0)
+         > Could not get resource 'https://dl.google.com/dl/android/maven2/androidx/activity/activity-compose/1.13.0/activity-compose-1.13.0.aar'.
+            > Could not GET 'https://dl.google.com/dl/android/maven2/androidx/activity/activity-compose/1.13.0/activity-compose-1.13.0.aar'.
+               > The server may not support the client's requested TLS protocol versions: (TLSv1.2, TLSv1.3). You may need to configure the client to allow other protocols to be used. For more on this, please refer to https://docs.gradle.org/9.6.0/userguide/build_environment.html#sec:gradle_system_properties in the Gradle documentation.
+                  > Remote host terminated the handshake
+   > Failed to transform autofill-1.0.0.aar (androidx.autofill:autofill:1.0.0) to match attributes {artifactType=android-navigation-xml, org.gradle.category=library, org.gradle.libraryelements=jar, org.gradle.status=release, org.gradle.usage=java-runtime}.
+      > Could not download autofill-1.0.0.aar (androidx.autofill:autofill:1.0.0)
+         > Could not get resource 'https://dl.google.com/dl/android/maven2/androidx/autofill/autofill/1.0.0/autofill-1.0.0.aar'.
+            > Could not HEAD 'https://dl.google.com/dl/android/maven2/androidx/autofill/autofill/1.0.0/autofill-1.0.0.aar'.
+               > The server may not support the client's requested TLS protocol versions: (TLSv1.2, TLSv1.3). You may need to configure the client to allow other protocols to be used. For more on this, please refer to https://docs.gradle.org/9.6.0/userguide/build_environment.html#sec:gradle_system_properties in the Gradle documentation.
+                  > Remote host terminated the handshake
+   > Failed to transform window-core.aar (androidx.window:window-core-android:1.5.0) to match attributes {artifactType=android-navigation-xml, org.gradle.category=library, org.gradle.jvm.environment=android, org.gradle.libraryelements=aar, org.gradle.status=release, org.gradle.usage=java-runtime, org.jetbrains.kotlin.platform.type=jvm}.
+      > Could not download window-core.aar (androidx.window:window-core-android:1.5.0)
+         > Could not get resource 'https://dl.google.com/dl/android/maven2/androidx/window/window-core-android/1.5.0/window-core-android-1.5.0.aar'.
+            > Could not GET 'https://dl.google.com/dl/android/maven2/androidx/window/window-core-android/1.5.0/window-core-android-1.5.0.aar'.
+               > The server may not support the client's requested TLS protocol versions: (TLSv1.2, TLSv1.3). You may need to configure the client to allow other protocols to be used. For more on this, please refer to https://docs.gradle.org/9.6.0/userguide/build_environment.html#sec:gradle_system_properties in the Gradle documentation.
+                  > Remote host terminated the handshake
+   > Failed to transform window-1.5.0.aar (androidx.window:window:1.5.0) to match attributes {artifactType=android-navigation-xml, org.gradle.category=library, org.gradle.dependency.bundling=external, org.gradle.libraryelements=aar, org.gradle.status=release, org.gradle.usage=java-runtime}.
+      > Could not download window-1.5.0.aar (androidx.window:window:1.5.0)
+         > Could not get resource 'https://dl.google.com/dl/android/maven2/androidx/window/window/1.5.0/window-1.5.0.aar'.
+            > Could not GET 'https://dl.google.com/dl/android/maven2/androidx/window/window/1.5.0/window-1.5.0.aar'.
+               > The server may not support the client's requested TLS protocol versions: (TLSv1.2, TLSv1.3). You may need to configure the client to allow other protocols to be used. For more on this, please refer to https://docs.gradle.org/9.6.0/userguide/build_environment.html#sec:gradle_system_properties in the Gradle documentation.
+                  > Remote host terminated the handshake
+   > Failed to transform emoji2-1.4.0.aar (androidx.emoji2:emoji2:1.4.0) to match attributes {artifactType=android-navigation-xml, org.gradle.category=library, org.gradle.dependency.bundling=external, org.gradle.libraryelements=aar, org.gradle.status=release, org.gradle.usage=java-runtime}.
+      > Could not download emoji2-1.4.0.aar (androidx.emoji2:emoji2:1.4.0)
+         > Could not get resource 'https://dl.google.com/dl/android/maven2/androidx/emoji2/emoji2/1.4.0/emoji2-1.4.0.aar'.
+            > Could not GET 'https://dl.google.com/dl/android/maven2/androidx/emoji2/emoji2/1.4.0/emoji2-1.4.0.aar'.
+               > The server may not support the client's requested TLS protocol versions: (TLSv1.2, TLSv1.3). You may need to configure the client to allow other protocols to be used. For more on this, please refer to https://docs.gradle.org/9.6.0/userguide/build_environment.html#sec:gradle_system_properties in the Gradle documentation.
+                  > Remote host terminated the handshake
+   > Failed to transform graphics-path-1.0.1.aar (androidx.graphics:graphics-path:1.0.1) to match attributes {artifactType=android-navigation-xml, org.gradle.category=library, org.gradle.dependency.bundling=external, org.gradle.libraryelements=aar, org.gradle.status=release, org.gradle.usage=java-runtime}.
+      > Could not download graphics-path-1.0.1.aar (androidx.graphics:graphics-path:1.0.1)
+         > Could not get resource 'https://dl.google.com/dl/android/maven2/androidx/graphics/graphics-path/1.0.1/graphics-path-1.0.1.aar'.
+            > Could not GET 'https://dl.google.com/dl/android/maven2/androidx/graphics/graphics-path/1.0.1/graphics-path-1.0.1.aar'.
+               > The server may not support the client's requested TLS protocol versions: (TLSv1.2, TLSv1.3). You may need to configure the client to allow other protocols to be used. For more on this, please refer to https://docs.gradle.org/9.6.0/userguide/build_environment.html#sec:gradle_system_properties in the Gradle documentation.
+                  > Remote host terminated the handshake
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 1m 42s
+3 actionable tasks: 3 executed
+EXIT:1

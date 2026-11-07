@@ -1,0 +1,7 @@
+usage: openapi <output.json>
+noargs:2
+usage: openapi <output.json>
+extra:2
+usage: openapi <output.json>
+empty:2
+parent:0

@@ -1,0 +1,624 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project clients/ios/Alia.xcodeproj -scheme Alia -sdk iphonesimulator -destination "generic/platform=iOS Simulator" CODE_SIGNING_ALLOWED=NO -derivedDataPath clients/ios/DerivedData build
+
+Build settings from command line:
+    CODE_SIGNING_ALLOWED = NO
+    SDKROOT = iphonesimulator27.2
+
+2026-11-08 03:11:15.381 xcodebuild[91229:2765079]  DVTErrorPresenter: Unable to load simulator devices.
+Domain: DVTCoreSimulatorAdditionsErrorDomain
+Code: 3
+Failure Reason: The version of the CoreSimulator framework installed on this Mac is out-of-date and not supported by this version of Xcode.
+Recovery Suggestion: Please ensure that you have installed all available updates to your Mac's software, and that you are running the most recent version of Xcode supported by macOS.
+--
+CoreSimulator is out of date. Current version (1174.9.2) is older than build version (1174.21.0).
+Domain: DVTCoreSimulatorAdditionsErrorDomain
+Code: 3
+--
+
+2026-11-08 03:11:15.381 xcodebuild[91229:2765079]  iOSSimulator: [SimServiceContext sharedServiceContextForDeveloperDir:error:] returned nil (Error Domain=DVTCoreSimulatorAdditionsErrorDomain Code=3 "CoreSimulator is out of date. Current version (1174.9.2) is older than build version (1174.21.0)." UserInfo={NSLocalizedDescription=CoreSimulator is out of date. Current version (1174.9.2) is older than build version (1174.21.0).}). Simulator device support disabled.
+2026-11-08 03:11:15.619 xcodebuild[91229:2764913] [MT] IDESchemeActionsInvocationRecord: Device <DVTiOSDeviceSimulatorPlaceholder: 0x99169de00 (Any iOS Simulator Device | undefined_arch)> is missing operatingSystemVersion, operatingSystemVersionWithBuildNumber.
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (1 target)
+    Target 'Alia' in project 'Alia' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc --version
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+Build description signature: f8a89cb3214afe21390d94a583dc5ccf
+Build description path: /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/XCBuildData/f8a89cb3214afe21390d94a583dc5ccf.xcbuilddata
+CreateBuildDirectory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios/Alia.xcodeproj
+    builtin-create-build-directory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules
+
+CreateBuildDirectory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios/Alia.xcodeproj
+    builtin-create-build-directory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex
+
+CreateBuildDirectory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/CompilationCache.noindex
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios/Alia.xcodeproj
+    builtin-create-build-directory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/CompilationCache.noindex
+
+CreateBuildDirectory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios/Alia.xcodeproj
+    builtin-create-build-directory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex
+
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKStatCaches.noindex/iphonesimulator27.2-24B8118-cc78df9d8a9de6526dea716b1c70fd8e.sdkstatcache
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios/Alia.xcodeproj
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk -o /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKStatCaches.noindex/iphonesimulator27.2-24B8118-cc78df9d8a9de6526dea716b1c70fd8e.sdkstatcache
+
+CreateBuildDirectory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios/Alia.xcodeproj
+    builtin-create-build-directory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products
+
+CreateBuildDirectory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios/Alia.xcodeproj
+    builtin-create-build-directory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+CreateBuildDirectory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/ExplicitPrecompiledModules
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios/Alia.xcodeproj
+    builtin-create-build-directory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+CreateBuildDirectory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/PrecompiledHeaders
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios/Alia.xcodeproj
+    builtin-create-build-directory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/PrecompiledHeaders
+
+CreateBuildDirectory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios/Alia.xcodeproj
+    builtin-create-build-directory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia-675512e9c85a87e20ce943b59a4bfc04-VFS-iphonesimulator/all-product-headers.yaml
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios/Alia.xcodeproj
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia-675512e9c85a87e20ce943b59a4bfc04-VFS-iphonesimulator/all-product-headers.yaml
+
+CreateBuildDirectory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios/Alia.xcodeproj
+    builtin-create-build-directory /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/empty-Alia.plist (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/empty-Alia.plist
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-all-target-headers.hmap (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-all-target-headers.hmap
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-all-non-framework-target-headers.hmap (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-all-non-framework-target-headers.hmap
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-DebugDylibPath-normal-x86_64.txt (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-DebugDylibPath-normal-x86_64.txt
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-project-headers.hmap (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-project-headers.hmap
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-own-target-headers.hmap (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-own-target-headers.hmap
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-generated-files.hmap (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-generated-files.hmap
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia.hmap (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia.hmap
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-DebugDylibPath-normal-arm64.txt (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-DebugDylibPath-normal-arm64.txt
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.SwiftConstValuesFileList (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.SwiftConstValuesFileList
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.LinkFileList (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.LinkFileList
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia_const_extract_protocols.json (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia_const_extract_protocols.json
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.SwiftFileList (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.SwiftFileList
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.LinkFileList (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.LinkFileList
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia_const_extract_protocols.json (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia_const_extract_protocols.json
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia-OutputFileMap.json (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia-OutputFileMap.json
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia-OutputFileMap.json (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia-OutputFileMap.json
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.SwiftFileList (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.SwiftFileList
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.SwiftConstValuesFileList (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.SwiftConstValuesFileList
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia.DependencyStaticMetadataFileList (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia.DependencyStaticMetadataFileList
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia.DependencyMetadataFileList (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia.DependencyMetadataFileList
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-DebugDylibInstallName-normal-x86_64.txt (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-DebugDylibInstallName-normal-x86_64.txt
+
+WriteAuxiliaryFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-DebugDylibInstallName-normal-arm64.txt (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    write-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-DebugDylibInstallName-normal-arm64.txt
+
+MkDir /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    /bin/mkdir -p /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app
+
+ProcessInfoPlistFile /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/Info.plist /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/empty-Alia.plist (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-infoPlistUtility /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/empty-Alia.plist -producttype com.apple.product-type.application -genpkginfo /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/PkgInfo -expandbuildsettings -format binary -platform iphonesimulator -o /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/Info.plist
+
+Ld /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Binary/__preview.dylib normal x86_64 (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios27.0-simulator -dynamiclib -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk -O0 -Xlinker -no_warn_duplicate_libraries -L/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -F/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -install_name @rpath/Alia.debug.dylib -Xlinker -dead_strip -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia_dependency_info.dat -o /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Binary/__preview.dylib
+
+Ld /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Binary/__preview.dylib normal arm64 (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios27.0-simulator -dynamiclib -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk -O0 -Xlinker -no_warn_duplicate_libraries -L/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -F/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -install_name @rpath/Alia.debug.dylib -Xlinker -dead_strip -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia_dependency_info.dat -o /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Binary/__preview.dylib
+
+CreateUniversalBinary /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/__preview.dylib normal arm64\ x86_64 (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/lipo -create /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Binary/__preview.dylib /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Binary/__preview.dylib -output /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/__preview.dylib
+
+SwiftDriver Alia normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Alia -Onone @/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.SwiftFileList -DDEBUG -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk -target arm64-apple-ios27.0-simulator -g -module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex -Xfrontend -serialize-debugging-options -index-store-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -F /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -parse-as-library -emit-localized-strings -emit-localized-strings-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64 -c -j18 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKStatCaches.noindex/iphonesimulator27.2-24B8118-cc78df9d8a9de6526dea716b1c70fd8e.sdkstatcache -output-file-map /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex -sdk-module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia_const_extract_protocols.json -Xcc -iquote -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-generated-files.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-own-target-headers.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-all-target-headers.hmap -Xcc -iquote -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-project-headers.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources-normal/arm64 -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources/arm64 -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources -emit-objc-header -emit-objc-header-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia-Swift.h -working-directory /Users/ke-qiao/Developer/project-alia/clients/ios -experimental-emit-module-separately -disable-cmo
+
+SwiftDriver Alia normal x86_64 com.apple.xcode.tools.swift.compiler (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Alia -Onone @/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.SwiftFileList -DDEBUG -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk -target x86_64-apple-ios27.0-simulator -g -module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex -Xfrontend -serialize-debugging-options -index-store-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -F /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -parse-as-library -emit-localized-strings -emit-localized-strings-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64 -c -j18 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKStatCaches.noindex/iphonesimulator27.2-24B8118-cc78df9d8a9de6526dea716b1c70fd8e.sdkstatcache -output-file-map /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex -sdk-module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia_const_extract_protocols.json -Xcc -iquote -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-generated-files.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-own-target-headers.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-all-target-headers.hmap -Xcc -iquote -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-project-headers.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources-normal/x86_64 -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources/x86_64 -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources -emit-objc-header -emit-objc-header-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia-Swift.h -working-directory /Users/ke-qiao/Developer/project-alia/clients/ios -experimental-emit-module-separately -disable-cmo
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/DeveloperToolsSupport-AISTWWKXP1LPC1TJVQ1NMJ0ON.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_SwiftConcurrencyShims-41ZODLZ9KT5SPJS8K5TD1WD4N.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stdbool-8OHUK7J3ZCNSZY0RV2FJEU6DZ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stdarg-8718W5WY1LZ6U21Q5VLI2J5ZT.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/ptrauth-4SFM9OMPNLBSK6E0035YDVR6G.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_float-4AORJ5PSNKYETUTE2PAH3D3MR.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/SwiftShims-D0VMXUQH7MYQE7SXGEZ95KFUV.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stddef-4IUCNJXWRAFHBBPEJ8G0WWUIV.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_AvailabilityInternal-DQFLRAZG0KQWZAFWK4AHJEHVH.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_AvailabilityInternal-7N0MDTFB6V1HE85S540NKK6BD.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_SwiftConcurrencyShims-3H8ZXT3J8A3D5ZRDNJK5TV6BA.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/SwiftShims-BGQP70PIF0WW3O40J41HYZDCH.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stddef-6Y6NUPG5IV5DE6QSWRIJZDV4D.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stdbool-1LNWLE3CQ9YUL5QZP9JNBHBDF.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/DeveloperToolsSupport-3A202ASVFW6WG1V7NRCSF4Z9V.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/ptrauth-EVW2X90JAEJXMZDHZK397JY6T.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/ptrcheck-1C87PEI7NK7RROKMNMBIXF398.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stdarg-81QGDW5S8JPFBJGM19GQFKNL9.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_float-GAX1BWDHPEJ3H6HFPOK1OQN0.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/ptrcheck-AVJ2XAGZI9U2PVALUX17BF269.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_DarwinFoundation1-DQKMCOD93FSJ5G4NWG38PHMLE.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_DarwinFoundation1-BEZN4D174MQ580HZV4C502YLL.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_limits-DG0E0CUNRV1KQSUIBJJ8Q3QZF.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_DarwinFoundation2-7ZPGXSWB19C7QWM150Q2C4L4N.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_limits-A24022WETW049P50AYAL8TNQ5.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_DarwinFoundation2-E9SUJRBIOAR8D527OF0UZ17XB.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/sys_types-4O2YG801179P3L7VZ6JMHFEI9.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stdint-OF7MVLEB6ZE98M7PPB2LF00T.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_tgmath-B9D6Y9ULXA834OBAIJ12L8JXR.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/string_h-57E6B63F0J7IF8ADD10I5U3D4.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/sys_types-DNHR79LFSDR9P29UKM5H2W5HA.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/string_h-C4DGNG4TYG11ADA8S0CQKWQQZ.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_tgmath-C58AQ2G74UJ9X4K8Y1NDFVFBJ.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stdint-4057M9GKPQNXRHNOFDBAPQKY4.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_intrinsics-BDVHAV0S61GCVZ7ADYCD450EZ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_DarwinFoundation3-AXKDHD5Y47NMF3KTKDJTH8GIQ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stdatomic-7YA0W5A4Y8SX4Y929005B3ENM.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stdatomic-8BXQMNOY8EFP5ZDCJPIEUHDND.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_DarwinFoundation3-A0CO8P38ZC8EEST2HMU5X2P01.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_inttypes-77IJDVPWNGYNEPLUM1B6ULYSF.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_inttypes-7EQ002T1U06NKNC8USE85HY35.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_Builtin_intrinsics-24NMHC980ANO8B4UVOG6M84ZO.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Darwin-6AAXA7PQI55587DK3WPMPAU8C.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Darwin-C9K96YY2IM29HXQABO7G3DRK7.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/simd-9SNF5NLT6HV1XV1PPOYD0DIL9.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/ObjectiveC-6E2V02N4JK8ZRUMELSEY7E1XR.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/MachO-A4B8YFC9Z15IQX2CBUEBESU9V.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/MachO-BB9LIK6IBJFZ6CNDWZ0UJ9KAS.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/ObjectiveC-7EZE6LRB8GG08IEGLAPL6WGM3.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/simd-E6G3QIS1QL4FR5K91V7MWCOZC.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/os_object-4FN6H0FQKEDYGVEPW3X729RQG.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/os_object-2LTB70A8HR7TNOTKCTFAK5K0N.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/os_workgroup-47B5XDWPEOSPGSLJ4DXHV5EXL.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/os_workgroup-9C1CLOGKNA15PMD469KCHFDL5.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Spatial-ARNX4OB0RSVH8QA4DKPXMBS5D.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Dispatch-3QAMY4K4MZ9Y4K791TUKLW9A2.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Dispatch-945764O1S57WBOCDC5SVBNADL.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/XPC-EIPA505VIQU880I7KASG2199B.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreFoundation-135767S0A7RPI1HLE4VGJ7TU5.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreFoundation-3SC8Z230M0Y2FCNKGESV2EU4N.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/XPC-4BYSNJIYAUKWNRWUMG573D8M2.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/os-BEOYJGDE7MG6HZYPA4Z3GK996.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/os-DCCCKY3RAZIR0LNVV1KEIJB5C.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Spatial-47OMC0E79G2S6D93HI3F4SMJL.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CFNetwork-6VCWWNWJG823757IV0WUO02K1.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreGraphics-BVT6XGOYO8V6WGAOONT4Q1GCJ.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Security-BFAKN53E3C8DZ78KM86A3W80D.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreAudioTypes-2OUAJK9C0WHOLT34MZFHNQW3B.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreAudioTypes-EE1WC6U6XBX8OQ0LLMJALB4N3.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Security-1KD5VQSTOBVSURP5SWJQVEELZ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CFNetwork-DSJMH36H8Y427O2U6MFT3W0TY.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreGraphics-19QT52LOD03TZ81ZFBV21ARA5.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreAudio-54LCIYSKU2J3YUYE3MWSRL5LK.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreAudio-556YKSLY4ZQ5IIUO5BXJXGE32.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Foundation-8ESFXBGKQBI7L91RQPYP3XHU1.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Foundation-5GUB5HLFMUEVOWZ3N5LNVB1FD.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreText-AN8GNNC8UXOIL5J565UUZQ52B.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/ImageIO-MXH371DRY48J5EIWVZMXXPP2.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreText-ZFNBRFGAST90V9BR93FW4TFJ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/ImageIO-723ZOWF0ORU25NWCKBG9LGFWS.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_LocationEssentials-80Z46VR6LBEQKUZH697QPVRZW.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/UserNotifications-D4EVX9YO911F98DXWL7FQ9CBL.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/DataDetection-8008CYL5PKKMBJNOT1UQHTTEA.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/FileProvider-BU5H78JMOPBQMC5BXCDRVV52P.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/UIUtilities-1JLUXIR9D7758T71TEMGVKMX7.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/OpenGLES-EZIJ1X40OBY7NTTPX9QBA2K3A.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/OSLog-2UDETIFBWZBM1SD6DNIK9I7UY.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Accessibility-5OFILA25KG0TXG8TCAMMT7D3E.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/IOSurface-45V3D8KP108Z0J4HLQ0KMRE19.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreTransferable-5H3G72DIEXQK24JYSOFXANW0.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/UniformTypeIdentifiers-EMKXY1RU0ZKK1EFWN7DRN6EJ.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreData-7XZFR7IG5E9AW1I5YLX554Z53.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Symbols-DDZCAH51030VCMRGU5P95963B.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/DataDetection-EKCAMEMIWH1ZOWJ2G8WRQR1HB.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/_LocationEssentials-64AP44YU42U22D7A6BXWK2CFI.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/UniformTypeIdentifiers-9T9HQEVIQB7KYTS927K0DDP5T.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/FileProvider-9FL6GNMS6X0EADU91C4YZM5NP.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreData-1YTU6DXCE33KQ8MFORIKZC745.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/UIUtilities-9IRPQF5R16MH1GES1MLW302QM.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreTransferable-COC8ZCRS1OJPIUZCKLODW6QY5.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Symbols-4DJBB7RISL2S3MTJFABFRM57S.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/OpenGLES-42Q0FKYLE2WJ20JKMNXQA3QI6.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/IOSurface-75UIBKV6APHG99CL45VW4GOJQ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/OSLog-B3AFE31A9590HED186V6XWNBK.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/UserNotifications-DOCTYGI6JYMP6LS25OS5ZBE8P.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Accessibility-7GQJIKB04QL4732U7AFA0VFTN.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreLocation-4KQLFKYF2LR0A6QO42K9OKTO4.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreLocation-B65PM77RR81FWECM130H18Z55.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Metal-5Q53PEXADQTLXFCQRPXO8F7C1.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/Metal-CBQS1R3H4JSTJH670FHB6Y3MY.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreMotion-20ALJO6KG19T9TBNKD8FXY29.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreMotion-E312DSZZZYBZJY0ORUFNOUUI0.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreVideo-9ZOLEMTRHIGIJAM69FQOZIM03.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreVideo-7HWKT4C1U6PIPYK5WOPMBQL0L.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreMedia-8JLP3OC3BGG4OXWITMX81HC36.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/QuartzCore-EUI25MEZOF5HJU2398D8M8WTY.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreImage-C9VJMVD69ZOZ0C215WMBC8EUA.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/QuartzCore-7QD3TBNGYISLTQNPLVVGS8PZ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreImage-2PWY68QGOZPV7KZYE98ZRL65X.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/CoreMedia-9KROK689X3R8B3FR1GUXTGIH3.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/SwiftUICore-3JJNDQZNRU8GXYZV7W3X9LLXA.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/UIKit-CDJT110Q7V3CUESPV86GYHA49.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/SwiftUICore-DVP11YM5HARXAU1YZXNGXI5BV.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/UIKit-LN3S17O0HZSLES393QI65S3D.pcm
+
+SwiftExplicitDependencyGeneratePcm x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/SwiftUI-1A24OINR8F62X2UGMSSRAIUAF.pcm
+
+SwiftEmitModule normal x86_64 Emitting\ module\ for\ Alia (in target 'Alia' from project 'Alia')
+
+SwiftCompile normal x86_64 (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    
+
+SwiftCompile normal x86_64 Compiling\ AliaApp.swift /Users/ke-qiao/Developer/project-alia/clients/ios/Alia/AliaApp.swift (in target 'Alia' from project 'Alia')
+
+SwiftCompile normal x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/Alia/AliaApp.swift (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-SwiftPerFileCompile AliaApp.swift
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules/SwiftUI-8IVLLW63NRUWC2F3YHPTCTNH0.pcm
+
+SwiftCompile normal arm64 Compiling\ AliaApp.swift /Users/ke-qiao/Developer/project-alia/clients/ios/Alia/AliaApp.swift (in target 'Alia' from project 'Alia')
+
+SwiftCompile normal arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/Alia/AliaApp.swift (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-SwiftPerFileCompile AliaApp.swift
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ Alia (in target 'Alia' from project 'Alia')
+
+SwiftCompile normal arm64 (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    
+
+SwiftDriverJobDiscovery normal x86_64 Emitting module for Alia (in target 'Alia' from project 'Alia')
+
+SwiftDriverJobDiscovery normal arm64 Emitting module for Alia (in target 'Alia' from project 'Alia')
+
+SwiftDriver\ Compilation\ Requirements Alia normal x86_64 com.apple.xcode.tools.swift.compiler (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Alia -Onone @/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.SwiftFileList -DDEBUG -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk -target x86_64-apple-ios27.0-simulator -g -module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex -Xfrontend -serialize-debugging-options -index-store-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -F /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -parse-as-library -emit-localized-strings -emit-localized-strings-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64 -c -j18 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKStatCaches.noindex/iphonesimulator27.2-24B8118-cc78df9d8a9de6526dea716b1c70fd8e.sdkstatcache -output-file-map /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex -sdk-module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia_const_extract_protocols.json -Xcc -iquote -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-generated-files.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-own-target-headers.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-all-target-headers.hmap -Xcc -iquote -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-project-headers.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources-normal/x86_64 -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources/x86_64 -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources -emit-objc-header -emit-objc-header-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia-Swift.h -working-directory /Users/ke-qiao/Developer/project-alia/clients/ios -experimental-emit-module-separately -disable-cmo
+
+SwiftDriver\ Compilation\ Requirements Alia normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Alia -Onone @/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.SwiftFileList -DDEBUG -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk -target arm64-apple-ios27.0-simulator -g -module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex -Xfrontend -serialize-debugging-options -index-store-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -F /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -parse-as-library -emit-localized-strings -emit-localized-strings-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64 -c -j18 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKStatCaches.noindex/iphonesimulator27.2-24B8118-cc78df9d8a9de6526dea716b1c70fd8e.sdkstatcache -output-file-map /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex -sdk-module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia_const_extract_protocols.json -Xcc -iquote -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-generated-files.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-own-target-headers.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-all-target-headers.hmap -Xcc -iquote -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-project-headers.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources-normal/arm64 -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources/arm64 -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources -emit-objc-header -emit-objc-header-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia-Swift.h -working-directory /Users/ke-qiao/Developer/project-alia/clients/ios -experimental-emit-module-separately -disable-cmo
+
+SwiftMergeGeneratedHeaders /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources/Alia-Swift.h /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia-Swift.h /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia-Swift.h (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-swiftHeaderTool -arch arm64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia-Swift.h -arch x86_64 /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia-Swift.h -o /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources/Alia-Swift.h
+
+Copy /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/arm64-apple-ios-simulator.abi.json /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.abi.json (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.abi.json /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/arm64-apple-ios-simulator.abi.json
+
+Copy /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/arm64-apple-ios-simulator.swiftdoc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.swiftdoc (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.swiftdoc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/arm64-apple-ios-simulator.swiftdoc
+
+Copy /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/x86_64-apple-ios-simulator.swiftdoc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.swiftdoc (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.swiftdoc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/x86_64-apple-ios-simulator.swiftdoc
+
+Copy /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/Project/x86_64-apple-ios-simulator.swiftsourceinfo /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.swiftsourceinfo (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.swiftsourceinfo /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/Project/x86_64-apple-ios-simulator.swiftsourceinfo
+
+Copy /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/x86_64-apple-ios-simulator.abi.json /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.abi.json (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.abi.json /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/x86_64-apple-ios-simulator.abi.json
+
+Copy /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.swiftsourceinfo (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.swiftsourceinfo /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo
+
+Copy /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/x86_64-apple-ios-simulator.swiftmodule /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.swiftmodule (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.swiftmodule /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/x86_64-apple-ios-simulator.swiftmodule
+
+Copy /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/arm64-apple-ios-simulator.swiftmodule /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.swiftmodule (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.swiftmodule /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.swiftmodule/arm64-apple-ios-simulator.swiftmodule
+
+SwiftDriverJobDiscovery normal arm64 Compiling AliaApp.swift (in target 'Alia' from project 'Alia')
+
+SwiftDriver\ Compilation Alia normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Alia -Onone @/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.SwiftFileList -DDEBUG -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk -target arm64-apple-ios27.0-simulator -g -module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex -Xfrontend -serialize-debugging-options -index-store-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -F /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -parse-as-library -emit-localized-strings -emit-localized-strings-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64 -c -j18 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKStatCaches.noindex/iphonesimulator27.2-24B8118-cc78df9d8a9de6526dea716b1c70fd8e.sdkstatcache -output-file-map /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex -sdk-module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia_const_extract_protocols.json -Xcc -iquote -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-generated-files.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-own-target-headers.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-all-target-headers.hmap -Xcc -iquote -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-project-headers.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources-normal/arm64 -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources/arm64 -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources -emit-objc-header -emit-objc-header-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia-Swift.h -working-directory /Users/ke-qiao/Developer/project-alia/clients/ios -experimental-emit-module-separately -disable-cmo
+
+Ld /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Binary/Alia.debug.dylib normal arm64 (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios27.0-simulator -dynamiclib -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk -O0 -Xlinker -no_warn_duplicate_libraries -L/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -L/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -F/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -F/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -filelist /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.LinkFileList -install_name @rpath/Alia.debug.dylib -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -dead_strip -Xlinker -object_path_lto -Xlinker /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.swiftmodule -Xlinker -alias -Xlinker _main -Xlinker ___debug_main_executable_dylib_entry_point -o /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Binary/Alia.debug.dylib
+
+SwiftDriverJobDiscovery normal x86_64 Compiling AliaApp.swift (in target 'Alia' from project 'Alia')
+
+SwiftDriver\ Compilation Alia normal x86_64 com.apple.xcode.tools.swift.compiler (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Alia -Onone @/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.SwiftFileList -DDEBUG -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk -target x86_64-apple-ios27.0-simulator -g -module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex -Xfrontend -serialize-debugging-options -index-store-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -F /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -parse-as-library -emit-localized-strings -emit-localized-strings-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64 -c -j18 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKStatCaches.noindex/iphonesimulator27.2-24B8118-cc78df9d8a9de6526dea716b1c70fd8e.sdkstatcache -output-file-map /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex -sdk-module-cache-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia_const_extract_protocols.json -Xcc -iquote -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-generated-files.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-own-target-headers.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-all-target-headers.hmap -Xcc -iquote -Xcc /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-project-headers.hmap -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources-normal/x86_64 -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources/x86_64 -Xcc -I/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/DerivedSources -emit-objc-header -emit-objc-header-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia-Swift.h -working-directory /Users/ke-qiao/Developer/project-alia/clients/ios -experimental-emit-module-separately -disable-cmo
+
+Ld /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Binary/Alia.debug.dylib normal x86_64 (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios27.0-simulator -dynamiclib -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk -O0 -Xlinker -no_warn_duplicate_libraries -L/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -L/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -F/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -F/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -filelist /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.LinkFileList -install_name @rpath/Alia.debug.dylib -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -dead_strip -Xlinker -object_path_lto -Xlinker /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.swiftmodule -Xlinker -alias -Xlinker _main -Xlinker ___debug_main_executable_dylib_entry_point -o /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Binary/Alia.debug.dylib
+
+CreateUniversalBinary /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/Alia.debug.dylib normal arm64\ x86_64 (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/lipo -create /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Binary/Alia.debug.dylib /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Binary/Alia.debug.dylib -output /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/Alia.debug.dylib
+
+ConstructStubExecutorLinkFileList /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-ExecutorLinkFileList-normal-x86_64.txt (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    construct-stub-executor-link-file-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Binary/Alia.debug.dylib /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libPreviewsJITStubExecutor_no_swift_entry_point.a /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libPreviewsJITStubExecutor.a --output /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-ExecutorLinkFileList-normal-x86_64.txt
+note: Using stub executor library with Swift entry point. (in target 'Alia' from project 'Alia')
+
+ConstructStubExecutorLinkFileList /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-ExecutorLinkFileList-normal-arm64.txt (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    construct-stub-executor-link-file-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Binary/Alia.debug.dylib /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libPreviewsJITStubExecutor_no_swift_entry_point.a /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libPreviewsJITStubExecutor.a --output /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-ExecutorLinkFileList-normal-arm64.txt
+note: Using stub executor library with Swift entry point. (in target 'Alia' from project 'Alia')
+
+Ld /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Binary/Alia normal x86_64 (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios27.0-simulator -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk -O0 -Xlinker -no_warn_duplicate_libraries -L/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -F/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -Xlinker -rpath -Xlinker @executable_path -Xlinker -rpath -Xlinker @executable_path/Frameworks -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -e ___debug_blank_executor_main -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_dylib -Xlinker /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-DebugDylibPath-normal-x86_64.txt -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_instlnm -Xlinker /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-DebugDylibInstallName-normal-x86_64.txt -Xlinker -filelist -Xlinker /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-ExecutorLinkFileList-normal-x86_64.txt /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Binary/Alia.debug.dylib -o /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Binary/Alia
+
+Ld /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Binary/Alia normal arm64 (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios27.0-simulator -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk -O0 -Xlinker -no_warn_duplicate_libraries -L/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -F/Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator -Xlinker -rpath -Xlinker @executable_path -Xlinker -rpath -Xlinker @executable_path/Frameworks -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -e ___debug_blank_executor_main -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_dylib -Xlinker /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-DebugDylibPath-normal-arm64.txt -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_instlnm -Xlinker /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-DebugDylibInstallName-normal-arm64.txt -Xlinker -filelist -Xlinker /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia-ExecutorLinkFileList-normal-arm64.txt /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Binary/Alia.debug.dylib -o /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Binary/Alia
+
+CreateUniversalBinary /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/Alia normal arm64\ x86_64 (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/lipo -create /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Binary/Alia /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Binary/Alia -output /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/Alia
+
+CopySwiftLibs /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-swiftStdLibTool --copy --verbose --scan-executable /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/Alia.debug.dylib --scan-folder /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/Frameworks --scan-folder /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/PlugIns --scan-folder /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/SystemExtensions --scan-folder /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/Extensions --platform iphonesimulator --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+Ignoring --strip-bitcode because --sign was not passed
+
+ExtractAppIntentsMetadata (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name Alia --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk --xcode-version 27B52 --platform-family iOS --deployment-target 27.0 --bundle-identifier dev.alia.client --output /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app --target-triple arm64-apple-ios27.0-simulator --target-triple x86_64-apple-ios27.0-simulator --binary-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/Alia --dependency-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia_dependency_info.dat --dependency-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia_dependency_info.dat --stringsdata-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --stringsdata-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.SwiftFileList --source-file-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.SwiftFileList --metadata-file-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia.DependencyMetadataFileList --static-metadata-file-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia.DependencyStaticMetadataFileList --swift-const-vals-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/arm64/Alia.SwiftConstValuesFileList --swift-const-vals-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Objects-normal/x86_64/Alia.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --no-app-shortcuts-localization
+2026-11-08 03:11:20.577 appintentsmetadataprocessor[91613:2766445] Starting App Intents metadata extraction
+2026-11-08 03:11:20.583 appintentsmetadataprocessor[91613:2766445] warning: Metadata extraction skipped, no AppIntents.framework dependency found
+
+AppIntentsSSUTraining (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsnltrainingprocessor --infoplist-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/Info.plist --temp-dir-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/ssu --bundle-id dev.alia.client --product-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app --extracted-metadata-path /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/Metadata.appintents --metadata-file-list /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/Alia.build/Debug-iphonesimulator/Alia.build/Alia.DependencyMetadataFileList --source-file /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app/Info.plist --archive-ssu-assets
+2026-11-08 03:11:20.599 appintentsnltrainingprocessor[91614:2766448] Parsing options for appintentsnltrainingprocessor
+2026-11-08 03:11:20.600 appintentsnltrainingprocessor[91614:2766448] Starting AppIntents SSU YAML Generation
+2026-11-08 03:11:20.602 appintentsnltrainingprocessor[91614:2766448] No AppShortcuts found - Skipping.
+
+RegisterExecutionPolicyException /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-RegisterExecutionPolicyException /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app
+
+Validate /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    builtin-validationUtility /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app -shallow-bundle -infoplist-subpath Info.plist
+
+Touch /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app (in target 'Alia' from project 'Alia')
+    cd /Users/ke-qiao/Developer/project-alia/clients/ios
+    /usr/bin/touch -c /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Products/Debug-iphonesimulator/Alia.app
+
+PruneExplicitPrecompiledModules /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/SDKExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /Users/ke-qiao/Developer/project-alia/clients/ios/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+** BUILD SUCCEEDED **
+
+EXIT:0

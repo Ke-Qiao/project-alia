@@ -1,0 +1,4524 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Alia Server API",
+    "description": "Project Alia central backend API",
+    "license": {
+      "name": ""
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "refresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Token refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid refresh token"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Registration successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/api/v1/companion/policy": {
+      "get": {
+        "tags": [
+          "companion"
+        ],
+        "summary": "Read the authenticated owner's current policy. The account is rechecked in\nSQL; admin roles do not select another owner. An absent policy is seeded as shadow.",
+        "operationId": "policy",
+        "responses": {
+          "200": {
+            "description": "Current owner policy and positive CAS revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicySnapshot"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "AUTH_FORBIDDEN: current owner authority unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_DB_ERROR: account lookup database failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE: read/storage unavailable; this is not a mutation receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "companion"
+        ],
+        "summary": "Replace all policy fields using compare-and-swap. Unknown fields are rejected.\nEnabled requires an installed live runner; it does not prove a device is ready.\nOn 503, GET and compare the original intent before retrying that exact revision\nand policy. Never silently advance expected_revision to overwrite another change.",
+        "operationId": "update_policy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Committed replacement with incremented revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicySnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: malformed/unknown fields, invalid bounds, or live runner unavailable for enabled mode",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "AUTH_FORBIDDEN: current owner authority unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "VERSION_CONFLICT: original revision is no longer current; read current policy and decide explicitly",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_DB_ERROR: account lookup database failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "COMPANION_POLICY_UNCONFIRMED: completion unknown, with original expected_revision; read current policy before retrying the same intent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companion/replay/{operation_id}": {
+      "get": {
+        "tags": [
+          "companion"
+        ],
+        "summary": "Read and deterministically replay this owner's original frozen report after\nrechecking current source/owner authority. This never retries audio or grants live output.",
+        "operationId": "replay",
+        "parameters": [
+          {
+            "name": "operation_id",
+            "in": "path",
+            "description": "Original nonzero shadow operation identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Original frozen inputs and pure decision after current authority recheck",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShadowReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Nil UUID: JSON VALIDATION_ERROR; malformed UUID: Axum plain-text path rejection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "AUTH_FORBIDDEN: missing/other-owner operation or current private-read authority unavailable; no existence disclosure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "VERSION_CONFLICT: canonical policy authority changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COMPANION_EVIDENCE_ERASED with operation_id: private evidence erased, expired or revoked; replay is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_DB_ERROR: account lookup database failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE: read/storage unavailable; retry this same read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companion/shadow": {
+      "post": {
+        "tags": [
+          "companion"
+        ],
+        "summary": "Evaluate existing canonical Appraisals without generating output or consuming\nlive admission budget. Request fields cannot supply owner, opportunity or authority.\nRepeating the same operation and Appraisal set reads its original frozen receipt;\nchanging that intent conflicts. A new shadow operation while enabled is unavailable.",
+        "operationId": "shadow",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShadowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Bounded frozen report; up to 32 examined sources and 4 decisions, never output authority",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShadowReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: malformed/unknown fields, nil IDs, duplicate IDs or batch outside 1–32",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "AUTH_FORBIDDEN: canonical sources or current private-read authority unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "VERSION_CONFLICT: operation identity/worklist or canonical policy authority changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COMPANION_EVIDENCE_ERASED with operation_id: original evidence erased, expired or revoked; it cannot be reconstructed by retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_DB_ERROR: account lookup database failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "COMPANION_SHADOW_UNCONFIRMED with operation_id: completion unknown; retry exactly the same operation_id and appraisal_ids",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/deliveries/{id}": {
+      "get": {
+        "tags": [
+          "delivery"
+        ],
+        "operationId": "get_delivery",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Delivery identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Owner's durable evidence; submitted does not mean presented",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Delivery absent or owned by another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Ledger unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/deliveries/{id}/text-chunks": {
+      "get": {
+        "tags": [
+          "delivery"
+        ],
+        "operationId": "text_chunks",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Text delivery identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "path",
+            "description": "Return immutable chunks strictly after this zero-based sequence.",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "path",
+            "description": "Page size from 1 to 256; defaults to 64.",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Owner's immutable offered UTF-8 chunks; a durable chunk is not proof it was written or read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TextChunkRecord"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID, cursor or page size",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Delivery absent or owned by another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Delivery medium is not text",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Ledger unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/effects": {
+      "get": {
+        "tags": [
+          "execution"
+        ],
+        "operationId": "list",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "query",
+            "description": "Recover an original request even when its tool is no longer installed.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "Exclusive effect_id cursor from the last record of the previous page.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, clamped to 100. Default: 25.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Owner's effect records in descending created_at, effect_id order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EffectRecord"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "503": {
+            "description": "Execution ledger unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/effects/{id}": {
+      "get": {
+        "tags": [
+          "execution"
+        ],
+        "operationId": "get_effect",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Effect identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current durable effect fact",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid effect UUID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Effect absent or owned by another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Execution ledger unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/effects/{id}/cancel": {
+      "post": {
+        "tags": [
+          "execution"
+        ],
+        "operationId": "cancel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Effect identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Undispatched effect cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid effect UUID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Effect absent or owned by another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Effect has already been dispatched or completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Cancellation acknowledgement unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/effects/{id}/confirm": {
+      "post": {
+        "tags": [
+          "execution"
+        ],
+        "operationId": "confirm",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Effect identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Approval recorded; execution may still be pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid effect UUID or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Owner no longer authorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Effect absent or owned by another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Digest, version or transition conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Dispatch queue full",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Approval acknowledgement unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/embodiment/operations": {
+      "get": {
+        "tags": [
+          "embodiment"
+        ],
+        "operationId": "list",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Owner's physical operations, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "503": {
+            "description": "Operation evidence unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/embodiment/operations/{id}": {
+      "get": {
+        "tags": [
+          "embodiment"
+        ],
+        "operationId": "get_operation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Durable operation status and separate physical evidence",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid identity"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Operation absent or owned by another account"
+          },
+          "503": {
+            "description": "Operation evidence unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/motion-deliveries/{id}": {
+      "get": {
+        "tags": [
+          "delivery"
+        ],
+        "operationId": "get_delivery",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Owner's immutable motion command and durable device evidence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MotionDeliveryRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Motion delivery absent or owned by another account"
+          },
+          "503": {
+            "description": "Ledger unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/responses/{id}": {
+      "get": {
+        "tags": [
+          "delivery"
+        ],
+        "operationId": "get_response",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Canonical response identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Owner's response generation fact, independent of playback",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Response absent or owned by another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Ledger unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/responses/{id}/cancel": {
+      "post": {
+        "tags": [
+          "delivery"
+        ],
+        "operationId": "cancel_response",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Canonical response identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancellation requested; inspect deliveries for exact device acknowledgement",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Response absent or owned by another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Cancellation acknowledgement unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/responses/{id}/deliveries": {
+      "get": {
+        "tags": [
+          "delivery"
+        ],
+        "operationId": "list_deliveries",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Canonical response identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded collection of this response's delivery facts; at most 256",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeliveryRecord"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Response absent or owned by another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Ledger unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/responses/{id}/events": {
+      "get": {
+        "tags": [
+          "delivery"
+        ],
+        "operationId": "response_events",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Canonical response identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "path",
+            "description": "Return events strictly after this event ID; defaults to zero.",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "path",
+            "description": "Page size from 1 to 256; defaults to 64.",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Owner's ordered audit events, including late evidence after Unknown; paginate with the last event ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeliveryEvent"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID, cursor or page size",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Response absent or owned by another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Ledger unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/responses/{id}/motion-deliveries": {
+      "get": {
+        "tags": [
+          "delivery"
+        ],
+        "operationId": "for_response",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Owner's motion delivery facts; at most 32, software submission is not position confirmation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MotionDeliveryRecord"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Response absent or owned by another account"
+          },
+          "503": {
+            "description": "Ledger unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/sensors": {
+      "get": {
+        "tags": [
+          "sensors"
+        ],
+        "operationId": "list_sensors",
+        "responses": {
+          "200": {
+            "description": "List sensors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SensorSummary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "sensors"
+        ],
+        "operationId": "register_sensor",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterSensorRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Sensor registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensorDefinition"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/sensors/ingest": {
+      "post": {
+        "tags": [
+          "sensors"
+        ],
+        "operationId": "ingest_reading",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Reading ingested"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/sensors/ingest/batch": {
+      "post": {
+        "tags": [
+          "sensors"
+        ],
+        "operationId": "ingest_batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/IngestRequest"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Readings ingested"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/sensors/query": {
+      "get": {
+        "tags": [
+          "sensors"
+        ],
+        "operationId": "query_readings",
+        "parameters": [
+          {
+            "name": "sensor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          {
+            "name": "latest_only",
+            "in": "query",
+            "description": "If true, return only the latest reading per sensor",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Query sensor readings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SensorReading"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/sensors/{sensor_id}": {
+      "get": {
+        "tags": [
+          "sensors"
+        ],
+        "operationId": "get_sensor",
+        "parameters": [
+          {
+            "name": "sensor_id",
+            "in": "path",
+            "description": "Sensor id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sensor definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SensorDefinition"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "sensors"
+        ],
+        "operationId": "unregister_sensor",
+        "parameters": [
+          {
+            "name": "sensor_id",
+            "in": "path",
+            "description": "Sensor id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sensor unregistered"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/sensors/{sensor_id}/latest": {
+      "get": {
+        "tags": [
+          "sensors"
+        ],
+        "operationId": "get_latest",
+        "parameters": [
+          {
+            "name": "sensor_id",
+            "in": "path",
+            "description": "Sensor id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest sensor reading",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SensorReading"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/skills": {
+      "get": {
+        "tags": [
+          "skills"
+        ],
+        "operationId": "list_skills",
+        "responses": {
+          "200": {
+            "description": "List all skills",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SkillResponse"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/skills/{name}": {
+      "get": {
+        "tags": [
+          "skills"
+        ],
+        "operationId": "get_skill",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Skill name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Skill details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Skill not found"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tools/execute": {
+      "post": {
+        "tags": [
+          "execution"
+        ],
+        "summary": "Propose a durable effect. A successful HTTP response acknowledges the ledger;\ninspect status/completion before claiming that the tool actually succeeded.",
+        "operationId": "execute_tool",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteToolRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Durable effect created or identical request replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON, UUID, arguments or missing implementation revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Current owner or tool policy does not authorize execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request identity reused for another intent or service stopping",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Proposal or dispatch capacity reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Execution acknowledgement unavailable; retain request_id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "list_users",
+        "responses": {
+          "200": {
+            "description": "List users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserResponse"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users/me": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "get_me",
+        "responses": {
+          "200": {
+            "description": "Current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users/{id}": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "get_user",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "delete_user",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User deleted"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "update_user",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/voice/turn-detection": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Diagnostic model endpoint. Observations alone never authorize tools or device output.",
+        "operationId": "detect_turn",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TurnDetectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Model evidence for the supplied audio window",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnDetectionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid audio"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "429": {
+            "description": "Model capacity reached"
+          },
+          "503": {
+            "description": "Model unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "operationId": "health_check",
+        "responses": {
+          "200": {
+            "description": "Aggregated health status of all modules",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ActivityState": {
+        "type": "string",
+        "enum": [
+          "unknown",
+          "idle",
+          "user_speaking",
+          "interaction_busy",
+          "output_busy",
+          "output_held"
+        ]
+      },
+      "AppraisalReference": {
+        "type": "object",
+        "required": [
+          "appraisal_id",
+          "revision",
+          "result_digest"
+        ],
+        "properties": {
+          "appraisal_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "result_digest": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApprovalKind": {
+        "type": "string",
+        "enum": [
+          "automatic",
+          "explicit"
+        ]
+      },
+      "AuthResponse": {
+        "type": "object",
+        "required": [
+          "access_token",
+          "refresh_token",
+          "user"
+        ],
+        "properties": {
+          "access_token": {
+            "type": "string"
+          },
+          "refresh_token": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserInfo"
+          }
+        }
+      },
+      "BudgetSnapshot": {
+        "type": "object",
+        "required": [
+          "revision",
+          "as_of",
+          "utc_date",
+          "admitted_today",
+          "deduplicated",
+          "awaiting_response"
+        ],
+        "properties": {
+          "admitted_today": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "awaiting_response": {
+            "type": "boolean",
+            "description": "Canonical response tracking only; absence never means user dislike."
+          },
+          "deduplicated": {
+            "type": "boolean"
+          },
+          "last_admitted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "utc_date": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Candidate": {
+        "type": "object",
+        "required": [
+          "id",
+          "dedup_key",
+          "kind",
+          "generator_version",
+          "observation",
+          "policy",
+          "created_at",
+          "expires_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dedup_key": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "generator_version": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CandidateKind"
+          },
+          "observation": {
+            "$ref": "#/components/schemas/CanonicalObservation"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/PolicySnapshot"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CandidateKind": {
+        "type": "string",
+        "enum": [
+          "follow_up_invitation"
+        ]
+      },
+      "CanonicalObservation": {
+        "type": "object",
+        "description": "A bounded canonical source header. No message text, inferred emotion,\nfree-form topic, or private reason is copied into the decision record.",
+        "required": [
+          "owner_id",
+          "context_id",
+          "request_id",
+          "source_event_id",
+          "conversation_id",
+          "channel_id",
+          "source_received_at",
+          "effective_at",
+          "privacy_epoch",
+          "relationship_epoch",
+          "context_policy_version",
+          "appraisals",
+          "valid_until"
+        ],
+        "properties": {
+          "appraisals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppraisalReference"
+            }
+          },
+          "channel_id": {
+            "type": "string"
+          },
+          "context_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "context_policy_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "effective_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Original canonical Appraisal time, never the worker's scan time."
+          },
+          "owner_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "privacy_epoch": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "relationship_epoch": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "valid_until": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompanionErrorDetail": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "AUTH_INVALID_CREDENTIALS"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "AUTH_FORBIDDEN"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "VALIDATION_ERROR"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "VERSION_CONFLICT"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "SERVICE_UNAVAILABLE"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "INTERNAL_DB_ERROR"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "expected_revision",
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "COMPANION_POLICY_UNCONFIRMED"
+                ]
+              },
+              "expected_revision": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "operation_id",
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "COMPANION_SHADOW_UNCONFIRMED"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "operation_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "operation_id",
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "COMPANION_EVIDENCE_ERASED"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "operation_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        ]
+      },
+      "CompanionErrorResponse": {
+        "type": "object",
+        "description": "Companion errors retain the shared AppError wire shape. Identity fields are\nrequired only on their corresponding tagged mutation/erasure variant.",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/CompanionErrorDetail"
+          }
+        }
+      },
+      "CompanionMode": {
+        "type": "string",
+        "enum": [
+          "disabled",
+          "shadow",
+          "enabled"
+        ]
+      },
+      "CompanionPolicy": {
+        "type": "object",
+        "required": [
+          "mode",
+          "quiet",
+          "paused",
+          "daily_budget",
+          "cooldown_seconds",
+          "candidate_ttl_seconds",
+          "require_response_before_next"
+        ],
+        "properties": {
+          "candidate_ttl_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 300,
+            "minimum": 1
+          },
+          "cooldown_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 86400,
+            "minimum": 30
+          },
+          "daily_budget": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Admissions per UTC date, including outcomes that remain unknown.",
+            "maximum": 24,
+            "minimum": 0
+          },
+          "mode": {
+            "$ref": "#/components/schemas/CompanionMode"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "quiet": {
+            "type": "boolean"
+          },
+          "require_response_before_next": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Completion": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "receipt",
+              "status"
+            ],
+            "properties": {
+              "receipt": {},
+              "status": {
+                "type": "string",
+                "enum": [
+                  "succeeded"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "evidence",
+              "status"
+            ],
+            "properties": {
+              "evidence": {},
+              "status": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "reason",
+              "status"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "ConfirmRequest": {
+        "type": "object",
+        "required": [
+          "intent_digest"
+        ],
+        "properties": {
+          "intent_digest": {
+            "type": "string",
+            "description": "Exact digest returned by the effect to which the owner is consenting."
+          }
+        },
+        "additionalProperties": false
+      },
+      "DecisionInput": {
+        "type": "object",
+        "required": [
+          "candidate",
+          "current_policy",
+          "as_of",
+          "opportunity",
+          "budget"
+        ],
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/BudgetSnapshot"
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/Candidate"
+          },
+          "current_policy": {
+            "$ref": "#/components/schemas/PolicySnapshot"
+          },
+          "opportunity": {
+            "$ref": "#/components/schemas/OpportunitySnapshot"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DecisionOutcome": {
+        "type": "string",
+        "enum": [
+          "suppressed",
+          "shadow_would_allow",
+          "allowed"
+        ]
+      },
+      "DecisionReason": {
+        "type": "string",
+        "description": "Declaration order is the versioned, stable ordering in a decision record.",
+        "enum": [
+          "policy_disabled",
+          "quiet",
+          "paused",
+          "policy_changed",
+          "candidate_expired",
+          "opportunity_expired",
+          "opportunity_unavailable",
+          "activity_unknown",
+          "user_speaking",
+          "interaction_busy",
+          "output_busy",
+          "output_held",
+          "owner_unverified",
+          "capability_unavailable",
+          "capture_unavailable",
+          "capture_stale",
+          "daily_budget_exhausted",
+          "cooldown",
+          "duplicate",
+          "awaiting_response",
+          "shadow_mode",
+          "simulated_opportunity",
+          "shadow_origin"
+        ]
+      },
+      "DecisionRecord": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "evaluator_version",
+          "candidate_id",
+          "as_of",
+          "outcome",
+          "reasons",
+          "valid_until",
+          "input_digest",
+          "result_digest"
+        ],
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "candidate_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "evaluator_version": {
+            "type": "string"
+          },
+          "input_digest": {
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/DecisionOutcome"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionReason"
+            }
+          },
+          "result_digest": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "valid_until": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DeliveryErrorCode": {
+        "type": "string",
+        "enum": [
+          "invalid_input",
+          "unauthorized",
+          "not_found",
+          "conflict",
+          "invalid_evidence",
+          "capacity_exceeded",
+          "delivery_unavailable"
+        ]
+      },
+      "DeliveryErrorDetail": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/DeliveryErrorCode"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "DeliveryErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/DeliveryErrorDetail"
+          }
+        }
+      },
+      "DeliveryEvent": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "response_id",
+          "kind",
+          "payload",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "delivery_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "payload": {},
+          "response_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "DeliveryMedium": {
+        "type": "string",
+        "enum": [
+          "audio",
+          "text"
+        ]
+      },
+      "DeliveryRecord": {
+        "type": "object",
+        "required": [
+          "delivery_id",
+          "response_id",
+          "output_key",
+          "media_kind",
+          "content",
+          "intent_digest",
+          "status",
+          "owner_id",
+          "lease_expires_at",
+          "cancel_requested",
+          "offered_frames",
+          "accepted_frames",
+          "end_accepted",
+          "receipt_sequence",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "accepted_frames": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "content": {},
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "delivery_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dispatch_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "end_accepted": {
+            "type": "boolean"
+          },
+          "identity": {},
+          "intent_digest": {
+            "type": "string"
+          },
+          "lease_expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "media_kind": {
+            "$ref": "#/components/schemas/DeliveryMedium"
+          },
+          "observation_deadline_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "offered_frames": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "outcome": {},
+          "output_key": {
+            "type": "string"
+          },
+          "owner_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "presented_frames": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "progress": {},
+          "receipt_sequence": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "response_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_channels": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "source_sample_rate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "status": {
+            "$ref": "#/components/schemas/DeliveryStatus"
+          },
+          "submitted_frames": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "text": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TextDeliveryState"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DeliveryStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "sending",
+          "observing",
+          "submitted",
+          "completed",
+          "cancelled",
+          "failed",
+          "unknown"
+        ]
+      },
+      "EffectKey": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "request_id",
+          "invocation_key"
+        ],
+        "properties": {
+          "invocation_key": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "EffectRecord": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "key",
+          "model_call_id",
+          "source_received_at",
+          "source",
+          "tool_name",
+          "arguments",
+          "tool_digest",
+          "policy_digest",
+          "catalog_digest",
+          "intent_digest",
+          "requires_confirmation",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "approval_expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "approval_kind": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ApprovalKind"
+              }
+            ]
+          },
+          "approved_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "approved_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "arguments": {},
+          "catalog_digest": {
+            "type": "string",
+            "description": "Snapshot of the database-owned catalog policy, checked under row lock."
+          },
+          "channel_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "claim_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "completion": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Completion"
+              }
+            ]
+          },
+          "context_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "conversation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deadline_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "effect_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "intent_digest": {
+            "type": "string"
+          },
+          "key": {
+            "$ref": "#/components/schemas/EffectKey"
+          },
+          "model_call_id": {
+            "type": "string"
+          },
+          "policy_digest": {
+            "type": "string"
+          },
+          "required_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requires_confirmation": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          },
+          "source_event_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "source_privacy_epoch": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Source admission epoch; never refreshed when queued work executes."
+          },
+          "source_received_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "First trusted source observation; retransmission never replaces it."
+          },
+          "status": {
+            "$ref": "#/components/schemas/EffectStatus"
+          },
+          "tool_digest": {
+            "type": "string"
+          },
+          "tool_name": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "worker_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "EffectStatus": {
+        "type": "string",
+        "enum": [
+          "proposed",
+          "approved",
+          "dispatched",
+          "succeeded",
+          "failed",
+          "unknown",
+          "cancelled"
+        ]
+      },
+      "ExecuteToolRequest": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "tool_name",
+          "arguments"
+        ],
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "description": "JSON object, at most 16 KiB when encoded. Tool schema is validated by the adapter."
+          },
+          "call_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional model correlation label; changing this does not create a new effect.",
+            "maxLength": 256
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Non-nil UUID generated by the caller; retain it for retries of this operation."
+          },
+          "tool_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "ExecutionErrorCode": {
+        "type": "string",
+        "enum": [
+          "identity_unlinked",
+          "unauthorized",
+          "not_found",
+          "idempotency_conflict",
+          "version_changed",
+          "invalid_transition",
+          "completion_conflict",
+          "capacity_exceeded",
+          "invalid_input",
+          "execution_unavailable"
+        ]
+      },
+      "ExecutionErrorDetail": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ExecutionErrorCode"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ExecutionErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ExecutionErrorDetail"
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "version",
+          "modules"
+        ],
+        "properties": {
+          "modules": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ModuleStatus"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "IngestRequest": {
+        "type": "object",
+        "required": [
+          "sensor_id",
+          "value"
+        ],
+        "properties": {
+          "quality": {
+            "type": "number",
+            "format": "float"
+          },
+          "sensor_id": {
+            "type": "string"
+          },
+          "value": {}
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "ModuleStatus": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "MotionDeliveryRecord": {
+        "type": "object",
+        "required": [
+          "delivery_id",
+          "response_id",
+          "output_key",
+          "dispatch_id",
+          "command",
+          "status"
+        ],
+        "properties": {
+          "command": {},
+          "delivery_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dispatch_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "latest_checkpoint": {
+            "description": "A later device fact does not rewrite the frozen Unknown outcome."
+          },
+          "output_key": {
+            "type": "string"
+          },
+          "progress": {},
+          "response_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "unknown_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "OpportunitySnapshot": {
+        "type": "object",
+        "required": [
+          "source",
+          "observed_at",
+          "valid_until",
+          "activity",
+          "owner_assurance",
+          "capability"
+        ],
+        "properties": {
+          "activity": {
+            "$ref": "#/components/schemas/ActivityState"
+          },
+          "capability": {
+            "$ref": "#/components/schemas/OutputCapability"
+          },
+          "capture_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "last_capture_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "owner_assurance": {
+            "$ref": "#/components/schemas/OwnerAssurance"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OpportunitySource"
+          },
+          "valid_until": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpportunitySource": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unavailable"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "simulation"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "server_instance_id",
+              "device_boot_id",
+              "session_id",
+              "generation_epoch",
+              "kind"
+            ],
+            "properties": {
+              "device_boot_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation_epoch": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "verified_live"
+                ]
+              },
+              "server_instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "session_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        ]
+      },
+      "OutputCapability": {
+        "type": "string",
+        "enum": [
+          "unavailable",
+          "follow_up_voice"
+        ]
+      },
+      "OwnerAssurance": {
+        "type": "string",
+        "enum": [
+          "unknown",
+          "bound_owner"
+        ]
+      },
+      "PolicyRequest": {
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "policy"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Positive revision returned by GET; retries retain this original revision and policy.",
+            "minimum": 1
+          },
+          "policy": {
+            "$ref": "#/components/schemas/CompanionPolicy",
+            "description": "Full replacement; all seven policy fields are required."
+          }
+        },
+        "additionalProperties": false
+      },
+      "PolicySnapshot": {
+        "type": "object",
+        "required": [
+          "revision",
+          "policy"
+        ],
+        "properties": {
+          "policy": {
+            "$ref": "#/components/schemas/CompanionPolicy"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RefreshRequest": {
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "properties": {
+          "refresh_token": {
+            "type": "string"
+          }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "name",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "RegisterSensorRequest": {
+        "type": "object",
+        "required": [
+          "sensor_id",
+          "display_name",
+          "source"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "metadata": {},
+          "sensor_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "value_type": {
+            "type": "string"
+          }
+        }
+      },
+      "ResponseKey": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "request_id",
+          "output_key"
+        ],
+        "properties": {
+          "output_key": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "ResponseRecord": {
+        "type": "object",
+        "required": [
+          "response_id",
+          "key",
+          "source_received_at",
+          "channel_id",
+          "kind",
+          "content",
+          "intent_digest",
+          "status",
+          "cancel_requested",
+          "created_at"
+        ],
+        "properties": {
+          "assistant_message_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "channel_id": {
+            "type": "string"
+          },
+          "content": {},
+          "context_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "conversation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "final_content": {},
+          "intent_digest": {
+            "type": "string"
+          },
+          "key": {
+            "$ref": "#/components/schemas/ResponseKey"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "response_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_event_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "source_privacy_epoch": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "source_received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ResponseStatus"
+          }
+        }
+      },
+      "ResponseStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "committed",
+          "interrupted",
+          "discarded"
+        ]
+      },
+      "SensorDefinition": {
+        "type": "object",
+        "description": "Metadata describing a registered sensor.",
+        "required": [
+          "sensor_id",
+          "display_name",
+          "source",
+          "unit",
+          "value_type",
+          "metadata",
+          "registered_at"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "description": "Human-readable name"
+          },
+          "last_seen_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Last time a reading was received"
+          },
+          "metadata": {
+            "description": "Optional metadata (location, device_id, etc.)"
+          },
+          "registered_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the sensor was first registered"
+          },
+          "sensor_id": {
+            "type": "string",
+            "description": "Unique sensor identifier, for example \"room:temperature\" or \"plugin.weather:humidity\"."
+          },
+          "source": {
+            "type": "string",
+            "description": "Sensor source, such as \"component:<name>\", \"plugin:<name>\", \"api\", or \"manual\"."
+          },
+          "unit": {
+            "type": "string",
+            "description": "Unit of measurement (e.g., \"°C\", \"%\", \"lux\", \"boolean\")"
+          },
+          "value_type": {
+            "type": "string",
+            "description": "Data type hint: \"float\", \"int\", \"bool\", \"string\""
+          }
+        }
+      },
+      "SensorQuery": {
+        "type": "object",
+        "description": "Query filter for time-series data.",
+        "properties": {
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "latest_only": {
+            "type": "boolean",
+            "description": "If true, return only the latest reading per sensor"
+          },
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "sensor_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "SensorReading": {
+        "type": "object",
+        "description": "A single sensor reading (time-series data point).",
+        "required": [
+          "sensor_id",
+          "value",
+          "timestamp"
+        ],
+        "properties": {
+          "quality": {
+            "type": "number",
+            "format": "float",
+            "description": "Optional quality/confidence indicator (0.0 - 1.0)"
+          },
+          "sensor_id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "value": {}
+        }
+      },
+      "SensorSummary": {
+        "type": "object",
+        "description": "Aggregated sensor summary.",
+        "required": [
+          "sensor_id",
+          "display_name",
+          "unit",
+          "reading_count",
+          "online"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "latest_timestamp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "latest_value": {},
+          "online": {
+            "type": "boolean"
+          },
+          "reading_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sensor_id": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "ShadowDecision": {
+        "type": "object",
+        "required": [
+          "input",
+          "decision"
+        ],
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/DecisionRecord"
+          },
+          "input": {
+            "$ref": "#/components/schemas/DecisionInput"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ShadowReport": {
+        "type": "object",
+        "required": [
+          "operation_id",
+          "as_of",
+          "policy_revision",
+          "examined",
+          "limited",
+          "decisions"
+        ],
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShadowDecision"
+            }
+          },
+          "examined": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limited": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "policy_revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ShadowRequest": {
+        "type": "object",
+        "required": [
+          "operation_id",
+          "appraisal_ids"
+        ],
+        "properties": {
+          "appraisal_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "1–32 distinct nonzero canonical Appraisal IDs belonging to this owner.",
+            "maxItems": 32,
+            "minItems": 1
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Nonzero caller-generated identity. Retain it with the same Appraisal set on retry."
+          }
+        },
+        "additionalProperties": false
+      },
+      "SkillResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "display_name",
+          "category",
+          "intent_patterns",
+          "preferred_tools",
+          "cacheable",
+          "enabled",
+          "priority",
+          "source",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "cacheable": {
+            "type": "boolean"
+          },
+          "category": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "intent_patterns": {},
+          "name": {
+            "type": "string"
+          },
+          "preferred_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tool names preferred during this skill's execution."
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "prompt_template": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "description": "Source: 'builtin', 'file', 'api', or plugin name"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "TextChunkRecord": {
+        "type": "object",
+        "required": [
+          "sequence",
+          "utf8_offset",
+          "text"
+        ],
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "text": {
+            "type": "string"
+          },
+          "utf8_offset": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "TextDeliveryState": {
+        "type": "object",
+        "required": [
+          "offered_utf8_bytes",
+          "offered_chunks",
+          "end_offered"
+        ],
+        "properties": {
+          "end_offered": {
+            "type": "boolean"
+          },
+          "identity": {},
+          "offered_chunks": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "offered_utf8_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "progress": {}
+        }
+      },
+      "TokenResponse": {
+        "type": "object",
+        "required": [
+          "access_token",
+          "refresh_token"
+        ],
+        "properties": {
+          "access_token": {
+            "type": "string"
+          },
+          "refresh_token": {
+            "type": "string"
+          }
+        }
+      },
+      "TurnDetectionModel": {
+        "type": "object",
+        "required": [
+          "source",
+          "revision",
+          "device"
+        ],
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      },
+      "TurnDetectionRequest": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "generation_epoch",
+          "audio_base64",
+          "sample_rate_hz",
+          "channels"
+        ],
+        "properties": {
+          "audio_base64": {
+            "type": "string"
+          },
+          "channels": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "generation_epoch": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sample_rate_hz": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "TurnDetectionResponse": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "generation_epoch",
+          "transcript",
+          "state",
+          "model",
+          "inference_ms"
+        ],
+        "properties": {
+          "generation_epoch": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "inference_ms": {
+            "type": "number",
+            "format": "double"
+          },
+          "model": {
+            "$ref": "#/components/schemas/TurnDetectionModel"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "$ref": "#/components/schemas/TurnDetectionState"
+          },
+          "transcript": {
+            "type": "string"
+          }
+        }
+      },
+      "TurnDetectionState": {
+        "type": "string",
+        "enum": [
+          "complete",
+          "incomplete",
+          "backchannel",
+          "wait"
+        ]
+      },
+      "UpdateUserRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UserInfo": {
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "name",
+          "role",
+          "status"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "UserResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "name",
+          "role",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_login_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "embodiment",
+      "description": "Owner-scoped physical operations; control uses Execution"
+    },
+    {
+      "name": "companion",
+      "description": "Owner policy CAS, bounded shadow decisions and private replay; receipts never grant live output"
+    },
+    {
+      "name": "health",
+      "description": "Health check"
+    },
+    {
+      "name": "auth",
+      "description": "Authentication"
+    },
+    {
+      "name": "users",
+      "description": "User management"
+    },
+    {
+      "name": "device",
+      "description": "Device management"
+    },
+    {
+      "name": "voice",
+      "description": "Voice interaction"
+    },
+    {
+      "name": "conversations",
+      "description": "Conversation history"
+    },
+    {
+      "name": "plugins",
+      "description": "Plugin management"
+    },
+    {
+      "name": "rules",
+      "description": "Automation rules"
+    },
+    {
+      "name": "settings",
+      "description": "User settings"
+    },
+    {
+      "name": "sensors",
+      "description": "Sensor data"
+    },
+    {
+      "name": "memories",
+      "description": "Memory management"
+    },
+    {
+      "name": "personas",
+      "description": "Persona management"
+    },
+    {
+      "name": "insights",
+      "description": "Background insights system"
+    },
+    {
+      "name": "skills",
+      "description": "Skill definitions — extend what the LLM knows how to do well"
+    },
+    {
+      "name": "scheduler",
+      "description": "Task scheduler"
+    },
+    {
+      "name": "tools",
+      "description": "Tool invocations — extend what the LLM can do"
+    },
+    {
+      "name": "execution",
+      "description": "Durable effect proposals, owner approval and observed outcomes"
+    },
+    {
+      "name": "delivery",
+      "description": "Canonical responses and separate accepted, submitted and presented evidence; never an audio replay queue"
+    }
+  ]
+}

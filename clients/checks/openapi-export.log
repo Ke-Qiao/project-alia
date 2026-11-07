@@ -1,0 +1,63 @@
+   Compiling tokio v1.52.1
+   Compiling num-integer v0.1.46
+   Compiling futures-executor v0.3.32
+   Compiling crc32fast v1.5.0
+   Compiling object v0.40.0
+   Compiling num-bigint v0.4.8
+   Compiling num-iter v0.1.45
+   Compiling futures v0.3.32
+   Compiling rig-http v0.44.0 (https://github.com/Ke-Qiao/rig.git?rev=c2ff3e30e6b8d84fc6759eab030656a42cae14ca#c2ff3e30)
+   Compiling tracing-futures v0.2.5
+   Compiling bigdecimal v0.4.10
+   Compiling num-rational v0.4.2
+   Compiling simple_asn1 v0.6.4
+   Compiling num v0.4.3
+   Compiling fraction v0.17.0
+   Compiling jsonwebtoken v9.3.1
+   Compiling jsonschema-value v0.59.0
+   Compiling sea-query v0.32.7
+   Compiling jsonschema v0.59.0
+   Compiling tokio-util v0.7.18
+   Compiling tokio-tungstenite v0.29.0
+   Compiling tokio-rustls v0.26.4
+   Compiling h2 v0.4.13
+   Compiling tower v0.5.3
+   Compiling tokio-stream v0.1.18
+   Compiling sqlx-core v0.8.6
+   Compiling rmcp v3.5.1
+   Compiling wasmtime-environ v49.0.3
+   Compiling tower-http v0.6.8
+   Compiling sqlx-postgres v0.8.6
+   Compiling hyper v1.9.0
+   Compiling hyper-util v0.1.20
+   Compiling axum v0.8.9
+   Compiling hyper-rustls v0.27.9
+   Compiling hyper-timeout v0.5.2
+   Compiling reqwest v0.13.5
+   Compiling sqlx v0.8.6
+   Compiling sea-query-binder v0.7.0
+   Compiling pgvector v0.4.1
+   Compiling sea-orm v1.1.20
+   Compiling rig-reqwest v0.44.0 (https://github.com/Ke-Qiao/rig.git?rev=c2ff3e30e6b8d84fc6759eab030656a42cae14ca#c2ff3e30)
+   Compiling rig-core v0.44.0 (https://github.com/Ke-Qiao/rig.git?rev=c2ff3e30e6b8d84fc6759eab030656a42cae14ca#c2ff3e30)
+   Compiling wasmtime-internal-unwinder v49.0.3
+   Compiling wasmtime-internal-cache v49.0.3
+   Compiling wasmtime-internal-fiber v49.0.3
+   Compiling wasmtime-internal-cranelift v49.0.3
+   Compiling tonic v0.13.1
+   Compiling utoipa-axum v0.2.0
+   Compiling utoipa-scalar v0.3.0
+   Compiling alia-transport v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/transport)
+   Compiling alia-proto v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/proto)
+   Compiling wasmtime v49.0.3
+   Compiling wiggle v49.0.3
+   Compiling wasmtime-wasi-io v49.0.3
+   Compiling rig-typesafeai v0.44.0 (https://github.com/Ke-Qiao/rig.git?rev=c2ff3e30e6b8d84fc6759eab030656a42cae14ca#c2ff3e30)
+   Compiling rig-agent v0.44.0 (https://github.com/Ke-Qiao/rig.git?rev=c2ff3e30e6b8d84fc6759eab030656a42cae14ca#c2ff3e30)
+   Compiling wasmtime-wasi v49.0.3
+   Compiling extism v1.41.0 (/Users/ke-qiao/Developer/project-alia/vendor/extism)
+   Compiling alia-plugin-runtime v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/alia-plugin-runtime)
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 04s
+     Running `target/debug/openapi clients/web/openapi/openapi.json`
+EXIT:0

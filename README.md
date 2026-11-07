@@ -1,10 +1,10 @@
 # Project Alia
 
-A personal AI assistant system with voice interaction, smart home control, and an extensible plugin architecture. The server owns reasoning and continuous turn detection; the Raspberry Pi node owns continuous capture, scoped mixed playback and hardware safety. They can run on separate hosts or on one machine. The previous frontend has been removed. Three replacement clients are planned; none is implemented yet.
+A personal AI assistant system with voice interaction, smart home control, and an extensible plugin architecture. The server owns reasoning and continuous turn detection; the Raspberry Pi node owns continuous capture, scoped mixed playback and hardware safety. They can run on separate hosts or on one machine. The previous frontend has been removed. Three replacement clients live in `clients/` and are documented in [clients/README.md](clients/README.md).
 
 ```mermaid
 graph LR
-    Frontend["Planned clients<br/>WebView / Swift / Kotlin"] <-->|"REST + WebSocket<br/>port 3000"| Server["alia-server<br/>(Axum, Rust)"]
+    Frontend["Web / iOS / Android<br/>clients/"] <-->|"REST + WebSocket<br/>port 3000"| Server["alia-server<br/>(Axum, Rust)"]
     Server <-->|"gRPC (HTTP/2)<br/>port 50051"| Embedded["alia-embedded<br/>(Tonic, RPi)"]
     Server --- DB[("PostgreSQL<br/>(SeaORM)")]
     Server -.-|"CLI REPL<br/>(rustyline)"| CLI["alia> prompt"]
@@ -88,6 +88,7 @@ project-alia/
 ├── crates/
 │   ├── proto/                # Shared Protobuf definitions
 │   └── transport/            # Shared transport/auth helpers
+├── clients/                  # Web, iOS and Android shells
 ├── packages/
 │   ├── alia-server/          # Server (Rust / Axum)
 │   └── alia-embedded/        # Edge node (Rust / Tonic)
@@ -102,20 +103,20 @@ project-alia/
 
 - **Server**: Rust, Axum, SeaORM, tokio, utoipa, rustyline
 - **Embedded**: Rust, Tonic (gRPC), tokio::process
-- **Frontend**: Removed; replacement clients are planned below.
+- **Frontend**: Web, iOS and Android shells in `clients/`. See [clients/README.md](clients/README.md).
 - **Communication**: REST + WebSocket (frontend ↔ server), gRPC (server ↔ embedded), CLI REPL (local dev)
 - **Database**: PostgreSQL 17
 - **Tooling**: mise, pnpm, Docker
 
-## Planned Frontends
+## Frontends
 
-This stage only removes the previous frontend. No replacement packages or dependencies are installed.
+Install, generation and build commands are in [clients/README.md](clients/README.md).
 
-- **WebView**: React + Next.js + coss-ui + Tailwind CSS + SWR + Hey API + [Tayori](https://tayori.skk.moe), with [eslint-config-sukka](https://github.com/SukkaW/eslint-config-sukka).
-- **iOS 27+**: Fully native Swift, using Apple's current official UI and platform stack when implementation begins.
-- **Android 17**: Fully native Kotlin, using Google's current official UI and platform stack with Material 3 Expressive (MD3E).
+- **Web**: React, Next.js, coss-ui, Tailwind CSS, SWR, Hey API and [Tayori](https://tayori.skk.moe), with [eslint-config-sukka](https://github.com/SukkaW/eslint-config-sukka).
+- **iOS 27+**: Swift and SwiftUI.
+- **Android 17**: Kotlin, Jetpack Compose and Material 3 Expressive.
 
-The server retains REST, WebSocket and API documentation endpoints. It no longer serves frontend static files or reads `ALIA_FRONTEND_DIST`; the website root has no UI until a replacement is built.
+The server retains REST, WebSocket and API documentation endpoints. It does not serve frontend static files or read `ALIA_FRONTEND_DIST`.
 
 ## Documentation
 
