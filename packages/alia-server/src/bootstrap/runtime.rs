@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,10 +9,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
-use tower_http::{
-    cors::CorsLayer,
-    services::{ServeDir, ServeFile},
-};
+use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
@@ -233,7 +229,6 @@ impl ServerRuntime {
             .merge(Scalar::with_url("/scalar", openapi::ApiDoc::openapi()))
             .layer(CorsLayer::permissive())
             .with_state(self.state.clone());
-        let app = attach_frontend(app);
         let http = self
             .wiring
             .http
@@ -378,27 +373,5 @@ impl axum::serve::Listener for HttpListener {
     }
     fn local_addr(&self) -> std::io::Result<Self::Addr> {
         self.listener.local_addr()
-    }
-}
-
-pub(super) fn attach_frontend<S>(app: Router<S>) -> Router<S>
-where
-    S: Clone + Send + Sync + 'static,
-{
-    let dist = std::env::var_os("ALIA_FRONTEND_DIST")
-        .map(PathBuf::from)
-        .into_iter()
-        .chain([
-            PathBuf::from("packages/alia-frontend/dist"),
-            PathBuf::from("alia-frontend/dist"),
-            PathBuf::from("dist"),
-        ])
-        .find(|path| path.join("index.html").is_file());
-    match dist {
-        Some(dist) => {
-            let index = dist.join("index.html");
-            app.fallback_service(ServeDir::new(dist).not_found_service(ServeFile::new(index)))
-        }
-        None => app,
     }
 }

@@ -1,5 +1,7 @@
 # Affective Companionship and Smart Home Hub Device
 
+> Status update, 2026-11-08: This presentation describes the system before frontend removal. The previous frontend is now deleted; WebView, Swift and Kotlin replacements are planned but not implemented. See the [README](../README.md#planned-frontends).
+
 ## 1. Slide 1: Background and Objectives
 
 ### Project Title

@@ -44,7 +44,7 @@ below when trying to understand the active architecture.
 ## Operations
 
 - [Local development](operations/local-development.md) gives a short path for
-  running the server, embedded node, and frontend on a development machine.
+  running the server and embedded node on a development machine; replacement frontends are planned in the root README.
 - [WASM plugins](operations/wasm-plugins.md) covers Rust guest builds, exact-pin grants,
   private Appraisal approval, resource budgets, and Server / Embedded lifecycle.
 - [MCP tools](operations/mcp-tools.md) covers service configuration, credentials,

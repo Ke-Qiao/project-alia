@@ -10,11 +10,6 @@ ALIA_CONFIG_PATH = "config/server.toml"
 description = "Run alia-server in dev mode"
 run = "cargo run -p alia-server"
 
-[tasks.dev-frontend]
-description = "Run alia-frontend dev server"
-dir = "packages/alia-frontend"
-run = "pnpm dev"
-
 [tasks.check]
 description = "Check all Rust crates"
 run = "cargo check --workspace"

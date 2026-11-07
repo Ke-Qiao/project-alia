@@ -302,7 +302,7 @@ ALIA_EMBEDDED_CONFIG_PATH=/absolute/path/embedded.toml cargo run -p alia-embedde
 
 2026-10-17 已在既有 Linux ARM64 release 上完成隔离全 noop 的两轮实际启停与恢复，见[验收与恢复检查点](../refactor/resume-checkpoint-release-lifecycle-2026-10-17.md)。联调使用私有loopback端口和任务数据库；Server选择noop模型、禁用Easy-Turn/HA且保留默认政策，现有channel内部mDNS browse仅在隔离网络内。首次Embedded启动会按新密钥推导device ID并写回配置，即使仍未provisioned；重启应保留该配置、key和state，以首次正常关闭后的身份为基线。Server持久settings也需保留；noop模块的`ignored_runtime`只表示保存了期望值，不能当作模型已应用。此次通过不覆盖真实服务账户部署、绑定恢复、异常强杀/断电或硬件/模型。
 
-仓内 `pnpm dev:backend` 会同时启动开发数据库、Server 和 Embedded，`pnpm dev` 还包含前端；这些便利入口不负责本轮隔离目录、设备权限或测试资源归属。`scripts/setup-embedded-vision-pi.sh` 是安装/模型/摄像头配置工具，可能安装依赖、下载文件和查询设备节点，`--run` 会启动完整 Embedded；它不是无设备只读预检。Server 普通配置加载也可能执行已有发布恢复；不能把正常 Server 启动称为纯只读解析。
+仓内 `pnpm dev:backend` 会同时启动开发数据库、Server 和 Embedded，`pnpm dev` 现在调用同一个后端入口，旧前端已删除；这些便利入口不负责本轮隔离目录、设备权限或测试资源归属。`scripts/setup-embedded-vision-pi.sh` 是安装/模型/摄像头配置工具，可能安装依赖、下载文件和查询设备节点，`--run` 会启动完整 Embedded；它不是无设备只读预检。Server 普通配置加载也可能执行已有发布恢复；不能把正常 Server 启动称为纯只读解析。
 
 未找到 Server 配置时进入 OOBE；配置已存在但不能加载时会报错退出，不自动改写成样例。stdin/stdout 都是交互终端时，输入 `c` 再按 Enter 可生成主文件加 `.d` 的完整布局，该操作拒绝覆盖已有主文件或分片树。
 

@@ -1,10 +1,10 @@
 # Project Alia
 
-A personal AI assistant system with voice interaction, smart home control, and an extensible plugin architecture. The server owns reasoning and continuous turn detection; the Raspberry Pi node owns continuous capture, scoped mixed playback and hardware safety. They can run on separate hosts or on one machine. Current work prioritizes Server and Embedded; frontend integration is deferred.
+A personal AI assistant system with voice interaction, smart home control, and an extensible plugin architecture. The server owns reasoning and continuous turn detection; the Raspberry Pi node owns continuous capture, scoped mixed playback and hardware safety. They can run on separate hosts or on one machine. The previous frontend has been removed. Three replacement clients are planned; none is implemented yet.
 
 ```mermaid
 graph LR
-    Frontend["alia-frontend<br/>(Expo, RN)"] <-->|"REST + WebSocket<br/>port 3000"| Server["alia-server<br/>(Axum, Rust)"]
+    Frontend["Planned clients<br/>WebView / Swift / Kotlin"] <-->|"REST + WebSocket<br/>port 3000"| Server["alia-server<br/>(Axum, Rust)"]
     Server <-->|"gRPC (HTTP/2)<br/>port 50051"| Embedded["alia-embedded<br/>(Tonic, RPi)"]
     Server --- DB[("PostgreSQL<br/>(SeaORM)")]
     Server -.-|"CLI REPL<br/>(rustyline)"| CLI["alia> prompt"]
@@ -18,7 +18,6 @@ graph LR
 |---------|-------------|
 | [alia-server](packages/alia-server/) | Central server — API, AI pipeline, WebSocket, channel adapters, module orchestration |
 | [alia-embedded](packages/alia-embedded/) | Raspberry Pi edge node — capture/VAD, wake cues, native mixer, Motion safety, sensors, gRPC |
-| [alia-frontend](packages/alia-frontend/) | Cross-platform consumer app (React Native / Expo) |
 
 ### Shared Crates
 
@@ -57,26 +56,23 @@ cargo run -p alia-server
 
 # 5. Run the embedded node (on Raspberry Pi or locally for dev)
 cargo run -p alia-embedded
-
-# 6. Run the frontend
-cd packages/alia-frontend && pnpm install && pnpm dev
 ```
 
 Or use the convenience scripts:
 
 ```bash
-# Run everything at once (DB + server + embedded + frontend)
-pnpm dev
+# Install development script dependencies
+pnpm install
 
-# Backend only (DB + server + embedded)
-pnpm dev:backend
+# Run DB + server + embedded
+pnpm dev
+# pnpm dev:backend is the same entry point
 ```
 
 ## Mise Tasks
 
 ```bash
 mise run dev-server     # cargo run -p alia-server
-mise run dev-frontend   # pnpm dev (in alia-frontend)
 mise run check          # cargo check --workspace
 bash scripts/verify-software.sh test  # isolated PostgreSQL + WASM fixtures + full software regression
 mise run db             # docker compose up -d postgres
@@ -94,11 +90,10 @@ project-alia/
 │   └── transport/            # Shared transport/auth helpers
 ├── packages/
 │   ├── alia-server/          # Server (Rust / Axum)
-│   ├── alia-embedded/        # Edge node (Rust / Tonic)
-│   └── alia-frontend/        # Frontend (React Native / Expo)
+│   └── alia-embedded/        # Edge node (Rust / Tonic)
 ├── docs/                     # Architecture & design documents
 ├── Cargo.toml                # Rust workspace root
-├── package.json              # pnpm workspace root
+├── package.json              # Development convenience scripts
 ├── mise.toml                 # Tool versions & dev tasks
 └── docker-compose.yml        # PostgreSQL
 ```
@@ -107,10 +102,20 @@ project-alia/
 
 - **Server**: Rust, Axum, SeaORM, tokio, utoipa, rustyline
 - **Embedded**: Rust, Tonic (gRPC), tokio::process
-- **Frontend**: TypeScript, React Native, Expo
+- **Frontend**: Removed; replacement clients are planned below.
 - **Communication**: REST + WebSocket (frontend ↔ server), gRPC (server ↔ embedded), CLI REPL (local dev)
 - **Database**: PostgreSQL 17
 - **Tooling**: mise, pnpm, Docker
+
+## Planned Frontends
+
+This stage only removes the previous frontend. No replacement packages or dependencies are installed.
+
+- **WebView**: React + Next.js + coss-ui + Tailwind CSS + SWR + Hey API + [Tayori](https://tayori.skk.moe), with [eslint-config-sukka](https://github.com/SukkaW/eslint-config-sukka).
+- **iOS 27+**: Fully native Swift, using Apple's current official UI and platform stack when implementation begins.
+- **Android 17**: Fully native Kotlin, using Google's current official UI and platform stack with Material 3 Expressive (MD3E).
+
+The server retains REST, WebSocket and API documentation endpoints. It no longer serves frontend static files or reads `ALIA_FRONTEND_DIST`; the website root has no UI until a replacement is built.
 
 ## Documentation
 

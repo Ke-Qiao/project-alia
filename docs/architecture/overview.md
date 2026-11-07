@@ -14,7 +14,7 @@ Detailed package docs live beside the packages:
 
 ```mermaid
 graph LR
-    Frontend["Existing frontend<br/>deferred from this refactor"] <-->|"REST + WebSocket"| Ingress
+    Frontend["Planned clients<br/>WebView / Swift / Kotlin"] <-->|"REST + WebSocket"| Ingress
     CLI["CLI channel"] <--> Ingress
     subgraph Server["alia-server: modular monolith"]
         Ingress["API / channels"] <--> Interaction
@@ -49,7 +49,6 @@ models only supply inputs to it.
 | --- | --- |
 | `packages/alia-server` | Bootstrap, domain services, API and channel adapters, provider integrations, registries, and PostgreSQL persistence. |
 | `packages/alia-embedded` | Continuous capture, wake word, VAD evidence, scoped voice/cue mixing, typed Motion execution, binding, discovery, and sensors. |
-| `packages/alia-frontend` | Existing Expo/React Native UI; web/iOS/Android improvements are deferred. |
 | `crates/alia-core` | Shared types and contracts for the server and embedded runtime. |
 | `crates/proto` | Shared protobuf definitions and generated gRPC code. |
 | `crates/transport` | Shared transport/auth helpers. |
@@ -77,8 +76,10 @@ models only supply inputs to it.
 - Embedded opens a continuous VoiceSession after wake word and keeps uploading
   ordered PCM plus VAD evidence during playback. Voice and low-gain local cues
   share the scoped native output owner and frame clock. This mixer is not AEC.
-- The frontend manages settings, devices, conversations, and observability; it
-  is not required in the realtime voice path.
+- Planned frontends will manage settings, devices, conversations, and observability.
+  The previous frontend is removed; replacements are not implemented. See the
+  [frontend plan](../../README.md#planned-frontends). Frontends are not required
+  in the realtime voice path.
 
 ## Current Migration And Remaining Work
 

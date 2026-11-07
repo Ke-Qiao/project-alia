@@ -1,9 +1,0 @@
-{
-  "platforms": ["apple", "android"],
-  "apple": {
-    "modules": ["AliaDiscoveryModule"]
-  },
-  "android": {
-    "modules": ["dev.alia.discovery.AliaDiscoveryModule"]
-  }
-}

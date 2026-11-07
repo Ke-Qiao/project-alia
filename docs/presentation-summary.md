@@ -1,5 +1,7 @@
 # Affective Companionship and Smart Home Hub Device
 
+> 2026-11-08 状态更新：本文描述清理前的系统。旧前端现已删除，WebView、Swift 和 Kotlin 三端尚未实现，计划见 [README](../README.md#planned-frontends)。
+
 ## 1. PPT 第 1 页：背景与目标
 
 ### 项目名称
