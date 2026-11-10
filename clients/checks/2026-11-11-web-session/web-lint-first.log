@@ -1,0 +1,69 @@
+
+> project-alia@ web:lint /Users/ke-qiao/Developer/project-alia
+> pnpm --dir clients/web lint
+
+
+> @alia/web@ lint /Users/ke-qiao/Developer/project-alia/clients/web
+> eslint .
+
+
+/Users/ke-qiao/Developer/project-alia/clients/web/components/account-card.tsx
+  41:54  error  Expected 'undefined' and instead saw 'void'  no-void
+
+/Users/ke-qiao/Developer/project-alia/clients/web/components/app-shell.tsx
+  25:10  error  Component "Brand" is not exported, takes no props, and renders constant JSX. It does not need to be a component — assign its JSX to a constant variable (`const xxxJsx = jsx`) and reference that constant in place of `<Brand />`. A React element is immutable, so the same constant can be rendered any number of times  vibe-proof/react-no-useless-components
+
+/Users/ke-qiao/Developer/project-alia/clients/web/components/auth/login-form.tsx
+  21:9  warning  A ref identifier must be named 'ref' or ending in 'Ref'                                                                                         @eslint-react/naming-convention-ref-name
+  22:9  error    useState is used without the setter "setState". If you only need the value, use `useRef` or `useSingleton` from `foxact/use-singleton` instead  vibe-proof/react-no-use-state-as-ref
+
+/Users/ke-qiao/Developer/project-alia/clients/web/components/auth/register-form.tsx
+  30:9   warning  A ref identifier must be named 'ref' or ending in 'Ref'                                              @eslint-react/naming-convention-ref-name
+  52:11  error    Prefer `isObjectEmpty` from `foxts/is-object-empty` over an `Object.keys(x).length` emptiness check  sukka/prefer-foxts-object-size
+
+/Users/ke-qiao/Developer/project-alia/clients/web/components/auth/session-guard.tsx
+  10:10  error  Component "PendingScreen" is not exported, takes no props, and renders constant JSX. It does not need to be a component — assign its JSX to a constant variable (`const xxxJsx = jsx`) and reference that constant in place of `<PendingScreen />`. A React element is immutable, so the same constant can be rendered any number of times  vibe-proof/react-no-useless-components
+  27:10  error  Do not use trivial functions that only return `true`. Use `trueFn` from `foxts/noop` instead                                                                                                                                                                                                                                                sukka/prefer-foxts-noop
+
+/Users/ke-qiao/Developer/project-alia/clients/web/components/health-card.tsx
+  22:31  warning  Unnecessary optional chain on a non-nullish value                                                                                                                   @typescript-eslint/no-unnecessary-condition
+  22:56  warning  Unnecessary conditional, expected left-hand side of `??` operator to be possibly null or undefined                                                                  @typescript-eslint/no-unnecessary-condition
+  22:61  warning  Unnecessary optional chain on a non-nullish value                                                                                                                   @typescript-eslint/no-unnecessary-condition
+  26:93  warning  Invalid group length in numeric value                                                                                                                               sukka/unicorn/numeric-separators-style
+  28:74  error    `localeCompare` constructs an `Intl.Collator` on every call. Hoist `const collator = new Intl.Collator(...)` outside the callback and use `collator.compare(a, b)`  vibe-proof/prefer-static-collator
+  41:28  error    Expected 'undefined' and instead saw 'void'                                                                                                                         no-void
+
+/Users/ke-qiao/Developer/project-alia/clients/web/lib/api-error.ts
+  11:3   error  Error constructors should use a non-rest parameter named `options`                                         sukka/unicorn/custom-error-definition
+  35:28  error  Prefer `isErrorLikeObject` from `foxts/is-error-like-object` or `Error.isError()` over `instanceof Error`  sukka/prefer-foxts-error-util
+
+/Users/ke-qiao/Developer/project-alia/clients/web/lib/auth/session-flow.test.mjs
+   19:30  error    Expected 'undefined' and instead saw 'void'                                                                                                                          no-void
+   20:24  error    Expected 'undefined' and instead saw 'void'                                                                                                                          no-void
+   29:3   warning  Move async function 'api' to the outer scope                                                                                                                         sukka/unicorn/consistent-function-scoping
+   88:53  error    Do not use `Array.from({ length })` to create arrays. Use `createFixedArray` from `foxts/create-fixed-array` or `foxact/create-fixed-array` instead                  sukka/no-array-from-length-spread
+  115:98  error    Unexpected empty method 'setItem'                                                                                                                                    no-empty-function
+  141:13  error    Do not use empty functions. Use `noop` from `foxts/noop` or `foxact/noop` instead                                                                                    sukka/prefer-foxts-noop
+  141:32  error    Unexpected empty arrow function                                                                                                                                      no-empty-function
+  168:51  error    Hoisting literal regex to module level to avoid re-creation on every call. It is recommend to name the regex variable in `rXxx`, `RE_XXX`, or `xxxx_pattern` format  vibe-proof/prefer-hoisted-regex
+  171:51  error    Hoisting literal regex to module level to avoid re-creation on every call. It is recommend to name the regex variable in `rXxx`, `RE_XXX`, or `xxxx_pattern` format  vibe-proof/prefer-hoisted-regex
+  175:53  error    Hoisting literal regex to module level to avoid re-creation on every call. It is recommend to name the regex variable in `rXxx`, `RE_XXX`, or `xxxx_pattern` format  vibe-proof/prefer-hoisted-regex
+
+/Users/ke-qiao/Developer/project-alia/clients/web/lib/auth/session-store.ts
+  28:62  error  Consider moving this simple condition first after verifying short-circuit behavior  sukka/unicorn/prefer-simple-condition-first
+  30:46  error  Consider moving this simple condition first after verifying short-circuit behavior  sukka/unicorn/prefer-simple-condition-first
+
+/Users/ke-qiao/Developer/project-alia/clients/web/lib/auth/session.ts
+  35:10  error  This assertion is unnecessary since the receiver accepts the original type of the expression  @typescript-eslint/no-unnecessary-type-assertion
+
+/Users/ke-qiao/Developer/project-alia/clients/web/lib/mock/host.ts
+   90:11  error    Move this declaration after the early exit                                                           sukka/unicorn/no-declarations-before-early-exit
+  118:32  warning  Do not delete dynamically computed property keys                                                     @typescript-eslint/no-dynamic-delete
+  156:30  error    Prefer `wait` from `foxts/wait` over a hand-rolled promisified delay                                 sukka/prefer-foxts-wait
+  156:55  warning  Timer id should assign to an identifier or member for cleaning up, `const timer = setTimeout(...);`  sukka/prefer-timer-id
+
+✖ 33 problems (24 errors, 9 warnings)
+  6 errors and 1 warning potentially fixable with the `--fix` option.
+
+ ELIFECYCLE  Command failed with exit code 1.
+ ELIFECYCLE  Command failed with exit code 1.

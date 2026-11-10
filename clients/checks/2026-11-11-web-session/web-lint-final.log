@@ -1,0 +1,8 @@
+
+> project-alia@ web:lint /Users/ke-qiao/Developer/project-alia
+> pnpm --dir clients/web lint
+
+
+> @alia/web@ lint /Users/ke-qiao/Developer/project-alia/clients/web
+> eslint .
+

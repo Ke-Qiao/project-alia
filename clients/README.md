@@ -1,6 +1,6 @@
 # Clients
 
-Three separate shells. There is no shared UI layer and no business screen.
+Three separate clients. There is no shared UI layer. Web has its first screens (account session and overview); iOS and Android are still empty shells.
 
 Root scripts in `package.json` forward to these projects. The server's Cargo
 `default-run` remains `alia-server`; adding the OpenAPI exporter does not change
@@ -63,8 +63,82 @@ and `useClient` from `@/lib/data`. They share the same `tayori()` instance as
 the `DataFetchingProvider` mounted by the root layout. Pass a generated SDK
 function to these hooks; for a direct SDK call, pass the client returned by
 `useClient()` through the SDK's `client` option. Do not create another
-`tayori()` instance to consume this provider. The empty entry page makes no
-API requests.
+`tayori()` instance to consume this provider.
+
+### Pages
+
+| Route | Purpose |
+| --- | --- |
+| `/login`, `/register` | Sign in or create an account. Signed-in visitors are sent to `/`. |
+| `/` | Overview: `GET /health` (overall and per-module status). |
+| `/account` | `GET /api/v1/users/me`, and sign out. |
+
+`/` and `/account` require a session; without one the browser goes to `/login`.
+Navigation is the coss `Sidebar` on desktop and a bottom tab bar below the
+sidebar component's own mobile breakpoint (`useSidebar().isMobile`), so the two
+never disagree. Add destinations to `components/app-nav.ts`.
+
+### Session
+
+The server returns tokens in JSON and expects `Authorization: Bearer`, so the
+session (`lib/auth/`) is kept in `localStorage` under `alia.session` and shared
+by all tabs. Script running on the page can read it; do not render untrusted
+HTML. The API client attaches the access token to operations that declare
+bearer security in OpenAPI.
+
+- A 401 on a bearer request triggers one refresh and one retry. Concurrent
+  401s share that refresh, and tabs take turns through the Web Locks API,
+  because the server revokes a refresh token when it is used.
+- Only a 401 from `/auth/refresh` ends the session ("登录已过期"). Network
+  failures and 5xx leave it in place.
+- A 401 from `/auth/login` means rejected credentials. The server uses the
+  same status and code for a disabled account.
+- Every thrown error is an `ApiError` (`lib/api-error.ts`) with the HTTP status,
+  or status 0 when no response arrived. The server's error body
+  `{ error: { code, message } }` is not declared in OpenAPI and is read defensively.
+
+Sign-out clears the local session only. `POST /api/v1/auth/logout` exists on
+the server but has no `#[utoipa::path]`, so the generated client has no
+function for it and the refresh token stays valid until it expires (30 days by
+default). Declaring it and regenerating is the next backend-facing step.
+
+### Mock mode
+
+`NEXT_PUBLIC_ALIA_MOCK=1` (in `clients/web/.env.local`) swaps the client's
+`fetch` for an in-browser stand-in for alia-server (`lib/mock/host.ts`) seeded
+from `lib/mock/dataset.ts`. It implements only the routes the pages call and
+copies their status codes and messages; anything else answers 404. A "Mock 数据"
+badge is shown on every screen. State persists in `localStorage` under
+`alia.mock.state`.
+
+| Account | Password | Notes |
+| --- | --- | --- |
+| `admin@alia.test` | `alia-mock-admin` | admin |
+| `member@alia.test` | `alia-mock-member` | user |
+| `disabled@alia.test` | `alia-mock-disabled` | disabled; sign-in is rejected |
+
+In the browser console, `aliaMock.expireAccessTokens()` exercises silent
+refresh, `aliaMock.revokeSessions()` the expired-session path,
+`aliaMock.setOffline(true)` the unreachable-server states, and
+`aliaMock.reset()` restores the seed data. Mock mode proves page behavior, not
+integration with the real server.
+
+### Checks
+
+```bash
+pnpm web:test
+```
+
+runs `node --test` over `lib/**/*.test.mjs` (Node 24 strips the TypeScript
+types). The tests drive the real session store, refresher and auth fetch
+against the mock host.
+
+`components/ui/**` and `hooks/use-media-query.ts` are coss sources copied in
+by `pnpm ui:add` and are excluded from ESLint, like the generated client. The
+CLI also rewrites `lib/utils.ts` to `clsx` + `tailwind-merge` and adds both
+dependencies; this project keeps the `cn` package, so restore `lib/utils.ts`,
+`package.json` and `pnpm-lock.yaml` after adding a component. The coss sidebar
+persists its collapsed state with the Cookie Store API.
 
 ## iOS — `clients/ios`
 

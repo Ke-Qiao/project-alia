@@ -1,0 +1,25 @@
+
+> project-alia@ web:test /Users/ke-qiao/Developer/project-alia
+> pnpm --dir clients/web test
+
+
+> @alia/web@ test /Users/ke-qiao/Developer/project-alia/clients/web
+> node --test "lib/**/*.test.mjs"
+
+✔ wrong password is a 401 on sign-in and does not touch the session or try to refresh (10.317042ms)
+✔ a disabled account cannot sign in (0.445166ms)
+✔ expired access token: concurrent requests share one refresh and all succeed (2.922166ms)
+✔ revoked session: the request fails with 401 and the session ends as expired (0.419375ms)
+✔ server unreachable during refresh: the session is kept and the error is a network error (0.337834ms)
+✔ sign-out while a refresh is in flight does not bring the session back (0.237875ms)
+✔ two tabs refreshing the same token: neither is signed out (0.4405ms)
+✔ corrupt stored session reads as signed out (0.04175ms)
+✔ errors are classified so that failures are not shown as empty data (0.112917ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 65.831541

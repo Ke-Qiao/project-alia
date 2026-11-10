@@ -1,0 +1,8 @@
+
+> project-alia@ web:typecheck /Users/ke-qiao/Developer/project-alia
+> pnpm --dir clients/web typecheck
+
+
+> @alia/web@ typecheck /Users/ke-qiao/Developer/project-alia/clients/web
+> tsc --noEmit
+

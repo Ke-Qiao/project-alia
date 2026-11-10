@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: React.PropsWithChildren) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body className="relative font-sans">
         <div className="isolate relative flex min-h-svh flex-col">
           <DataFetchingProvider>{children}</DataFetchingProvider>

@@ -6,6 +6,7 @@
     "dev": "next dev --port 3100",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test": "node --test \"lib/**/*.test.mjs\"",
     "build": "next build",
     "openapi:ts": "openapi-ts",
     "ui:add": "shadcn add"

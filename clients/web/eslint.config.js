@@ -9,6 +9,7 @@ export default sukka({
   node: false,
   pnpm: false,
   ignores: {
-    customGlobs: ['lib/api/generated/**']
+    // Generated client, and coss ui sources copied in verbatim by `pnpm ui:add`.
+    customGlobs: ['lib/api/generated/**', 'components/ui/**', 'hooks/use-media-query.ts']
   }
 });

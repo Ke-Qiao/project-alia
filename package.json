@@ -16,6 +16,7 @@
     "web:dev": "pnpm --dir clients/web dev",
     "web:lint": "pnpm --dir clients/web lint",
     "web:typecheck": "pnpm --dir clients/web typecheck",
+    "web:test": "pnpm --dir clients/web test",
     "web:build": "pnpm --dir clients/web build",
     "web:openapi": "cargo run -p alia-server --bin openapi -- clients/web/openapi/openapi.json && pnpm --dir clients/web openapi:ts",
     "ios:build": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project clients/ios/Alia.xcodeproj -scheme Alia -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO -derivedDataPath clients/ios/DerivedData build",
