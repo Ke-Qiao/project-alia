@@ -1,0 +1,99 @@
+COMMAND: cargo test -p alia-server --lib error --offline --locked
+START_UTC: 20261110T203617569542Z
+   Compiling rig-core v0.44.0 (https://github.com/Ke-Qiao/rig.git?rev=c2ff3e30e6b8d84fc6759eab030656a42cae14ca#c2ff3e30)
+   Compiling rig-typesafeai v0.44.0 (https://github.com/Ke-Qiao/rig.git?rev=c2ff3e30e6b8d84fc6759eab030656a42cae14ca#c2ff3e30)
+   Compiling rig-agent v0.44.0 (https://github.com/Ke-Qiao/rig.git?rev=c2ff3e30e6b8d84fc6759eab030656a42cae14ca#c2ff3e30)
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 59.95s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-7935b3105a1c6046)
+
+running 23 tests
+test modules::interaction::error_notice::tests::builds_english_notice_for_non_cjk_input ... ok
+test modules::interaction::error_notice::tests::builds_chinese_notice_without_raw_error ... ok
+test api::skills::tests::skill_change_errors_preserve_database_and_internal_responses ... ok
+test api::deliveries::tests::unconfirmed_database_errors_never_expose_private_diagnostics_or_advise_replay ... ok
+test modules::platform::insights::service::tests::availability_tests::enabled_service_preserves_initialization_and_phase_errors ... ok
+test error::tests::app_errors_publish_status_code_reason_and_safe_message ... ok
+test api::effects::tests::database_errors_are_sanitized_and_invalid_json_uses_the_machine_error_envelope ... ok
+test modules::memory::maintenance::tests::candidate_write_after_clear_returns_error_instead_of_zero_created_success ... ok
+test openapi::tests::auth_error_injection_preserves_domain_media_is_idempotent_and_handles_every_method ... ok
+test modules::interaction::error_notice::tests::cancelled_error_does_not_dispatch_voice_or_text ... ok
+test openapi::tests::execution_contract_documents_durable_results_confirmation_and_typed_errors ... ok
+test modules::interaction::error_notice::tests::unadmitted_error_notice_never_starts_tts_or_side_effects ... ok
+test openapi::tests::secured_operations_document_json_auth_errors_and_public_logout_stays_public ... ok
+test openapi::tests::companion_contract_matches_owner_routes_required_fields_and_real_errors ... ok
+test providers::tts::gpt_sovits::tests::http::health_supplies_languages_without_synthesis_inputs_and_rejects_server_errors ... FAILED
+test providers::tts::gpt_sovits::tests::http::incomplete_pitch_header_and_idle_timeout_are_errors_not_normal_eof ... FAILED
+test modules::interaction::skills::registry::tests::rejected_commit_rebuilds_authoritative_index_and_keeps_original_database_error ... FAILED
+test adapters::easy_turn::tests::bounds_deadline_response_size_and_upstream_errors ... FAILED
+test tools::mcp::tests::stopping_a_completed_failed_handshake_reports_stopped_and_keeps_error ... FAILED
+test providers::tts::gpt_sovits::tests::http::error_body_stops_at_four_kib_without_waiting_for_eof ... FAILED
+test modules::interaction::routing::jev::tests::does_not_follow_redirect_or_retry_provider_errors ... FAILED
+test modules::interaction::integration_tests::prepared_voice_error_before_register_ack_keeps_original_context_and_response ... FAILED
+test channels::embedded::playback::tests::streaming_producer_error_keeps_upload_and_receipts_until_exact_fence ... FAILED
+
+failures:
+
+---- providers::tts::gpt_sovits::tests::http::health_supplies_languages_without_synthesis_inputs_and_rejects_server_errors stdout ----
+
+thread 'providers::tts::gpt_sovits::tests::http::health_supplies_languages_without_synthesis_inputs_and_rejects_server_errors' (8157791) panicked at packages/alia-server/src/providers/tts/gpt_sovits/tests/http.rs:27:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- providers::tts::gpt_sovits::tests::http::incomplete_pitch_header_and_idle_timeout_are_errors_not_normal_eof stdout ----
+
+thread 'providers::tts::gpt_sovits::tests::http::incomplete_pitch_header_and_idle_timeout_are_errors_not_normal_eof' (8157794) panicked at packages/alia-server/src/providers/tts/gpt_sovits/tests/http.rs:266:63:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- modules::interaction::skills::registry::tests::rejected_commit_rebuilds_authoritative_index_and_keeps_original_database_error stdout ----
+
+thread 'modules::interaction::skills::registry::tests::rejected_commit_rebuilds_authoritative_index_and_keeps_original_database_error' (8157783) panicked at packages/alia-server/src/modules/companion/repository/tests.rs:31:14:
+Companion tests require disposable real PostgreSQL: NotPresent
+
+---- adapters::easy_turn::tests::bounds_deadline_response_size_and_upstream_errors stdout ----
+
+thread 'adapters::easy_turn::tests::bounds_deadline_response_size_and_upstream_errors' (8157771) panicked at packages/alia-server/src/adapters/easy_turn.rs:192:79:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- tools::mcp::tests::stopping_a_completed_failed_handshake_reports_stopped_and_keeps_error stdout ----
+
+thread 'tools::mcp::tests::stopping_a_completed_failed_handshake_reports_stopped_and_keeps_error' (8157795) panicked at packages/alia-server/src/tools/mcp/tests.rs:322:71:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- providers::tts::gpt_sovits::tests::http::error_body_stops_at_four_kib_without_waiting_for_eof stdout ----
+
+thread 'providers::tts::gpt_sovits::tests::http::error_body_stops_at_four_kib_without_waiting_for_eof' (8157790) panicked at packages/alia-server/src/providers/tts/gpt_sovits/tests/http.rs:266:63:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- modules::interaction::routing::jev::tests::does_not_follow_redirect_or_retry_provider_errors stdout ----
+
+thread 'modules::interaction::routing::jev::tests::does_not_follow_redirect_or_retry_provider_errors' (8157782) panicked at packages/alia-server/src/modules/interaction/routing/jev.rs:432:79:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- modules::interaction::integration_tests::prepared_voice_error_before_register_ack_keeps_original_context_and_response stdout ----
+
+thread 'modules::interaction::integration_tests::prepared_voice_error_before_register_ack_keeps_original_context_and_response' (8157781) panicked at packages/alia-server/src/modules/interaction/integration_tests.rs:1092:10:
+pipeline Delivery test requires isolated PostgreSQL: NotPresent
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- channels::embedded::playback::tests::streaming_producer_error_keeps_upload_and_receipts_until_exact_fence stdout ----
+
+thread 'channels::embedded::playback::tests::streaming_producer_error_keeps_upload_and_receipts_until_exact_fence' (8157775) panicked at packages/alia-server/src/channels/embedded/playback/tests.rs:660:75:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+
+failures:
+    adapters::easy_turn::tests::bounds_deadline_response_size_and_upstream_errors
+    channels::embedded::playback::tests::streaming_producer_error_keeps_upload_and_receipts_until_exact_fence
+    modules::interaction::integration_tests::prepared_voice_error_before_register_ack_keeps_original_context_and_response
+    modules::interaction::routing::jev::tests::does_not_follow_redirect_or_retry_provider_errors
+    modules::interaction::skills::registry::tests::rejected_commit_rebuilds_authoritative_index_and_keeps_original_database_error
+    providers::tts::gpt_sovits::tests::http::error_body_stops_at_four_kib_without_waiting_for_eof
+    providers::tts::gpt_sovits::tests::http::health_supplies_languages_without_synthesis_inputs_and_rejects_server_errors
+    providers::tts::gpt_sovits::tests::http::incomplete_pitch_header_and_idle_timeout_are_errors_not_normal_eof
+    tools::mcp::tests::stopping_a_completed_failed_handshake_reports_stopped_and_keeps_error
+
+test result: FAILED. 14 passed; 9 failed; 0 ignored; 0 measured; 396 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `-p alia-server --lib`
+
+EXIT_CODE: 101

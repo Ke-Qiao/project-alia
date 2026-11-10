@@ -1,0 +1,25 @@
+COMMAND: cargo test -p alia-server --lib auth --offline --locked -- --list
+START_UTC: 20261110T204007254254Z
+    Blocking waiting for file lock on build directory
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 39.71s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-7935b3105a1c6046)
+bootstrap::setup::tests::unauthenticated_setup_listener_is_loopback_only: test
+channels::embedded::motion::tests::missing_response_and_other_owner_cancel_have_no_physical_dispatch_authority: test
+grpc::voice_auth::tests::invalid_or_revoked_credentials_never_authenticate: test
+grpc::voice_auth::tests::removed_or_replaced_channel_cannot_lend_authority_to_a_source: test
+grpc::voice_auth::tests::signed_device_requires_an_active_configured_owner: test
+grpc::voice_auth::tests::source_keeps_original_epochs_and_rejects_each_revocation: test
+grpc::voice_auth::tests::voice_admission_requires_explicit_instance_id_without_type_alias_fallback: test
+grpc::voice_session::tests::authenticated_refresh_frame_extends_transport_idle_but_not_capture_freshness: test
+grpc::voice_session::tests::initiative_snapshot_rechecks_speech_arriving_during_authentication: test
+grpc::voice_session::tests::source_epoch_is_fixed_at_ready_before_first_audio_and_not_renewed_by_auth: test
+modules::companion::repository::tests::bounded_page_and_explicit_simulated_opportunity_never_acquire_output_authority: test
+modules::interaction::integration_tests::memory_search::response_freeze_prevents_even_authorized_memory_search_dispatch: test
+modules::interaction::skills::registry::tests::rejected_commit_rebuilds_authoritative_index_and_keeps_original_database_error: test
+modules::memory::context::invitation::purpose_tests::invitation_authorizes_only_its_two_output_operations: test
+openapi::tests::auth_error_injection_preserves_domain_media_is_idempotent_and_handles_every_method: test
+openapi::tests::secured_operations_document_json_auth_errors_and_public_logout_stays_public: test
+
+16 tests, 0 benchmarks
+
+EXIT_CODE: 0

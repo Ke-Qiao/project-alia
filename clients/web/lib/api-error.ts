@@ -1,3 +1,5 @@
+import type { ErrorCode, ErrorReason } from '@/lib/api/generated/types.gen';
+
 /**
  * Error thrown by every request made through the app's API client.
  *
@@ -6,18 +8,17 @@
  */
 export class ApiError extends Error {
   readonly status: number;
-  readonly code: string | undefined;
+  readonly code: ErrorCode | undefined;
+  readonly reason: ErrorReason | undefined;
 
-  constructor(status: number, message: string, code?: string, options?: ErrorOptions) {
+  constructor(status: number, message: string, code?: ErrorCode, reason?: ErrorReason, options?: ErrorOptions) {
     super(message, options);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.reason = reason;
   }
 }
-
-export const NETWORK_ERROR = 'NETWORK_ERROR';
-export const INVALID_RESPONSE = 'INVALID_RESPONSE';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -25,28 +26,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Normalizes whatever the generated client throws. The server's error body,
- * `{ error: { code, message } }`, is not declared in OpenAPI, so it is read
- * defensively instead of being asserted as a type.
+ * `{ error: { code, reason?, message } }`, is declared in OpenAPI, but proxies
+ * and network failures can still return a different shape.
  */
 export function toApiError(error: unknown, response: Pick<Response, 'ok' | 'status' | 'statusText'> | undefined): ApiError {
   if (error instanceof ApiError) return error;
 
   if (!response) {
     const message = isRecord(error) && typeof error.message === 'string' ? error.message : 'network error';
-    return new ApiError(0, message, NETWORK_ERROR, { cause: error });
+    return new ApiError(0, message, undefined, undefined, { cause: error });
   }
 
   // A 2xx response that failed to parse is not an Alia API response.
   if (response.ok) {
-    return new ApiError(response.status, 'unexpected response body', INVALID_RESPONSE);
+    return new ApiError(response.status, 'unexpected response body');
   }
 
   if (isRecord(error) && isRecord(error.error)) {
-    const { code, message } = error.error;
+    const { code, reason, message } = error.error;
     return new ApiError(
       response.status,
       typeof message === 'string' && message ? message : response.statusText,
-      typeof code === 'string' ? code : undefined
+      typeof code === 'string' ? code as ErrorCode : undefined,
+      typeof reason === 'string' ? reason as ErrorReason : undefined
     );
   }
 
@@ -57,7 +59,7 @@ export function toApiError(error: unknown, response: Pick<Response, 'ok' | 'stat
 export function describeApiError(error: unknown, apiUrl: string): string {
   if (!(error instanceof ApiError)) return '发生了未知错误，请重试。';
   if (error.status === 0) return `无法连接到 Alia 服务（${apiUrl}）。请确认服务已启动且网络可达。`;
-  if (error.code === INVALID_RESPONSE) return `${apiUrl} 返回了无法识别的响应，请检查 API 地址是否指向 Alia 服务。`;
+  if (error.status >= 200 && error.status < 300) return `${apiUrl} 返回了无法识别的响应，请检查 API 地址是否指向 Alia 服务。`;
   if (error.status === 401) return '登录状态无效，请重新登录。';
   if (error.status === 403) return '当前账号没有权限执行此操作。';
   if (error.status === 429) return '请求过于频繁，请稍后再试。';

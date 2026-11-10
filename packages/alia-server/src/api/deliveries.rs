@@ -131,7 +131,7 @@ pub async fn get_response(
     Ok(Json(state.delivery.get_response(auth.id, id).await?))
 }
 
-#[utoipa::path(get, path = "/api/v1/responses/{id}/deliveries", tag = "delivery", security(("bearer" = [])),
+#[utoipa::path(operation_id = "list_response_deliveries", get, path = "/api/v1/responses/{id}/deliveries", tag = "delivery", security(("bearer" = [])),
     params(("id" = Uuid, Path, description = "Canonical response identity")), responses(
         (status = 200, description = "Bounded collection of this response's delivery facts; at most 256", body = [DeliveryRecord]),
         (status = 400, description = "Invalid UUID", body = DeliveryErrorResponse),
@@ -182,7 +182,7 @@ pub async fn cancel_response(
     Ok(Json(state.delivery.cancel_response(auth.id, id).await?))
 }
 
-#[utoipa::path(get, path = "/api/v1/responses/{id}/events", tag = "delivery", security(("bearer" = [])),
+#[utoipa::path(operation_id = "list_response_events", get, path = "/api/v1/responses/{id}/events", tag = "delivery", security(("bearer" = [])),
     params(("id" = Uuid, Path, description = "Canonical response identity"), ResponseEventsQuery), responses(
         (status = 200, description = "Owner's ordered audit events, including late evidence after Unknown; paginate with the last event ID", body = [DeliveryEvent]),
         (status = 400, description = "Invalid UUID, cursor or page size", body = DeliveryErrorResponse),
@@ -211,7 +211,7 @@ pub async fn response_events(
     ))
 }
 
-#[utoipa::path(get, path = "/api/v1/deliveries/{id}/text-chunks", tag = "delivery", security(("bearer" = [])),
+#[utoipa::path(operation_id = "list_delivery_text_chunks", get, path = "/api/v1/deliveries/{id}/text-chunks", tag = "delivery", security(("bearer" = [])),
     params(("id" = Uuid, Path, description = "Text delivery identity"), TextChunksQuery), responses(
         (status = 200, description = "Owner's immutable offered UTF-8 chunks; a durable chunk is not proof it was written or read", body = [TextChunkRecord]),
         (status = 400, description = "Invalid UUID, cursor or page size", body = DeliveryErrorResponse),

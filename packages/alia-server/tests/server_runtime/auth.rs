@@ -3,7 +3,7 @@ use super::*;
 use alia_server::api::{auth, users};
 use alia_server::auth::AuthUser;
 use alia_server::entity::{refresh_token, user, user_identity_link};
-use alia_server::error::AppError;
+use alia_server::error::{AppError, AuthFailure};
 use alia_server::state::AppState;
 use axum::Json;
 use axum::extract::{Path, State};
@@ -148,7 +148,7 @@ async fn concurrent_first_registrations_elect_one_admin_and_allow_later_promotio
         assert_eq!(
             results
                 .iter()
-                .filter(|result| matches!(result, Err(AppError::Validation(_))))
+                .filter(|result| matches!(result, Err(AppError::EmailAlreadyRegistered)))
                 .count(),
             1
         );
@@ -205,7 +205,10 @@ async fn concurrent_refresh_consumes_token_once_and_successor_remains_usable() {
         assert_eq!(
             results
                 .iter()
-                .filter(|result| matches!(result, Err(AppError::Auth(_))))
+                .filter(|result| matches!(
+                    result,
+                    Err(AppError::Unauthenticated(AuthFailure::RefreshTokenInvalid))
+                ))
                 .count(),
             1
         );
@@ -226,7 +229,7 @@ async fn concurrent_refresh_consumes_token_once_and_successor_remains_usable() {
         );
         assert!(matches!(
             refresh(state, &account.refresh_token).await,
-            Err(AppError::Auth(_))
+            Err(AppError::Unauthenticated(AuthFailure::RefreshTokenInvalid))
         ));
         let successor = results.into_iter().find_map(Result::ok).unwrap();
         let claims = state.jwt_keys.decode(&successor.access_token).unwrap();
@@ -251,13 +254,13 @@ async fn refresh_failure_preserves_original_token_and_invalid_tokens_create_no_s
         assert!(refresh_token::Entity::find().one(&state.db).await.unwrap().unwrap().revoked_at.is_none());
         state.db.execute_unprepared("DROP TRIGGER fail_refresh_insert ON refresh_tokens").await.unwrap();
         state.db.execute_unprepared("UPDATE users SET status='disabled'").await.unwrap();
-        assert!(matches!(refresh(state, &account.refresh_token).await, Err(AppError::Auth(_))));
+        assert!(matches!(refresh(state, &account.refresh_token).await, Err(AppError::Unauthenticated(AuthFailure::AccountInactive))));
         assert!(refresh_token::Entity::find().one(&state.db).await.unwrap().unwrap().revoked_at.is_none());
         state.db.execute_unprepared("UPDATE users SET status='active'").await.unwrap();
         let successor = refresh(state, &account.refresh_token).await.unwrap();
         state.db.execute_unprepared("UPDATE refresh_tokens SET expires_at=now() - interval '1 second' WHERE revoked_at IS NULL").await.unwrap();
-        assert!(matches!(refresh(state, &successor.refresh_token).await, Err(AppError::Auth(_))));
-        assert!(matches!(refresh(state, "unknown-token").await, Err(AppError::Auth(_))));
+        assert!(matches!(refresh(state, &successor.refresh_token).await, Err(AppError::Unauthenticated(AuthFailure::RefreshTokenInvalid))));
+        assert!(matches!(refresh(state, "unknown-token").await, Err(AppError::Unauthenticated(AuthFailure::RefreshTokenInvalid))));
         assert_eq!(refresh_token::Entity::find().count(&state.db).await.unwrap(), 2);
         runtime.shutdown().await.unwrap();
     }).await;

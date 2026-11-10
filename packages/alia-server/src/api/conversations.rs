@@ -3,15 +3,16 @@ use axum::routing::get;
 use axum::{Json, Router};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
 use crate::entity::{chat_message, chat_session, conversation_event};
-use crate::error::{AppError, Result};
+use crate::error::{AppError, ErrorResponse, Result};
 use crate::expression::{ExpressionTrace, ExpressionTraceEvent, expression_traces_from_events};
 use crate::state::AppState;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct Conversation {
     pub id: Uuid,
     pub channel_id: String,
@@ -21,7 +22,7 @@ pub struct Conversation {
     pub updated_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct Message {
     pub id: Uuid,
     pub role: String,
@@ -30,7 +31,7 @@ pub struct Message {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct AgentEvent {
     pub id: Uuid,
     pub turn_id: Uuid,
@@ -42,18 +43,40 @@ pub struct AgentEvent {
     pub created_at: String,
 }
 
-#[derive(Deserialize)]
-struct ListQuery {
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct ListQuery {
+    /// Maximum records to return; zero is accepted. The endpoint clamps larger values.
     limit: Option<u64>,
 }
 
-#[derive(Deserialize)]
-struct TraceQuery {
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct TraceQuery {
+    /// Maximum source events; defaults to 1000 and clamps to 5000. Zero is accepted.
     limit: Option<u64>,
     turn_id: Option<Uuid>,
 }
 
-async fn list_conversations(
+#[derive(Serialize, ToSchema)]
+pub struct DeleteConversationResult {
+    pub success: bool,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/conversations",
+    operation_id = "list_conversations",
+    tag = "conversations",
+    security(("bearer" = [])),
+    params(ListQuery),
+    responses(
+        (status = 200, description = "Conversations ordered by most recently updated; administrators see all, others only their own. limit defaults to 100 and clamps to 500.", body = [Conversation]),
+        (status = 400, description = "Malformed UUID or query: Axum plain-text rejection", body = String, content_type = "text/plain"),
+        (status = 500, description = "Account or conversation database query failed", body = ErrorResponse)
+    )
+)]
+pub async fn list_conversations(
     State(state): State<AppState>,
     auth: AuthUser,
     Query(query): Query<ListQuery>,
@@ -74,7 +97,22 @@ async fn list_conversations(
     ))
 }
 
-async fn get_conversation(
+#[utoipa::path(
+    get,
+    path = "/api/v1/conversations/{id}",
+    operation_id = "get_conversation",
+    tag = "conversations",
+    security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Conversation identity")),
+    responses(
+        (status = 200, description = "Conversation owned by this user, or any conversation for an administrator.", body = Conversation),
+        (status = 400, description = "Malformed UUID or query: Axum plain-text rejection", body = String, content_type = "text/plain"),
+        (status = 403, description = "Conversation belongs to another user; administrators are allowed", body = ErrorResponse),
+        (status = 404, description = "Conversation does not exist", body = ErrorResponse),
+        (status = 500, description = "Account or conversation database query failed", body = ErrorResponse)
+    )
+)]
+pub async fn get_conversation(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
@@ -83,20 +121,50 @@ async fn get_conversation(
     Ok(Json(conversation_response(session)))
 }
 
-async fn delete_conversation(
+#[utoipa::path(
+    delete,
+    path = "/api/v1/conversations/{id}",
+    operation_id = "delete_conversation",
+    tag = "conversations",
+    security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Conversation identity")),
+    responses(
+        (status = 200, description = "Conversation deleted after owner or administrator authorization.", body = DeleteConversationResult),
+        (status = 400, description = "Malformed UUID or query: Axum plain-text rejection", body = String, content_type = "text/plain"),
+        (status = 403, description = "Conversation belongs to another user; administrators are allowed", body = ErrorResponse),
+        (status = 404, description = "Conversation does not exist", body = ErrorResponse),
+        (status = 500, description = "Account or conversation database query failed", body = ErrorResponse)
+    )
+)]
+pub async fn delete_conversation(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-) -> Result<Json<serde_json::Value>> {
+) -> Result<Json<DeleteConversationResult>> {
     let _ = load_authorized_session(&state, &auth, id).await?;
     chat_session::Entity::delete_by_id(id)
         .exec(&state.db)
         .await
         .map_err(AppError::Database)?;
-    Ok(Json(serde_json::json!({"success": true})))
+    Ok(Json(DeleteConversationResult { success: true }))
 }
 
-async fn get_messages(
+#[utoipa::path(
+    get,
+    path = "/api/v1/conversations/{id}/messages",
+    operation_id = "list_conversation_messages",
+    tag = "conversations",
+    security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Conversation identity"), ListQuery),
+    responses(
+        (status = 200, description = "Messages ordered by creation time ascending. limit defaults to 1000 and clamps to 5000.", body = [Message]),
+        (status = 400, description = "Malformed UUID or query: Axum plain-text rejection", body = String, content_type = "text/plain"),
+        (status = 403, description = "Conversation belongs to another user; administrators are allowed", body = ErrorResponse),
+        (status = 404, description = "Conversation does not exist", body = ErrorResponse),
+        (status = 500, description = "Account or conversation database query failed", body = ErrorResponse)
+    )
+)]
+pub async fn get_messages(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
@@ -114,7 +182,22 @@ async fn get_messages(
     Ok(Json(messages.into_iter().map(message_response).collect()))
 }
 
-async fn get_events(
+#[utoipa::path(
+    get,
+    path = "/api/v1/conversations/{id}/events",
+    operation_id = "list_conversation_events",
+    tag = "conversations",
+    security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Conversation identity"), ListQuery),
+    responses(
+        (status = 200, description = "Events ordered by creation time and sequence ascending. limit defaults to 1000 and clamps to 5000.", body = [AgentEvent]),
+        (status = 400, description = "Malformed UUID or query: Axum plain-text rejection", body = String, content_type = "text/plain"),
+        (status = 403, description = "Conversation belongs to another user; administrators are allowed", body = ErrorResponse),
+        (status = 404, description = "Conversation does not exist", body = ErrorResponse),
+        (status = 500, description = "Account or conversation database query failed", body = ErrorResponse)
+    )
+)]
+pub async fn get_events(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
@@ -133,7 +216,22 @@ async fn get_events(
     Ok(Json(events.into_iter().map(agent_event_response).collect()))
 }
 
-async fn get_expression_traces(
+#[utoipa::path(
+    get,
+    path = "/api/v1/conversations/{id}/expression-traces",
+    operation_id = "list_conversation_expression_traces",
+    tag = "conversations",
+    security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Conversation identity"), TraceQuery),
+    responses(
+        (status = 200, description = "Expression traces grouped and ordered by turn UUID, with source events ordered by sequence. limit applies to source events, not traces.", body = [ExpressionTrace]),
+        (status = 400, description = "Malformed UUID or query: Axum plain-text rejection", body = String, content_type = "text/plain"),
+        (status = 403, description = "Conversation belongs to another user; administrators are allowed", body = ErrorResponse),
+        (status = 404, description = "Conversation does not exist", body = ErrorResponse),
+        (status = 500, description = "Account or conversation database query failed", body = ErrorResponse)
+    )
+)]
+pub async fn get_expression_traces(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,

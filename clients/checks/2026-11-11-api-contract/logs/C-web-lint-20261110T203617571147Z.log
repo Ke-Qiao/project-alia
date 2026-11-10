@@ -1,0 +1,27 @@
+COMMAND: pnpm web:lint
+START_UTC: 20261110T203617571147Z
+
+> project-alia@ web:lint /Users/ke-qiao/Developer/project-alia
+> pnpm --dir clients/web lint
+
+
+> @alia/web@ lint /Users/ke-qiao/Developer/project-alia/clients/web
+> eslint .
+
+
+/Users/ke-qiao/Developer/project-alia/clients/web/lib/auth/session-flow.test.mjs
+  269:37  error  Async arrow function has no 'await' expression                                                           require-await
+  302:25  error  Prefer `extractErrorMessage` from `foxts/extract-error-message` over manually extracting error messages  sukka/prefer-foxts-error-util
+
+/Users/ke-qiao/Developer/project-alia/clients/web/lib/mock/host.ts
+   26:54  error    Prefer logical conditional object spreads            sukka/unicorn/consistent-conditional-object-spread
+  133:5   warning  Combine this guard with the previous one using `||`  sukka/unicorn/prefer-combined-guards
+  138:5   warning  Combine this guard with the previous one using `||`  sukka/unicorn/prefer-combined-guards
+
+✖ 5 problems (3 errors, 2 warnings)
+  1 error and 2 warnings potentially fixable with the `--fix` option.
+
+ ELIFECYCLE  Command failed with exit code 1.
+ ELIFECYCLE  Command failed with exit code 1.
+
+EXIT_CODE: 1

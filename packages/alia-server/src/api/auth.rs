@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::auth::{EMAIL_IDENTITY_PROVIDER, hash_password, verify_password};
 use crate::entity::{refresh_token, user, user_identity_link};
-use crate::error::{AppError, Result};
+use crate::error::{AppError, AuthFailure, ErrorResponse, Result};
 use crate::state::AppState;
 
 const ROLE_ADMIN: &str = "admin";
@@ -182,7 +182,12 @@ async fn find_active_user_by_email(state: &AppState, email: &str) -> Result<Opti
     request_body = LoginRequest,
     responses(
         (status = 200, description = "Login successful", body = AuthResponse),
-        (status = 401, description = "Invalid credentials")
+        (status = 400, description = "Invalid email address: JSON error; malformed JSON or body read failure: plain text", content((ErrorResponse = "application/json"), (String = "text/plain"))),
+        (status = 401, description = "Invalid credentials", body = ErrorResponse),
+        (status = 413, description = "JSON body exceeds the 2 MiB limit", body = String, content_type = "text/plain"),
+        (status = 415, description = "Missing or unsupported JSON Content-Type", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON fields are missing or have invalid types", body = String, content_type = "text/plain"),
+        (status = 500, description = "Account storage or token issuance failed", body = ErrorResponse)
     )
 )]
 pub async fn login(
@@ -192,14 +197,14 @@ pub async fn login(
 ) -> Result<Json<AuthResponse>> {
     let email = normalize_email(&req.email)?;
     let Some(user) = find_active_user_by_email(&state, &email).await? else {
-        return Err(AppError::Auth("invalid email or password".into()));
+        return Err(AppError::Unauthenticated(AuthFailure::InvalidCredentials));
     };
 
     let password_ok = verify_password(&req.password, &user.password_hash)
         .await
         .map_err(AppError::Internal)?;
     if !password_ok {
-        return Err(AppError::Auth("invalid email or password".into()));
+        return Err(AppError::Unauthenticated(AuthFailure::InvalidCredentials));
     }
 
     let now = Utc::now();
@@ -220,7 +225,12 @@ pub async fn login(
     request_body = RegisterRequest,
     responses(
         (status = 200, description = "Registration successful", body = AuthResponse),
-        (status = 400, description = "Validation error")
+        (status = 400, description = "Invalid email, name or password: JSON error; malformed JSON or body read failure: plain text", content((ErrorResponse = "application/json"), (String = "text/plain"))),
+        (status = 409, description = "Email already registered", body = ErrorResponse),
+        (status = 413, description = "JSON body exceeds the 2 MiB limit", body = String, content_type = "text/plain"),
+        (status = 415, description = "Missing or unsupported JSON Content-Type", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON fields are missing or have invalid types", body = String, content_type = "text/plain"),
+        (status = 500, description = "Registration storage or token issuance failed", body = ErrorResponse)
     )
 )]
 pub async fn register(
@@ -246,7 +256,7 @@ pub async fn register(
         .await?
         .is_some()
     {
-        return Err(AppError::Validation("email already registered".into()));
+        return Err(AppError::EmailAlreadyRegistered);
     }
 
     let existing_users = user::Entity::find().count(&tx).await?;
@@ -294,11 +304,17 @@ pub async fn register(
 #[utoipa::path(
     post,
     path = "/api/v1/auth/refresh",
+    operation_id = "refresh_token",
     tag = "auth",
     request_body = RefreshRequest,
     responses(
         (status = 200, description = "Token refreshed", body = TokenResponse),
-        (status = 401, description = "Invalid refresh token")
+        (status = 400, description = "Malformed JSON or body read failure", body = String, content_type = "text/plain"),
+        (status = 401, description = "Invalid refresh token or inactive account", body = ErrorResponse),
+        (status = 413, description = "JSON body exceeds the 2 MiB limit", body = String, content_type = "text/plain"),
+        (status = 415, description = "Missing or unsupported JSON Content-Type", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON fields are missing or have invalid types", body = String, content_type = "text/plain"),
+        (status = 500, description = "Token storage or issuance failed", body = ErrorResponse)
     )
 )]
 pub async fn refresh(
@@ -320,14 +336,14 @@ pub async fn refresh(
         .await?
         .pop()
     else {
-        return Err(AppError::Auth("invalid refresh token".into()));
+        return Err(AppError::Unauthenticated(AuthFailure::RefreshTokenInvalid));
     };
 
     let Some(user) = user::Entity::find_by_id(stored.user_id).one(&tx).await? else {
-        return Err(AppError::Auth("invalid refresh token".into()));
+        return Err(AppError::Unauthenticated(AuthFailure::RefreshTokenInvalid));
     };
     if user.status != STATUS_ACTIVE {
-        return Err(AppError::Auth("user is not active".into()));
+        return Err(AppError::Unauthenticated(AuthFailure::AccountInactive));
     }
 
     let access_token = state
@@ -349,10 +365,30 @@ pub async fn refresh(
     }))
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct LogoutResult {
+    pub success: bool,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/logout",
+    operation_id = "logout",
+    tag = "auth",
+    request_body = RefreshRequest,
+    responses(
+        (status = 200, description = "Refresh token revoked or already absent", body = LogoutResult),
+        (status = 400, description = "Malformed JSON or body read failure", body = String, content_type = "text/plain"),
+        (status = 413, description = "JSON body exceeds the 2 MiB limit", body = String, content_type = "text/plain"),
+        (status = 415, description = "Missing or unsupported JSON Content-Type", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON fields are missing or have invalid types", body = String, content_type = "text/plain"),
+        (status = 500, description = "Token storage unavailable", body = ErrorResponse)
+    )
+)]
 pub async fn logout(
     State(state): State<AppState>,
     Json(req): Json<RefreshRequest>,
-) -> Result<Json<serde_json::Value>> {
+) -> Result<Json<LogoutResult>> {
     let token_hash = hash_refresh_token(req.refresh_token.trim());
     if let Some(stored) = refresh_token::Entity::find()
         .filter(refresh_token::Column::TokenHash.eq(token_hash))
@@ -366,7 +402,7 @@ pub async fn logout(
         }
     }
 
-    Ok(Json(serde_json::json!({"success": true})))
+    Ok(Json(LogoutResult { success: true }))
 }
 
 pub fn routes() -> Router<AppState> {

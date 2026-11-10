@@ -1,0 +1,20 @@
+COMMAND: env NEXT_PUBLIC_ALIA_MOCK=1 NEXT_PUBLIC_ALIA_API_URL=http://alia-mock.invalid pnpm --dir clients/web exec next dev --hostname 127.0.0.1 --port 43110
+START_UTC: 20261110T204638024025Z
+▲ Next.js 16.4.5 (Turbopack)
+- Local:         http://127.0.0.1:43110
+- Network:       http://127.0.0.1:43110
+- Environments: .env.local
+✓ Ready in 160ms
+✓ Running next.config.ts took 13ms
+⨯ Another next dev server is already running.
+
+- Local:        http://localhost:3100
+- PID:          33908
+- Dir:          /Users/ke-qiao/Developer/project-alia/clients/web
+- Log:          .next/dev/logs/next-development.log
+
+You can access the existing server at http://localhost:3100,
+or run kill 33908 to stop it and start a new one.
+[?25h
+
+EXIT_CODE: 1

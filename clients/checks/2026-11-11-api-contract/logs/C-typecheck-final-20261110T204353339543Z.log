@@ -1,0 +1,12 @@
+COMMAND: pnpm web:typecheck
+START_UTC: 20261110T204353339543Z
+
+> project-alia@ web:typecheck /Users/ke-qiao/Developer/project-alia
+> pnpm --dir clients/web typecheck
+
+
+> @alia/web@ typecheck /Users/ke-qiao/Developer/project-alia/clients/web
+> tsc --noEmit
+
+
+EXIT_CODE: 0

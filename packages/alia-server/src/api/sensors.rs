@@ -136,7 +136,7 @@ fn default_quality() -> f32 {
     1.0
 }
 
-#[utoipa::path(
+#[utoipa::path(operation_id = "ingest_sensor_reading",
     post,
     path = "/api/v1/sensors/ingest",
     tag = "sensors",
@@ -173,7 +173,7 @@ pub async fn ingest_reading(
 
 // ── Batch ingest ────────────────────────────────────────────────────────
 
-#[utoipa::path(
+#[utoipa::path(operation_id = "ingest_sensor_batch",
     post,
     path = "/api/v1/sensors/ingest/batch",
     tag = "sensors",
@@ -213,7 +213,7 @@ pub async fn ingest_batch(
 
 // ── Get latest reading ──────────────────────────────────────────────────
 
-#[utoipa::path(
+#[utoipa::path(operation_id = "get_sensor_latest",
     get,
     path = "/api/v1/sensors/{sensor_id}/latest",
     tag = "sensors",
@@ -232,7 +232,7 @@ pub async fn get_latest(
 
 // ── Query readings ──────────────────────────────────────────────────────
 
-#[utoipa::path(
+#[utoipa::path(operation_id = "query_sensor_readings",
     get,
     path = "/api/v1/sensors/query",
     tag = "sensors",

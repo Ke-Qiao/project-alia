@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardFooter, CardHeader, CardPanel, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RequestError } from '@/components/request-error';
-import { getMe } from '@/lib/api/generated';
+import { getMe, logout } from '@/lib/api/generated';
 import { sessionStore } from '@/lib/auth/session';
-import { useData } from '@/lib/data';
+import { signOut } from '@/lib/auth/sign-out';
+import { useData, useMutation } from '@/lib/data';
 
 // Values accepted by packages/alia-server/src/api/users.rs.
 const ROLE_LABELS = new Map([['admin', '管理员'], ['user', '成员']]);
@@ -29,6 +30,7 @@ function Row({ label, children }: React.PropsWithChildren<{ label: string }>) {
 }
 
 export function AccountCard() {
+  const { trigger: revokeRefreshToken } = useMutation(logout);
   const { data, error, isValidating, mutate } = useData(getMe, {});
   const failed = error !== undefined;
 
@@ -57,7 +59,7 @@ export function AccountCard() {
       </CardPanel>
       <CardFooter className="justify-between gap-4 border-t">
         <p className="text-muted-foreground text-sm">退出后需要重新登录才能访问。</p>
-        <Button onClick={() => sessionStore.clear('manual')} variant="outline">退出登录</Button>
+        <Button onClick={() => { void signOut(sessionStore, refreshToken => revokeRefreshToken({ body: { refresh_token: refreshToken } })); }} variant="outline">退出登录</Button>
       </CardFooter>
     </Card>
   );

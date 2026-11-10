@@ -11,7 +11,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
-use crate::error::{AppError, Result};
+use crate::error::{AppError, ErrorResponse, Result};
 use crate::modules::companion::repository::{RepoError, ShadowReport};
 use crate::modules::companion::types::{CompanionMode, CompanionPolicy, PolicySnapshot};
 use crate::state::AppState;
@@ -38,8 +38,7 @@ pub struct ShadowRequest {
     appraisal_ids: Vec<Uuid>,
 }
 
-/// Companion errors retain the shared AppError wire shape. Identity fields are
-/// required only on their corresponding tagged mutation/erasure variant.
+/// Companion mutation and erasure receipts require their original operation identity.
 #[derive(Serialize, ToSchema)]
 pub struct CompanionErrorResponse {
     pub error: CompanionErrorDetail,
@@ -48,24 +47,6 @@ pub struct CompanionErrorResponse {
 #[derive(Serialize, ToSchema)]
 #[serde(tag = "code", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CompanionErrorDetail {
-    AuthInvalidCredentials {
-        message: String,
-    },
-    AuthForbidden {
-        message: String,
-    },
-    ValidationError {
-        message: String,
-    },
-    VersionConflict {
-        message: String,
-    },
-    ServiceUnavailable {
-        message: String,
-    },
-    InternalDbError {
-        message: String,
-    },
     CompanionPolicyUnconfirmed {
         message: String,
         expected_revision: i64,
@@ -82,12 +63,12 @@ pub enum CompanionErrorDetail {
 
 /// Read the authenticated owner's current policy. The account is rechecked in
 /// SQL; admin roles do not select another owner. An absent policy is seeded as shadow.
-#[utoipa::path(get, path = "/api/v1/companion/policy", tag = "companion", security(("bearer" = [])), responses(
+#[utoipa::path(get, path = "/api/v1/companion/policy", operation_id = "get_companion_policy", tag = "companion", security(("bearer" = [])), responses(
     (status = 200, description = "Current owner policy and positive CAS revision", body = PolicySnapshot),
-    (status = 401, description = "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout", body = CompanionErrorResponse),
-    (status = 403, description = "AUTH_FORBIDDEN: current owner authority unavailable", body = CompanionErrorResponse),
-    (status = 503, description = "SERVICE_UNAVAILABLE: read/storage unavailable; this is not a mutation receipt", body = CompanionErrorResponse),
-    (status = 500, description = "INTERNAL_DB_ERROR: account lookup database failure", body = CompanionErrorResponse)
+    (status = 401, description = "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account", body = ErrorResponse),
+    (status = 403, description = "AUTH_FORBIDDEN: current owner authority unavailable", body = ErrorResponse),
+    (status = 503, description = "SERVICE_UNAVAILABLE: read/storage unavailable; this is not a mutation receipt", body = ErrorResponse),
+    (status = 500, description = "INTERNAL_DB_ERROR: account lookup database failure", body = ErrorResponse)
 ))]
 pub async fn policy(State(state): State<AppState>, auth: AuthUser) -> Result<Response> {
     let policy = tokio::time::timeout(REQUEST_BUDGET, state.modules.companion.policy(auth.id))
@@ -101,15 +82,15 @@ pub async fn policy(State(state): State<AppState>, auth: AuthUser) -> Result<Res
 /// Enabled requires an installed live runner; it does not prove a device is ready.
 /// On 503, GET and compare the original intent before retrying that exact revision
 /// and policy. Never silently advance expected_revision to overwrite another change.
-#[utoipa::path(put, path = "/api/v1/companion/policy", tag = "companion", security(("bearer" = [])),
+#[utoipa::path(put, path = "/api/v1/companion/policy", operation_id = "update_companion_policy", tag = "companion", security(("bearer" = [])),
     request_body = PolicyRequest, responses(
     (status = 200, description = "Committed replacement with incremented revision", body = PolicySnapshot),
-    (status = 400, description = "VALIDATION_ERROR: malformed/unknown fields, invalid bounds, or live runner unavailable for enabled mode", body = CompanionErrorResponse),
-    (status = 401, description = "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout", body = CompanionErrorResponse),
-    (status = 403, description = "AUTH_FORBIDDEN: current owner authority unavailable", body = CompanionErrorResponse),
-    (status = 409, description = "VERSION_CONFLICT: original revision is no longer current; read current policy and decide explicitly", body = CompanionErrorResponse),
+    (status = 400, description = "VALIDATION_ERROR: malformed/unknown fields, invalid bounds, or live runner unavailable for enabled mode", body = ErrorResponse),
+    (status = 401, description = "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account", body = ErrorResponse),
+    (status = 403, description = "AUTH_FORBIDDEN: current owner authority unavailable", body = ErrorResponse),
+    (status = 409, description = "VERSION_CONFLICT: original revision is no longer current; read current policy and decide explicitly", body = ErrorResponse),
     (status = 503, description = "COMPANION_POLICY_UNCONFIRMED: completion unknown, with original expected_revision; read current policy before retrying the same intent", body = CompanionErrorResponse),
-    (status = 500, description = "INTERNAL_DB_ERROR: account lookup database failure", body = CompanionErrorResponse)
+    (status = 500, description = "INTERNAL_DB_ERROR: account lookup database failure", body = ErrorResponse)
 ))]
 pub async fn update_policy(
     State(state): State<AppState>,
@@ -150,16 +131,16 @@ pub async fn update_policy(
 /// live admission budget. Request fields cannot supply owner, opportunity or authority.
 /// Repeating the same operation and Appraisal set reads its original frozen receipt;
 /// changing that intent conflicts. A new shadow operation while enabled is unavailable.
-#[utoipa::path(post, path = "/api/v1/companion/shadow", tag = "companion", security(("bearer" = [])),
+#[utoipa::path(post, path = "/api/v1/companion/shadow", operation_id = "run_companion_shadow", tag = "companion", security(("bearer" = [])),
     request_body = ShadowRequest, responses(
     (status = 200, description = "Bounded frozen report; up to 32 examined sources and 4 decisions, never output authority", body = ShadowReport),
-    (status = 400, description = "VALIDATION_ERROR: malformed/unknown fields, nil IDs, duplicate IDs or batch outside 1–32", body = CompanionErrorResponse),
-    (status = 401, description = "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout", body = CompanionErrorResponse),
-    (status = 403, description = "AUTH_FORBIDDEN: canonical sources or current private-read authority unavailable", body = CompanionErrorResponse),
-    (status = 409, description = "VERSION_CONFLICT: operation identity/worklist or canonical policy authority changed", body = CompanionErrorResponse),
+    (status = 400, description = "VALIDATION_ERROR: malformed/unknown fields, nil IDs, duplicate IDs or batch outside 1–32", body = ErrorResponse),
+    (status = 401, description = "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account", body = ErrorResponse),
+    (status = 403, description = "AUTH_FORBIDDEN: canonical sources or current private-read authority unavailable", body = ErrorResponse),
+    (status = 409, description = "VERSION_CONFLICT: operation identity/worklist or canonical policy authority changed", body = ErrorResponse),
     (status = 410, description = "COMPANION_EVIDENCE_ERASED with operation_id: original evidence erased, expired or revoked; it cannot be reconstructed by retry", body = CompanionErrorResponse),
     (status = 503, description = "COMPANION_SHADOW_UNCONFIRMED with operation_id: completion unknown; retry exactly the same operation_id and appraisal_ids", body = CompanionErrorResponse),
-    (status = 500, description = "INTERNAL_DB_ERROR: account lookup database failure", body = CompanionErrorResponse)
+    (status = 500, description = "INTERNAL_DB_ERROR: account lookup database failure", body = ErrorResponse)
 ))]
 pub async fn shadow(
     State(state): State<AppState>,
@@ -201,16 +182,16 @@ pub async fn shadow(
 
 /// Read and deterministically replay this owner's original frozen report after
 /// rechecking current source/owner authority. This never retries audio or grants live output.
-#[utoipa::path(get, path = "/api/v1/companion/replay/{operation_id}", tag = "companion", security(("bearer" = [])),
+#[utoipa::path(get, path = "/api/v1/companion/replay/{operation_id}", operation_id = "get_companion_replay", tag = "companion", security(("bearer" = [])),
     params(("operation_id" = Uuid, Path, description = "Original nonzero shadow operation identity")), responses(
     (status = 200, description = "Original frozen inputs and pure decision after current authority recheck", body = ShadowReport),
-    (status = 400, description = "Nil UUID: JSON VALIDATION_ERROR; malformed UUID: Axum plain-text path rejection", content((CompanionErrorResponse = "application/json"), (String = "text/plain"))),
-    (status = 401, description = "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout", body = CompanionErrorResponse),
-    (status = 403, description = "AUTH_FORBIDDEN: missing/other-owner operation or current private-read authority unavailable; no existence disclosure", body = CompanionErrorResponse),
-    (status = 409, description = "VERSION_CONFLICT: canonical policy authority changed", body = CompanionErrorResponse),
+    (status = 400, description = "Nil UUID: JSON VALIDATION_ERROR; malformed UUID: Axum plain-text path rejection", content((ErrorResponse = "application/json"), (String = "text/plain"))),
+    (status = 401, description = "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account", body = ErrorResponse),
+    (status = 403, description = "AUTH_FORBIDDEN: missing/other-owner operation or current private-read authority unavailable; no existence disclosure", body = ErrorResponse),
+    (status = 409, description = "VERSION_CONFLICT: canonical policy authority changed", body = ErrorResponse),
     (status = 410, description = "COMPANION_EVIDENCE_ERASED with operation_id: private evidence erased, expired or revoked; replay is unavailable", body = CompanionErrorResponse),
-    (status = 503, description = "SERVICE_UNAVAILABLE: read/storage unavailable; retry this same read", body = CompanionErrorResponse),
-    (status = 500, description = "INTERNAL_DB_ERROR: account lookup database failure", body = CompanionErrorResponse)
+    (status = 503, description = "SERVICE_UNAVAILABLE: read/storage unavailable; retry this same read", body = ErrorResponse),
+    (status = 500, description = "INTERNAL_DB_ERROR: account lookup database failure", body = ErrorResponse)
 ))]
 pub async fn replay(
     State(state): State<AppState>,

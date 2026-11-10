@@ -1,0 +1,8 @@
+COMMAND: python3 /tmp/alia-api-coverage-audit.py clients/web/openapi/openapi.json
+START_UTC: 20261110T204122198368Z
+Actual: 143 mounted, 47 declared, 96 missing, 25 files.
+root route(s): GET /health
+distinct paths: 108
+Spec: 47 operations, 40 paths.
+
+EXIT_CODE: 0

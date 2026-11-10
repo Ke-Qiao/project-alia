@@ -1,0 +1,38 @@
+COMMAND: pnpm web:build
+START_UTC: 20261110T204603189661Z
+
+> project-alia@ web:build /Users/ke-qiao/Developer/project-alia
+> pnpm --dir clients/web build
+
+
+> @alia/web@ build /Users/ke-qiao/Developer/project-alia/clients/web
+> next build
+
+▲ Next.js 16.4.5 (Turbopack)
+- Environments: .env.local
+✓ Running next.config.ts took 11ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 1116ms
+  Running TypeScript ...
+  Finished TypeScript in 1332ms ...
+  Collecting page data using 7 workers ...
+  Generating static pages using 7 workers (0/6) ...
+  Generating static pages using 7 workers (1/6) 
+  Generating static pages using 7 workers (2/6) 
+  Generating static pages using 7 workers (4/6) 
+✓ Generating static pages using 7 workers (6/6) in 199ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /account
+├ ○ /login
+└ ○ /register
+
+
+○  (Static)  prerendered as static content
+
+
+EXIT_CODE: 0

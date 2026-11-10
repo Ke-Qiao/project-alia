@@ -1,0 +1,65 @@
+Browser check: existing 3100 dev preview remained Loading, no form submitted there. Used successful production build on dedicated loopback port 43110; verified visible Mock 数据 before form interaction.
+Duplicate member email registration: visible 该邮箱已注册，请直接登录。; screenshot duplicate-email.jpg.
+Login as seeded Mock member succeeded, navigated to account and displayed member profile.
+Browser tab: 2, Title: "账号 · Alia", URL: "http://127.0.0.1:43110/account".
+1 AXWebArea 账号 · Alia, URL: 127.0.0.1:43110/account
+	2 container
+		17 container
+			18 text Alia
+			19 text Mock 数据
+			20 content list
+				21 link Description: 概览, Value: 127.0.0.1:43110/
+				22 link Description: 账号, Value: 127.0.0.1:43110/account
+			23 text Mock 成员 member@alia.test
+		24 container
+			25 button 收起或展开侧边栏
+			26 heading 账号, Value: 1
+				27 text 账号
+			28 text 当前登录的账号，以及退出登录。
+			29 heading 账号信息, Value: 2
+				30 text 账号信息
+			31 definition list
+				32 container 名称
+					33 text 名称
+				34 text Mock 成员
+				35 container 邮箱
+					36 text 邮箱
+				37 text member@alia.test
+				38 container 角色
+					39 text 角色
+				40 text 成员
+				41 container 状态
+					42 text 状态
+				43 text 正常
+				44 container 注册时间
+					45 text 注册时间
+				46 text 2026/10/1 16:30:00
+				47 container 上次登录
+					48 text 上次登录
+				49 text 2026/11/11 04:48:41
+			50 text 退出后需要重新登录才能访问。
+			51 button 退出登录
+		16 text 账号 · Alia
+
+The focused UI element is 22 link Description: 账号, URL: 127.0.0.1:43110/account
+Clicked 退出登录; returned to login screen.
+Browser tab: 2, Title: "登录 · Alia", URL: "http://127.0.0.1:43110/login".
+1 AXWebArea 登录 · Alia, URL: 127.0.0.1:43110/login
+	2 container
+		17 container
+			18 text Mock 数据
+			19 heading 登录 Alia, Value: 1
+				20 text 登录 Alia
+			21 text 使用邮箱和密码登录。
+			22 container
+				23 text 邮箱
+				24 text field (settable) 邮箱
+				25 text 密码
+				26 text field (settable) 密码
+				27 button 登录
+			28 text 还没有账号？
+			29 link Description: 注册, Value: 127.0.0.1:43110/register
+		16 text 登录 · Alia
+
+The focused UI element is 1 AXWebArea 登录 · Alia, URL: 127.0.0.1:43110/login
+RESULT: PASS for Mock registration-field and login/account/logout UI flow; not real backend validation.

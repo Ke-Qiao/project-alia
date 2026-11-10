@@ -1,0 +1,9 @@
+COMMAND: python3 /private/tmp/alia-contract-spec-audit.py
+START_UTC: 20261110T204517360801Z
+PASS: 39 -> 47 operations; exactly 8 requested additions
+PASS: 47 unique operationIds, no numeric suffixes
+PASS: 42 secured operations have JSON 401 and 503 schemas
+PASS: all existing success responses and 47 recursively referenced schemas unchanged
+PASS: four shared error schemas present; logout remains public
+
+EXIT_CODE: 0

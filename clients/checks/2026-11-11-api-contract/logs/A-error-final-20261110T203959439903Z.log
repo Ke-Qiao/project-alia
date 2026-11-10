@@ -1,0 +1,12 @@
+COMMAND: cargo test -p alia-server --lib error::tests --offline --locked
+START_UTC: 20261110T203959439903Z
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.58s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-7935b3105a1c6046)
+
+running 1 test
+test error::tests::app_errors_publish_status_code_reason_and_safe_message ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 418 filtered out; finished in 0.00s
+
+
+EXIT_CODE: 0

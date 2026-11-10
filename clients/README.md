@@ -91,16 +91,24 @@ bearer security in OpenAPI.
   because the server revokes a refresh token when it is used.
 - Only a 401 from `/auth/refresh` ends the session ("登录已过期"). Network
   failures and 5xx leave it in place.
-- A 401 from `/auth/login` means rejected credentials. The server uses the
-  same status and code for a disabled account.
+- A 401 from `/auth/login` means rejected credentials, with
+  `reason: invalid_credentials`; disabled accounts receive the same response.
 - Every thrown error is an `ApiError` (`lib/api-error.ts`) with the HTTP status,
   or status 0 when no response arrived. The server's error body
-  `{ error: { code, message } }` is not declared in OpenAPI and is read defensively.
+  `{ error: { code, reason?, message } }` is declared in OpenAPI. The client uses
+  generated `ErrorCode` and `ErrorReason` types and still checks response shapes
+  because a proxy or network failure may not return an Alia error.
+- Registration reports a duplicate email as 409 `ALREADY_EXISTS` with
+  `reason: email_already_registered`; the form uses this field, never message text.
+- An account-verification outage returns 503 and keeps the local session.
 
-Sign-out clears the local session only. `POST /api/v1/auth/logout` exists on
-the server but has no `#[utoipa::path]`, so the generated client has no
-function for it and the refresh token stays valid until it expires (30 days by
-default). Declaring it and regenerating is the next backend-facing step.
+Sign-out immediately clears the local session, then calls the generated
+`logout` operation through the app's injected client with the captured refresh
+token. Failed requests are ignored without retries or blocking navigation.
+A late refresh response cannot restore the local session. The endpoint revokes
+only the supplied refresh token: a concurrent refresh may already have issued
+another token, and sign-out does not revoke that whole token family or existing
+access tokens. Changing that server authentication behavior is separate work.
 
 ### Mock mode
 

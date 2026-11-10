@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::auth::AuthUser;
 use crate::entity::user;
-use crate::error::{AppError, Result};
+use crate::error::{AppError, AuthFailure, ErrorResponse, Result};
 use crate::state::AppState;
 
 const ROLE_ADMIN: &str = "admin";
@@ -86,7 +86,7 @@ fn validate_status(status: &str) -> Result<String> {
 )]
 pub async fn get_me(State(state): State<AppState>, auth: AuthUser) -> Result<Json<UserResponse>> {
     let Some(user) = user::Entity::find_by_id(auth.id).one(&state.db).await? else {
-        return Err(AppError::Auth("authenticated user no longer exists".into()));
+        return Err(AppError::Unauthenticated(AuthFailure::AccountInactive));
     };
     Ok(Json(to_response(user)))
 }
@@ -240,7 +240,25 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-async fn update_user_me(
+#[utoipa::path(
+    patch,
+    path = "/api/v1/users/me",
+    operation_id = "update_me",
+    tag = "users",
+    security(("bearer" = [])),
+    request_body = UpdateUserRequest,
+    responses(
+        (status = 200, description = "Updated current user", body = UserResponse),
+        (status = 400, description = "Invalid name, role or status: JSON error; malformed JSON or body read failure: plain text", content((ErrorResponse = "application/json"), (String = "text/plain"))),
+        (status = 403, description = "Only administrators may update role or status", body = ErrorResponse),
+        (status = 404, description = "Current user no longer exists or was deleted", body = ErrorResponse),
+        (status = 413, description = "JSON body exceeds the 2 MiB limit", body = String, content_type = "text/plain"),
+        (status = 415, description = "Missing or unsupported JSON Content-Type", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON fields are missing or have invalid types", body = String, content_type = "text/plain"),
+        (status = 500, description = "User storage unavailable", body = ErrorResponse)
+    )
+)]
+pub async fn update_user_me(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(body): Json<UpdateUserRequest>,

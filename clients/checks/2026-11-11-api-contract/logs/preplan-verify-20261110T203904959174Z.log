@@ -1,0 +1,5 @@
+COMMAND: git ls-remote --heads origin refs/heads/codex/web-account-session
+START_UTC: 20261110T203904959174Z
+a2d5b092d6aeb78ce33956045be4da4518e83cee	refs/heads/codex/web-account-session
+
+EXIT_CODE: 0

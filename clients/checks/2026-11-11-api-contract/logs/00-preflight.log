@@ -1,0 +1,14 @@
+Start: codex/web-account-session @ a2d5b09; git status --short was empty.
+Branch created: codex/api-contract-errors.
+ALIA_TEST_DATABASE_URL is unset. Integration fixtures require disposable PostgreSQL. No database started.
+Toolchain: cargo 1.96.0; pinned Node v24.15.0 installed.
+Initial pnpm --version tried package manager auto-download and hung; interrupted, exit 130.
+Read-only magpie check: command unavailable; local gateway returned no data. No balance inferred.
+Initial compilation-only probe: cargo test -p alia-server --lib error --offline --locked --no-run
+   Compiling tower-http v0.6.8
+   Compiling reqwest v0.13.5
+   Compiling rig-reqwest v0.44.0
+   Compiling rig-core v0.44.0
+   Compiling rig-typesafeai v0.44.0
+   Compiling rig-agent v0.44.0
+Interrupted to serialize build after agent edits; exit 130; no test executed.

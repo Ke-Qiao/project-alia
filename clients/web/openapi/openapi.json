@@ -36,8 +36,150 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid email address: JSON error; malformed JSON or body read failure: plain text",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "401": {
-            "description": "Invalid credentials"
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds the 2 MiB limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Missing or unsupported JSON Content-Type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON fields are missing or have invalid types",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Account storage or token issuance failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "logout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Refresh token revoked or already absent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON or body read failure",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds the 2 MiB limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Missing or unsupported JSON Content-Type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON fields are missing or have invalid types",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Token storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -47,7 +189,7 @@
         "tags": [
           "auth"
         ],
-        "operationId": "refresh",
+        "operationId": "refresh_token",
         "requestBody": {
           "content": {
             "application/json": {
@@ -69,8 +211,65 @@
               }
             }
           },
+          "400": {
+            "description": "Malformed JSON or body read failure",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "401": {
-            "description": "Invalid refresh token"
+            "description": "Invalid refresh token or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds the 2 MiB limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Missing or unsupported JSON Content-Type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON fields are missing or have invalid types",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Token storage or issuance failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -103,7 +302,69 @@
             }
           },
           "400": {
-            "description": "Validation error"
+            "description": "Invalid email, name or password: JSON error; malformed JSON or body read failure: plain text",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds the 2 MiB limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Missing or unsupported JSON Content-Type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON fields are missing or have invalid types",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Registration storage or token issuance failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -114,7 +375,7 @@
           "companion"
         ],
         "summary": "Read the authenticated owner's current policy. The account is rechecked in\nSQL; admin roles do not select another owner. An absent policy is seeded as shadow.",
-        "operationId": "policy",
+        "operationId": "get_companion_policy",
         "responses": {
           "200": {
             "description": "Current owner policy and positive CAS revision",
@@ -127,11 +388,11 @@
             }
           },
           "401": {
-            "description": "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout",
+            "description": "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -141,7 +402,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -151,7 +412,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -161,7 +422,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -178,7 +439,7 @@
           "companion"
         ],
         "summary": "Replace all policy fields using compare-and-swap. Unknown fields are rejected.\nEnabled requires an installed live runner; it does not prove a device is ready.\nOn 503, GET and compare the original intent before retrying that exact revision\nand policy. Never silently advance expected_revision to overwrite another change.",
-        "operationId": "update_policy",
+        "operationId": "update_companion_policy",
         "requestBody": {
           "content": {
             "application/json": {
@@ -205,17 +466,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           },
           "401": {
-            "description": "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout",
+            "description": "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -225,7 +486,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -235,7 +496,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -245,7 +506,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -255,7 +516,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/CompanionErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -274,7 +542,7 @@
           "companion"
         ],
         "summary": "Read and deterministically replay this owner's original frozen report after\nrechecking current source/owner authority. This never retries audio or grants live output.",
-        "operationId": "replay",
+        "operationId": "get_companion_replay",
         "parameters": [
           {
             "name": "operation_id",
@@ -303,7 +571,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               },
               "text/plain": {
@@ -314,11 +582,11 @@
             }
           },
           "401": {
-            "description": "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout",
+            "description": "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -328,7 +596,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -338,7 +606,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -358,7 +626,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -368,7 +636,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -387,7 +655,7 @@
           "companion"
         ],
         "summary": "Evaluate existing canonical Appraisals without generating output or consuming\nlive admission budget. Request fields cannot supply owner, opportunity or authority.\nRepeating the same operation and Appraisal set reads its original frozen receipt;\nchanging that intent conflicts. A new shadow operation while enabled is unavailable.",
-        "operationId": "shadow",
+        "operationId": "run_companion_shadow",
         "requestBody": {
           "content": {
             "application/json": {
@@ -414,17 +682,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           },
           "401": {
-            "description": "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout",
+            "description": "AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -434,7 +702,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -444,7 +712,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -464,7 +732,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -474,7 +742,629 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompanionErrorResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/CompanionErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/conversations": {
+      "get": {
+        "tags": [
+          "conversations"
+        ],
+        "operationId": "list_conversations",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum records to return; zero is accepted. The endpoint clamps larger values.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversations ordered by most recently updated; administrators see all, others only their own. limit defaults to 100 and clamps to 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Conversation"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed UUID or query: Axum plain-text rejection",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Account or conversation database query failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}": {
+      "get": {
+        "tags": [
+          "conversations"
+        ],
+        "operationId": "get_conversation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Conversation identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation owned by this user, or any conversation for an administrator.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed UUID or query: Axum plain-text rejection",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conversation belongs to another user; administrators are allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Account or conversation database query failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "conversations"
+        ],
+        "operationId": "delete_conversation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Conversation identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation deleted after owner or administrator authorization.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteConversationResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed UUID or query: Axum plain-text rejection",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conversation belongs to another user; administrators are allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Account or conversation database query failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}/events": {
+      "get": {
+        "tags": [
+          "conversations"
+        ],
+        "operationId": "list_conversation_events",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Conversation identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum records to return; zero is accepted. The endpoint clamps larger values.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events ordered by creation time and sequence ascending. limit defaults to 1000 and clamps to 5000.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentEvent"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed UUID or query: Axum plain-text rejection",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conversation belongs to another user; administrators are allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Account or conversation database query failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}/expression-traces": {
+      "get": {
+        "tags": [
+          "conversations"
+        ],
+        "operationId": "list_conversation_expression_traces",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Conversation identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum source events; defaults to 1000 and clamps to 5000. Zero is accepted.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "turn_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Expression traces grouped and ordered by turn UUID, with source events ordered by sequence. limit applies to source events, not traces.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExpressionTrace"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed UUID or query: Axum plain-text rejection",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conversation belongs to another user; administrators are allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Account or conversation database query failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}/messages": {
+      "get": {
+        "tags": [
+          "conversations"
+        ],
+        "operationId": "list_conversation_messages",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Conversation identity",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum records to return; zero is accepted. The endpoint clamps larger values.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Messages ordered by creation time ascending. limit defaults to 1000 and clamps to 5000.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Message"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed UUID or query: Axum plain-text rejection",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conversation belongs to another user; administrators are allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Account or conversation database query failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -527,7 +1417,14 @@
             }
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "Delivery absent or owned by another account",
@@ -544,7 +1441,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DeliveryErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -562,7 +1466,7 @@
         "tags": [
           "delivery"
         ],
-        "operationId": "text_chunks",
+        "operationId": "list_delivery_text_chunks",
         "parameters": [
           {
             "name": "id",
@@ -628,7 +1532,14 @@
             }
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "Delivery absent or owned by another account",
@@ -655,7 +1566,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DeliveryErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -673,7 +1591,7 @@
         "tags": [
           "execution"
         ],
-        "operationId": "list",
+        "operationId": "list_effects",
         "parameters": [
           {
             "name": "request_id",
@@ -734,14 +1652,28 @@
             }
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "503": {
             "description": "Execution ledger unavailable",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ExecutionErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -794,7 +1726,14 @@
             }
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "Effect absent or owned by another account",
@@ -811,7 +1750,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ExecutionErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -829,7 +1775,7 @@
         "tags": [
           "execution"
         ],
-        "operationId": "cancel",
+        "operationId": "cancel_effect",
         "parameters": [
           {
             "name": "id",
@@ -864,7 +1810,14 @@
             }
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "Effect absent or owned by another account",
@@ -891,7 +1844,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ExecutionErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -909,7 +1869,7 @@
         "tags": [
           "execution"
         ],
-        "operationId": "confirm",
+        "operationId": "confirm_effect",
         "parameters": [
           {
             "name": "id",
@@ -954,7 +1914,14 @@
             }
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "403": {
             "description": "Owner no longer authorized",
@@ -1001,7 +1968,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ExecutionErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -1019,7 +1993,7 @@
         "tags": [
           "embodiment"
         ],
-        "operationId": "list",
+        "operationId": "list_embodiment_operations",
         "parameters": [
           {
             "name": "limit",
@@ -1050,10 +2024,24 @@
             "description": "Invalid query"
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "503": {
-            "description": "Operation evidence unavailable"
+            "description": "Operation evidence unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1068,7 +2056,7 @@
         "tags": [
           "embodiment"
         ],
-        "operationId": "get_operation",
+        "operationId": "get_embodiment_operation",
         "parameters": [
           {
             "name": "id",
@@ -1093,13 +2081,27 @@
             "description": "Invalid identity"
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "Operation absent or owned by another account"
           },
           "503": {
-            "description": "Operation evidence unavailable"
+            "description": "Operation evidence unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1114,7 +2116,7 @@
         "tags": [
           "delivery"
         ],
-        "operationId": "get_delivery",
+        "operationId": "get_motion_delivery",
         "parameters": [
           {
             "name": "id",
@@ -1138,16 +2140,61 @@
             }
           },
           "400": {
-            "description": "Invalid UUID"
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Motion owner is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Motion delivery absent or owned by another account"
+            "description": "Motion delivery absent or owned by another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
           },
           "503": {
-            "description": "Ledger unavailable"
+            "description": "Ledger unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DeliveryErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1197,7 +2244,14 @@
             }
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "Response absent or owned by another account",
@@ -1214,7 +2268,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DeliveryErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -1267,7 +2328,14 @@
             }
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "Response absent or owned by another account",
@@ -1284,7 +2352,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DeliveryErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -1302,7 +2377,7 @@
         "tags": [
           "delivery"
         ],
-        "operationId": "list_deliveries",
+        "operationId": "list_response_deliveries",
         "parameters": [
           {
             "name": "id",
@@ -1340,7 +2415,14 @@
             }
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "Response absent or owned by another account",
@@ -1357,7 +2439,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DeliveryErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -1375,7 +2464,7 @@
         "tags": [
           "delivery"
         ],
-        "operationId": "response_events",
+        "operationId": "list_response_events",
         "parameters": [
           {
             "name": "id",
@@ -1440,7 +2529,14 @@
             }
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "Response absent or owned by another account",
@@ -1457,7 +2553,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DeliveryErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -1475,7 +2578,7 @@
         "tags": [
           "delivery"
         ],
-        "operationId": "for_response",
+        "operationId": "list_response_motion_deliveries",
         "parameters": [
           {
             "name": "id",
@@ -1502,16 +2605,61 @@
             }
           },
           "400": {
-            "description": "Invalid UUID"
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Motion owner is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Response absent or owned by another account"
+            "description": "Response absent or owned by another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryErrorResponse"
+                }
+              }
+            }
           },
           "503": {
-            "description": "Ledger unavailable"
+            "description": "Ledger unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DeliveryErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1537,6 +2685,26 @@
                   "items": {
                     "$ref": "#/components/schemas/SensorSummary"
                   }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1573,6 +2741,26 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1587,7 +2775,7 @@
         "tags": [
           "sensors"
         ],
-        "operationId": "ingest_reading",
+        "operationId": "ingest_sensor_reading",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1601,6 +2789,26 @@
         "responses": {
           "200": {
             "description": "Reading ingested"
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1615,7 +2823,7 @@
         "tags": [
           "sensors"
         ],
-        "operationId": "ingest_batch",
+        "operationId": "ingest_sensor_batch",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1632,6 +2840,26 @@
         "responses": {
           "200": {
             "description": "Readings ingested"
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1646,7 +2874,7 @@
         "tags": [
           "sensors"
         ],
-        "operationId": "query_readings",
+        "operationId": "query_sensor_readings",
         "parameters": [
           {
             "name": "sensor_id",
@@ -1729,6 +2957,26 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1772,6 +3020,26 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1799,6 +3067,26 @@
         "responses": {
           "200": {
             "description": "Sensor unregistered"
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1813,7 +3101,7 @@
         "tags": [
           "sensors"
         ],
-        "operationId": "get_latest",
+        "operationId": "get_sensor_latest",
         "parameters": [
           {
             "name": "sensor_id",
@@ -1842,6 +3130,26 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1867,6 +3175,26 @@
                   "items": {
                     "$ref": "#/components/schemas/SkillResponse"
                   }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1907,8 +3235,28 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Skill not found"
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1957,7 +3305,14 @@
             }
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "403": {
             "description": "Current owner or tool policy does not authorize execution",
@@ -1994,7 +3349,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExecutionErrorResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ExecutionErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -2026,6 +3388,26 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2048,6 +3430,154 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "update_me",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid name, role or status: JSON error; malformed JSON or body read failure: plain text",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only administrators may update role or status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Current user no longer exists or was deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds the 2 MiB limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Missing or unsupported JSON Content-Type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON fields are missing or have invalid types",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "User storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2088,6 +3618,26 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2116,6 +3666,26 @@
         "responses": {
           "200": {
             "description": "User deleted"
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2161,6 +3731,26 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid token, or inactive account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Account verification temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2202,13 +3792,27 @@
             "description": "Invalid audio"
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "429": {
             "description": "Model capacity reached"
           },
           "503": {
-            "description": "Model unavailable"
+            "description": "Model unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2251,6 +3855,48 @@
           "output_busy",
           "output_held"
         ]
+      },
+      "AgentEvent": {
+        "type": "object",
+        "required": [
+          "id",
+          "turn_id",
+          "sequence",
+          "event_type",
+          "actor",
+          "payload",
+          "created_at"
+        ],
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "payload": {},
+          "sequence": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turn_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
       },
       "AppraisalReference": {
         "type": "object",
@@ -2477,114 +4123,6 @@
             "type": "object",
             "required": [
               "message",
-              "code"
-            ],
-            "properties": {
-              "code": {
-                "type": "string",
-                "enum": [
-                  "AUTH_INVALID_CREDENTIALS"
-                ]
-              },
-              "message": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "message",
-              "code"
-            ],
-            "properties": {
-              "code": {
-                "type": "string",
-                "enum": [
-                  "AUTH_FORBIDDEN"
-                ]
-              },
-              "message": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "message",
-              "code"
-            ],
-            "properties": {
-              "code": {
-                "type": "string",
-                "enum": [
-                  "VALIDATION_ERROR"
-                ]
-              },
-              "message": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "message",
-              "code"
-            ],
-            "properties": {
-              "code": {
-                "type": "string",
-                "enum": [
-                  "VERSION_CONFLICT"
-                ]
-              },
-              "message": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "message",
-              "code"
-            ],
-            "properties": {
-              "code": {
-                "type": "string",
-                "enum": [
-                  "SERVICE_UNAVAILABLE"
-                ]
-              },
-              "message": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "message",
-              "code"
-            ],
-            "properties": {
-              "code": {
-                "type": "string",
-                "enum": [
-                  "INTERNAL_DB_ERROR"
-                ]
-              },
-              "message": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "message",
               "expected_revision",
               "code"
             ],
@@ -2654,7 +4192,7 @@
       },
       "CompanionErrorResponse": {
         "type": "object",
-        "description": "Companion errors retain the shared AppError wire shape. Identity fields are\nrequired only on their corresponding tagged mutation/erasure variant.",
+        "description": "Companion mutation and erasure receipts require their original operation identity.",
         "required": [
           "error"
         ],
@@ -2785,6 +4323,40 @@
         },
         "additionalProperties": false
       },
+      "Conversation": {
+        "type": "object",
+        "required": [
+          "id",
+          "channel_id",
+          "title",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "creator_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
       "DecisionInput": {
         "type": "object",
         "required": [
@@ -2902,6 +4474,17 @@
           }
         },
         "additionalProperties": false
+      },
+      "DeleteConversationResult": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        }
       },
       "DeliveryErrorCode": {
         "type": "string",
@@ -3343,6 +4926,71 @@
           "cancelled"
         ]
       },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "AUTH_INVALID_CREDENTIALS",
+          "AUTH_FORBIDDEN",
+          "NOT_FOUND",
+          "VALIDATION_ERROR",
+          "VERSION_CONFLICT",
+          "ALREADY_EXISTS",
+          "SERVICE_UNAVAILABLE",
+          "RATE_LIMITED",
+          "INTERNAL_DB_ERROR",
+          "INTERNAL_GRPC_ERROR",
+          "AI_SERVICE_ERROR",
+          "INTERNAL_ERROR"
+        ]
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "type": "string"
+          },
+          "reason": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ErrorReason"
+              }
+            ]
+          }
+        }
+      },
+      "ErrorReason": {
+        "type": "string",
+        "enum": [
+          "invalid_credentials",
+          "token_missing",
+          "token_invalid",
+          "account_inactive",
+          "refresh_token_invalid",
+          "account_verification_unavailable",
+          "email_already_registered"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        }
+      },
       "ExecuteToolRequest": {
         "type": "object",
         "required": [
@@ -3417,6 +5065,75 @@
           }
         }
       },
+      "ExpressionTrace": {
+        "type": "object",
+        "required": [
+          "turn_id"
+        ],
+        "properties": {
+          "sentence_expression_llm": {
+            "type": "array",
+            "items": {}
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "source_events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExpressionTraceEventSummary"
+            }
+          },
+          "tts_provider_adjustments": {
+            "type": "array",
+            "items": {}
+          },
+          "tts_requests": {
+            "type": "array",
+            "items": {}
+          },
+          "turn_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "ExpressionTraceEventSummary": {
+        "type": "object",
+        "required": [
+          "sequence",
+          "event_type",
+          "actor"
+        ],
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "HealthResponse": {
         "type": "object",
         "required": [
@@ -3471,6 +5188,47 @@
           },
           "password": {
             "type": "string"
+          }
+        }
+      },
+      "LogoutResult": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "content",
+          "created_at"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

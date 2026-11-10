@@ -1,0 +1,16 @@
+COMMAND: pnpm web:typecheck
+START_UTC: 20261110T204122198384Z
+
+> project-alia@ web:typecheck /Users/ke-qiao/Developer/project-alia
+> pnpm --dir clients/web typecheck
+
+
+> @alia/web@ typecheck /Users/ke-qiao/Developer/project-alia/clients/web
+> tsc --noEmit
+
+components/account-card.tsx(62,86): error TS2322: Type 'HeyAPIClientLike' is not assignable to type 'Client'.
+  Type 'HeyAPIClientLike' is missing the following properties from type '{ connect: MethodFn; delete: MethodFn; get: MethodFn; head: MethodFn; options: MethodFn; patch: MethodFn; post: MethodFn; put: MethodFn; trace: MethodFn; }': connect, delete, get, head, and 5 more.
+ ELIFECYCLE  Command failed with exit code 2.
+ ELIFECYCLE  Command failed with exit code 2.
+
+EXIT_CODE: 2

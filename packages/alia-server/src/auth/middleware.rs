@@ -6,7 +6,7 @@ use sea_orm::EntityTrait;
 use uuid::Uuid;
 
 use crate::entity::user;
-use crate::error::AppError;
+use crate::error::{AppError, AuthFailure};
 use crate::state::AppState;
 
 /// Authenticated user extracted from JWT
@@ -26,21 +26,21 @@ impl AuthUser {
     /// Resolve current account state; JWT role claims alone are not authority.
     pub async fn from_token(state: &AppState, token: &str) -> Result<Self, AppError> {
         if token.len() > 8192 {
-            return Err(AppError::Auth("Invalid token".into()));
+            return Err(AppError::Unauthenticated(AuthFailure::TokenInvalid));
         }
         let claims = state
             .jwt_keys
             .decode(token)
-            .map_err(|_| AppError::Auth("Invalid or expired token".into()))?;
+            .map_err(|_| AppError::Unauthenticated(AuthFailure::TokenInvalid))?;
         let user = tokio::time::timeout(
             std::time::Duration::from_secs(2),
             user::Entity::find_by_id(claims.sub).one(&state.db),
         )
         .await
-        .map_err(|_| AppError::Auth("Account verification unavailable".into()))??
-        .ok_or_else(|| AppError::Auth("Authenticated user no longer exists".into()))?;
+        .map_err(|_| AppError::AccountVerificationUnavailable)??
+        .ok_or(AppError::Unauthenticated(AuthFailure::AccountInactive))?;
         if user.status != "active" {
-            return Err(AppError::Auth("Authenticated user is not active".into()));
+            return Err(AppError::Unauthenticated(AuthFailure::AccountInactive));
         }
         Ok(Self {
             id: user.id,
@@ -62,11 +62,11 @@ impl FromRequestParts<AppState> for AuthUser {
             .headers
             .get("authorization")
             .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| AppError::Auth("Missing authorization header".into()))?;
+            .ok_or(AppError::Unauthenticated(AuthFailure::TokenMissing))?;
 
         let token = auth_header
             .strip_prefix("Bearer ")
-            .ok_or_else(|| AppError::Auth("Invalid authorization format".into()))?;
+            .ok_or(AppError::Unauthenticated(AuthFailure::TokenMissing))?;
 
         Self::from_token(state, token).await
     }

@@ -16,15 +16,6 @@ import { register } from '@/lib/api/generated';
 import { sessionStore } from '@/lib/auth/session';
 import { useMutation } from '@/lib/data';
 
-/** Maps the server's validation messages (packages/alia-server/src/api/auth.rs) to the field they concern. */
-function validationErrors(message: string): Record<string, string> | null {
-  if (message.includes('already registered')) return { email: '该邮箱已注册，请直接登录。' };
-  if (message.includes('email')) return { email: '请输入有效的邮箱地址。' };
-  if (message.includes('name')) return { name: '名称不能为空，且不能过长。' };
-  if (message.includes('password')) return { password: '密码至少需要 8 个字符。' };
-  return null;
-}
-
 export function RegisterForm() {
   const { trigger, isMutating } = useMutation(register);
   const submittingRef = useRef(false);
@@ -48,9 +39,11 @@ export function RegisterForm() {
       // RequireGuest navigates once the session is stored.
       sessionStore.set({ accessToken: data.access_token, refreshToken: data.refresh_token, user: data.user });
     } catch (error) {
-      const errors = error instanceof ApiError && error.status === 400 ? validationErrors(error.message) : null;
-      if (errors) setFieldErrors(errors);
-      else setFormError(describeApiError(error, aliaApiUrl));
+      if (error instanceof ApiError && error.status === 409 && error.reason === 'email_already_registered') {
+        setFieldErrors({ email: '该邮箱已注册，请直接登录。' });
+      } else {
+        setFormError(describeApiError(error, aliaApiUrl));
+      }
     } finally {
       submittingRef.current = false;
     }

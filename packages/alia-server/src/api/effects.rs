@@ -121,7 +121,7 @@ pub struct ConfirmRequest {
     pub intent_digest: String,
 }
 
-#[utoipa::path(get, path = "/api/v1/effects", tag = "execution", security(("bearer" = [])),
+#[utoipa::path(operation_id = "list_effects", get, path = "/api/v1/effects", tag = "execution", security(("bearer" = [])),
     params(ListQuery), responses(
         (status = 200, description = "Owner's effect records in descending created_at, effect_id order", body = [EffectRecord]),
         (status = 400, description = "Invalid cursor or query", body = ExecutionErrorResponse),
@@ -162,7 +162,7 @@ pub async fn get_effect(
     Ok(Json(state.execution.get(auth.id, id).await?))
 }
 
-#[utoipa::path(post, path = "/api/v1/effects/{id}/confirm", tag = "execution", security(("bearer" = [])),
+#[utoipa::path(operation_id = "confirm_effect", post, path = "/api/v1/effects/{id}/confirm", tag = "execution", security(("bearer" = [])),
     params(("id" = Uuid, Path, description = "Effect identity")), request_body = ConfirmRequest,
     responses(
         (status = 200, description = "Approval recorded; execution may still be pending", body = EffectRecord),
@@ -190,7 +190,7 @@ pub async fn confirm(
     ))
 }
 
-#[utoipa::path(post, path = "/api/v1/effects/{id}/cancel", tag = "execution", security(("bearer" = [])),
+#[utoipa::path(operation_id = "cancel_effect", post, path = "/api/v1/effects/{id}/cancel", tag = "execution", security(("bearer" = [])),
     params(("id" = Uuid, Path, description = "Effect identity")), responses(
         (status = 200, description = "Undispatched effect cancelled", body = EffectRecord),
         (status = 400, description = "Invalid effect UUID", body = ExecutionErrorResponse),

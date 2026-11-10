@@ -1,0 +1,12 @@
+COMMAND: pnpm web:lint
+START_UTC: 20261110T203844496140Z
+
+> project-alia@ web:lint /Users/ke-qiao/Developer/project-alia
+> pnpm --dir clients/web lint
+
+
+> @alia/web@ lint /Users/ke-qiao/Developer/project-alia/clients/web
+> eslint .
+
+
+EXIT_CODE: 0

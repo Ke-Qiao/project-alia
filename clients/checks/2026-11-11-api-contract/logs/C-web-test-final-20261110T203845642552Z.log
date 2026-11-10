@@ -1,0 +1,36 @@
+COMMAND: pnpm web:test
+START_UTC: 20261110T203845642552Z
+
+> project-alia@ web:test /Users/ke-qiao/Developer/project-alia
+> pnpm --dir clients/web test
+
+
+> @alia/web@ test /Users/ke-qiao/Developer/project-alia/clients/web
+> node --test "lib/**/*.test.mjs"
+
+✔ wrong password is a 401 on sign-in and does not touch the session or try to refresh (11.463417ms)
+✔ a disabled account cannot sign in (0.919708ms)
+✔ expired access token: concurrent requests share one refresh and all succeed (2.544541ms)
+✔ revoked session: the request fails with 401 and the session ends as expired (0.47075ms)
+✔ server unreachable during refresh: the session is kept and the error is a network error (0.450958ms)
+✔ sign-out after the server rotates tokens but before its response arrives cannot restore the session (0.703333ms)
+✔ two tabs refreshing the same token: neither is signed out (0.873667ms)
+✔ corrupt stored session reads as signed out (0.051958ms)
+✔ errors are classified so that failures are not shown as empty data (0.119667ms)
+✔ duplicate email uses its declared status, code and reason (0.195917ms)
+✔ sign-out immediately clears local state and revokes the captured refresh token (0.394625ms)
+✔ unreachable logout does not prevent local sign-out (0.244625ms)
+✔ a late logout failure leaves a newly signed-in account untouched (0.25775ms)
+✔ sign-out without a session never sends an empty token (0.030833ms)
+✔ refresh 503 preserves the session regardless of the error reason (0.242708ms)
+✔ non-Alia and malformed errors cannot invent a field-level reason (0.060875ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 72.886541
+
+EXIT_CODE: 0

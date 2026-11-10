@@ -6,6 +6,17 @@ export type ClientOptions = {
 
 export type ActivityState = 'unknown' | 'idle' | 'user_speaking' | 'interaction_busy' | 'output_busy' | 'output_held';
 
+export type AgentEvent = {
+    actor: string;
+    created_at: string;
+    event_type: string;
+    id: string;
+    payload: unknown;
+    sequence: number;
+    summary?: string | null;
+    turn_id: string;
+};
+
 export type AppraisalReference = {
     appraisal_id: string;
     result_digest: string;
@@ -70,24 +81,6 @@ export type CanonicalObservation = {
 };
 
 export type CompanionErrorDetail = {
-    code: 'AUTH_INVALID_CREDENTIALS';
-    message: string;
-} | {
-    code: 'AUTH_FORBIDDEN';
-    message: string;
-} | {
-    code: 'VALIDATION_ERROR';
-    message: string;
-} | {
-    code: 'VERSION_CONFLICT';
-    message: string;
-} | {
-    code: 'SERVICE_UNAVAILABLE';
-    message: string;
-} | {
-    code: 'INTERNAL_DB_ERROR';
-    message: string;
-} | {
     code: 'COMPANION_POLICY_UNCONFIRMED';
     expected_revision: number;
     message: string;
@@ -102,8 +95,7 @@ export type CompanionErrorDetail = {
 };
 
 /**
- * Companion errors retain the shared AppError wire shape. Identity fields are
- * required only on their corresponding tagged mutation/erasure variant.
+ * Companion mutation and erasure receipts require their original operation identity.
  */
 export type CompanionErrorResponse = {
     error: CompanionErrorDetail;
@@ -142,6 +134,15 @@ export type ConfirmRequest = {
     intent_digest: string;
 };
 
+export type Conversation = {
+    channel_id: string;
+    created_at: string;
+    creator_id?: string | null;
+    id: string;
+    title: string;
+    updated_at: string;
+};
+
 export type DecisionInput = {
     as_of: string;
     budget: BudgetSnapshot;
@@ -167,6 +168,10 @@ export type DecisionRecord = {
     result_digest: string;
     schema_version: number;
     valid_until: string;
+};
+
+export type DeleteConversationResult = {
+    success: boolean;
 };
 
 export type DeliveryErrorCode = 'invalid_input' | 'unauthorized' | 'not_found' | 'conflict' | 'invalid_evidence' | 'capacity_exceeded' | 'delivery_unavailable';
@@ -271,6 +276,20 @@ export type EffectRecord = {
 
 export type EffectStatus = 'proposed' | 'approved' | 'dispatched' | 'succeeded' | 'failed' | 'unknown' | 'cancelled';
 
+export type ErrorCode = 'AUTH_INVALID_CREDENTIALS' | 'AUTH_FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION_ERROR' | 'VERSION_CONFLICT' | 'ALREADY_EXISTS' | 'SERVICE_UNAVAILABLE' | 'RATE_LIMITED' | 'INTERNAL_DB_ERROR' | 'INTERNAL_GRPC_ERROR' | 'AI_SERVICE_ERROR' | 'INTERNAL_ERROR';
+
+export type ErrorDetail = {
+    code: ErrorCode;
+    message: string;
+    reason?: null | ErrorReason;
+};
+
+export type ErrorReason = 'invalid_credentials' | 'token_missing' | 'token_invalid' | 'account_inactive' | 'refresh_token_invalid' | 'account_verification_unavailable' | 'email_already_registered';
+
+export type ErrorResponse = {
+    error: ErrorDetail;
+};
+
 export type ExecuteToolRequest = {
     /**
      * JSON object, at most 16 KiB when encoded. Tool schema is validated by the adapter.
@@ -300,6 +319,23 @@ export type ExecutionErrorResponse = {
     error: ExecutionErrorDetail;
 };
 
+export type ExpressionTrace = {
+    sentence_expression_llm?: Array<unknown>;
+    session_id?: string | null;
+    source_events?: Array<ExpressionTraceEventSummary>;
+    tts_provider_adjustments?: Array<unknown>;
+    tts_requests?: Array<unknown>;
+    turn_id: string;
+};
+
+export type ExpressionTraceEventSummary = {
+    actor: string;
+    created_at?: string | null;
+    event_type: string;
+    sequence: number;
+    summary?: string | null;
+};
+
 export type HealthResponse = {
     modules: {
         [key: string]: ModuleStatus;
@@ -317,6 +353,18 @@ export type IngestRequest = {
 export type LoginRequest = {
     email: string;
     password: string;
+};
+
+export type LogoutResult = {
+    success: boolean;
+};
+
+export type Message = {
+    content: string;
+    created_at: string;
+    id: string;
+    role: string;
+    user_id?: string | null;
 };
 
 export type ModuleStatus = {
@@ -633,10 +681,32 @@ export type LoginData = {
 
 export type LoginErrors = {
     /**
+     * Invalid email address: JSON error; malformed JSON or body read failure: plain text
+     */
+    400: ErrorResponse;
+    /**
      * Invalid credentials
      */
-    401: unknown;
+    401: ErrorResponse;
+    /**
+     * JSON body exceeds the 2 MiB limit
+     */
+    413: string;
+    /**
+     * Missing or unsupported JSON Content-Type
+     */
+    415: string;
+    /**
+     * JSON fields are missing or have invalid types
+     */
+    422: string;
+    /**
+     * Account storage or token issuance failed
+     */
+    500: ErrorResponse;
 };
+
+export type LoginError = LoginErrors[keyof LoginErrors];
 
 export type LoginResponses = {
     /**
@@ -647,28 +717,91 @@ export type LoginResponses = {
 
 export type LoginResponse = LoginResponses[keyof LoginResponses];
 
-export type RefreshData = {
+export type LogoutData = {
+    body: RefreshRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/logout';
+};
+
+export type LogoutErrors = {
+    /**
+     * Malformed JSON or body read failure
+     */
+    400: string;
+    /**
+     * JSON body exceeds the 2 MiB limit
+     */
+    413: string;
+    /**
+     * Missing or unsupported JSON Content-Type
+     */
+    415: string;
+    /**
+     * JSON fields are missing or have invalid types
+     */
+    422: string;
+    /**
+     * Token storage unavailable
+     */
+    500: ErrorResponse;
+};
+
+export type LogoutError = LogoutErrors[keyof LogoutErrors];
+
+export type LogoutResponses = {
+    /**
+     * Refresh token revoked or already absent
+     */
+    200: LogoutResult;
+};
+
+export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
+
+export type RefreshTokenData = {
     body: RefreshRequest;
     path?: never;
     query?: never;
     url: '/api/v1/auth/refresh';
 };
 
-export type RefreshErrors = {
+export type RefreshTokenErrors = {
     /**
-     * Invalid refresh token
+     * Malformed JSON or body read failure
      */
-    401: unknown;
+    400: string;
+    /**
+     * Invalid refresh token or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * JSON body exceeds the 2 MiB limit
+     */
+    413: string;
+    /**
+     * Missing or unsupported JSON Content-Type
+     */
+    415: string;
+    /**
+     * JSON fields are missing or have invalid types
+     */
+    422: string;
+    /**
+     * Token storage or issuance failed
+     */
+    500: ErrorResponse;
 };
 
-export type RefreshResponses = {
+export type RefreshTokenError = RefreshTokenErrors[keyof RefreshTokenErrors];
+
+export type RefreshTokenResponses = {
     /**
      * Token refreshed
      */
     200: TokenResponse;
 };
 
-export type RefreshResponse = RefreshResponses[keyof RefreshResponses];
+export type RefreshTokenResponse = RefreshTokenResponses[keyof RefreshTokenResponses];
 
 export type RegisterData = {
     body: RegisterRequest;
@@ -679,10 +812,32 @@ export type RegisterData = {
 
 export type RegisterErrors = {
     /**
-     * Validation error
+     * Invalid email, name or password: JSON error; malformed JSON or body read failure: plain text
      */
-    400: unknown;
+    400: ErrorResponse;
+    /**
+     * Email already registered
+     */
+    409: ErrorResponse;
+    /**
+     * JSON body exceeds the 2 MiB limit
+     */
+    413: string;
+    /**
+     * Missing or unsupported JSON Content-Type
+     */
+    415: string;
+    /**
+     * JSON fields are missing or have invalid types
+     */
+    422: string;
+    /**
+     * Registration storage or token issuance failed
+     */
+    500: ErrorResponse;
 };
+
+export type RegisterError = RegisterErrors[keyof RegisterErrors];
 
 export type RegisterResponses = {
     /**
@@ -693,89 +848,89 @@ export type RegisterResponses = {
 
 export type RegisterResponse = RegisterResponses[keyof RegisterResponses];
 
-export type PolicyData = {
+export type GetCompanionPolicyData = {
     body?: never;
     path?: never;
     query?: never;
     url: '/api/v1/companion/policy';
 };
 
-export type PolicyErrors = {
+export type GetCompanionPolicyErrors = {
     /**
-     * AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout
+     * AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account
      */
-    401: CompanionErrorResponse;
+    401: ErrorResponse;
     /**
      * AUTH_FORBIDDEN: current owner authority unavailable
      */
-    403: CompanionErrorResponse;
+    403: ErrorResponse;
     /**
      * INTERNAL_DB_ERROR: account lookup database failure
      */
-    500: CompanionErrorResponse;
+    500: ErrorResponse;
     /**
      * SERVICE_UNAVAILABLE: read/storage unavailable; this is not a mutation receipt
      */
-    503: CompanionErrorResponse;
+    503: ErrorResponse;
 };
 
-export type PolicyError = PolicyErrors[keyof PolicyErrors];
+export type GetCompanionPolicyError = GetCompanionPolicyErrors[keyof GetCompanionPolicyErrors];
 
-export type PolicyResponses = {
+export type GetCompanionPolicyResponses = {
     /**
      * Current owner policy and positive CAS revision
      */
     200: PolicySnapshot;
 };
 
-export type PolicyResponse = PolicyResponses[keyof PolicyResponses];
+export type GetCompanionPolicyResponse = GetCompanionPolicyResponses[keyof GetCompanionPolicyResponses];
 
-export type UpdatePolicyData = {
+export type UpdateCompanionPolicyData = {
     body: PolicyRequest;
     path?: never;
     query?: never;
     url: '/api/v1/companion/policy';
 };
 
-export type UpdatePolicyErrors = {
+export type UpdateCompanionPolicyErrors = {
     /**
      * VALIDATION_ERROR: malformed/unknown fields, invalid bounds, or live runner unavailable for enabled mode
      */
-    400: CompanionErrorResponse;
+    400: ErrorResponse;
     /**
-     * AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout
+     * AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account
      */
-    401: CompanionErrorResponse;
+    401: ErrorResponse;
     /**
      * AUTH_FORBIDDEN: current owner authority unavailable
      */
-    403: CompanionErrorResponse;
+    403: ErrorResponse;
     /**
      * VERSION_CONFLICT: original revision is no longer current; read current policy and decide explicitly
      */
-    409: CompanionErrorResponse;
+    409: ErrorResponse;
     /**
      * INTERNAL_DB_ERROR: account lookup database failure
      */
-    500: CompanionErrorResponse;
+    500: ErrorResponse;
     /**
      * COMPANION_POLICY_UNCONFIRMED: completion unknown, with original expected_revision; read current policy before retrying the same intent
      */
-    503: CompanionErrorResponse;
+    503: CompanionErrorResponse | ErrorResponse;
 };
 
-export type UpdatePolicyError = UpdatePolicyErrors[keyof UpdatePolicyErrors];
+export type UpdateCompanionPolicyError = UpdateCompanionPolicyErrors[keyof UpdateCompanionPolicyErrors];
 
-export type UpdatePolicyResponses = {
+export type UpdateCompanionPolicyResponses = {
     /**
      * Committed replacement with incremented revision
      */
     200: PolicySnapshot;
 };
 
-export type UpdatePolicyResponse = UpdatePolicyResponses[keyof UpdatePolicyResponses];
+export type UpdateCompanionPolicyResponse = UpdateCompanionPolicyResponses[keyof UpdateCompanionPolicyResponses];
 
-export type ReplayData = {
+export type GetCompanionReplayData = {
     body?: never;
     path: {
         /**
@@ -787,23 +942,23 @@ export type ReplayData = {
     url: '/api/v1/companion/replay/{operation_id}';
 };
 
-export type ReplayErrors = {
+export type GetCompanionReplayErrors = {
     /**
      * Nil UUID: JSON VALIDATION_ERROR; malformed UUID: Axum plain-text path rejection
      */
-    400: CompanionErrorResponse;
+    400: ErrorResponse;
     /**
-     * AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout
+     * AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account
      */
-    401: CompanionErrorResponse;
+    401: ErrorResponse;
     /**
      * AUTH_FORBIDDEN: missing/other-owner operation or current private-read authority unavailable; no existence disclosure
      */
-    403: CompanionErrorResponse;
+    403: ErrorResponse;
     /**
      * VERSION_CONFLICT: canonical policy authority changed
      */
-    409: CompanionErrorResponse;
+    409: ErrorResponse;
     /**
      * COMPANION_EVIDENCE_ERASED with operation_id: private evidence erased, expired or revoked; replay is unavailable
      */
@@ -811,48 +966,48 @@ export type ReplayErrors = {
     /**
      * INTERNAL_DB_ERROR: account lookup database failure
      */
-    500: CompanionErrorResponse;
+    500: ErrorResponse;
     /**
      * SERVICE_UNAVAILABLE: read/storage unavailable; retry this same read
      */
-    503: CompanionErrorResponse;
+    503: ErrorResponse;
 };
 
-export type ReplayError = ReplayErrors[keyof ReplayErrors];
+export type GetCompanionReplayError = GetCompanionReplayErrors[keyof GetCompanionReplayErrors];
 
-export type ReplayResponses = {
+export type GetCompanionReplayResponses = {
     /**
      * Original frozen inputs and pure decision after current authority recheck
      */
     200: ShadowReport;
 };
 
-export type ReplayResponse = ReplayResponses[keyof ReplayResponses];
+export type GetCompanionReplayResponse = GetCompanionReplayResponses[keyof GetCompanionReplayResponses];
 
-export type ShadowData = {
+export type RunCompanionShadowData = {
     body: ShadowRequest;
     path?: never;
     query?: never;
     url: '/api/v1/companion/shadow';
 };
 
-export type ShadowErrors = {
+export type RunCompanionShadowErrors = {
     /**
      * VALIDATION_ERROR: malformed/unknown fields, nil IDs, duplicate IDs or batch outside 1–32
      */
-    400: CompanionErrorResponse;
+    400: ErrorResponse;
     /**
-     * AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account, or account verification timeout
+     * AUTH_INVALID_CREDENTIALS: missing/invalid JWT, inactive account
      */
-    401: CompanionErrorResponse;
+    401: ErrorResponse;
     /**
      * AUTH_FORBIDDEN: canonical sources or current private-read authority unavailable
      */
-    403: CompanionErrorResponse;
+    403: ErrorResponse;
     /**
      * VERSION_CONFLICT: operation identity/worklist or canonical policy authority changed
      */
-    409: CompanionErrorResponse;
+    409: ErrorResponse;
     /**
      * COMPANION_EVIDENCE_ERASED with operation_id: original evidence erased, expired or revoked; it cannot be reconstructed by retry
      */
@@ -860,23 +1015,331 @@ export type ShadowErrors = {
     /**
      * INTERNAL_DB_ERROR: account lookup database failure
      */
-    500: CompanionErrorResponse;
+    500: ErrorResponse;
     /**
      * COMPANION_SHADOW_UNCONFIRMED with operation_id: completion unknown; retry exactly the same operation_id and appraisal_ids
      */
-    503: CompanionErrorResponse;
+    503: CompanionErrorResponse | ErrorResponse;
 };
 
-export type ShadowError = ShadowErrors[keyof ShadowErrors];
+export type RunCompanionShadowError = RunCompanionShadowErrors[keyof RunCompanionShadowErrors];
 
-export type ShadowResponses = {
+export type RunCompanionShadowResponses = {
     /**
      * Bounded frozen report; up to 32 examined sources and 4 decisions, never output authority
      */
     200: ShadowReport;
 };
 
-export type ShadowResponse = ShadowResponses[keyof ShadowResponses];
+export type RunCompanionShadowResponse = RunCompanionShadowResponses[keyof RunCompanionShadowResponses];
+
+export type ListConversationsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Maximum records to return; zero is accepted. The endpoint clamps larger values.
+         */
+        limit?: number;
+    };
+    url: '/api/v1/conversations';
+};
+
+export type ListConversationsErrors = {
+    /**
+     * Malformed UUID or query: Axum plain-text rejection
+     */
+    400: string;
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account or conversation database query failed
+     */
+    500: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type ListConversationsError = ListConversationsErrors[keyof ListConversationsErrors];
+
+export type ListConversationsResponses = {
+    /**
+     * Conversations ordered by most recently updated; administrators see all, others only their own. limit defaults to 100 and clamps to 500.
+     */
+    200: Array<Conversation>;
+};
+
+export type ListConversationsResponse = ListConversationsResponses[keyof ListConversationsResponses];
+
+export type DeleteConversationData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation identity
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/conversations/{id}';
+};
+
+export type DeleteConversationErrors = {
+    /**
+     * Malformed UUID or query: Axum plain-text rejection
+     */
+    400: string;
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Conversation belongs to another user; administrators are allowed
+     */
+    403: ErrorResponse;
+    /**
+     * Conversation does not exist
+     */
+    404: ErrorResponse;
+    /**
+     * Account or conversation database query failed
+     */
+    500: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type DeleteConversationError = DeleteConversationErrors[keyof DeleteConversationErrors];
+
+export type DeleteConversationResponses = {
+    /**
+     * Conversation deleted after owner or administrator authorization.
+     */
+    200: DeleteConversationResult;
+};
+
+export type DeleteConversationResponse = DeleteConversationResponses[keyof DeleteConversationResponses];
+
+export type GetConversationData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation identity
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/conversations/{id}';
+};
+
+export type GetConversationErrors = {
+    /**
+     * Malformed UUID or query: Axum plain-text rejection
+     */
+    400: string;
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Conversation belongs to another user; administrators are allowed
+     */
+    403: ErrorResponse;
+    /**
+     * Conversation does not exist
+     */
+    404: ErrorResponse;
+    /**
+     * Account or conversation database query failed
+     */
+    500: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type GetConversationError = GetConversationErrors[keyof GetConversationErrors];
+
+export type GetConversationResponses = {
+    /**
+     * Conversation owned by this user, or any conversation for an administrator.
+     */
+    200: Conversation;
+};
+
+export type GetConversationResponse = GetConversationResponses[keyof GetConversationResponses];
+
+export type ListConversationEventsData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation identity
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Maximum records to return; zero is accepted. The endpoint clamps larger values.
+         */
+        limit?: number;
+    };
+    url: '/api/v1/conversations/{id}/events';
+};
+
+export type ListConversationEventsErrors = {
+    /**
+     * Malformed UUID or query: Axum plain-text rejection
+     */
+    400: string;
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Conversation belongs to another user; administrators are allowed
+     */
+    403: ErrorResponse;
+    /**
+     * Conversation does not exist
+     */
+    404: ErrorResponse;
+    /**
+     * Account or conversation database query failed
+     */
+    500: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type ListConversationEventsError = ListConversationEventsErrors[keyof ListConversationEventsErrors];
+
+export type ListConversationEventsResponses = {
+    /**
+     * Events ordered by creation time and sequence ascending. limit defaults to 1000 and clamps to 5000.
+     */
+    200: Array<AgentEvent>;
+};
+
+export type ListConversationEventsResponse = ListConversationEventsResponses[keyof ListConversationEventsResponses];
+
+export type ListConversationExpressionTracesData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation identity
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Maximum source events; defaults to 1000 and clamps to 5000. Zero is accepted.
+         */
+        limit?: number;
+        turn_id?: string;
+    };
+    url: '/api/v1/conversations/{id}/expression-traces';
+};
+
+export type ListConversationExpressionTracesErrors = {
+    /**
+     * Malformed UUID or query: Axum plain-text rejection
+     */
+    400: string;
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Conversation belongs to another user; administrators are allowed
+     */
+    403: ErrorResponse;
+    /**
+     * Conversation does not exist
+     */
+    404: ErrorResponse;
+    /**
+     * Account or conversation database query failed
+     */
+    500: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type ListConversationExpressionTracesError = ListConversationExpressionTracesErrors[keyof ListConversationExpressionTracesErrors];
+
+export type ListConversationExpressionTracesResponses = {
+    /**
+     * Expression traces grouped and ordered by turn UUID, with source events ordered by sequence. limit applies to source events, not traces.
+     */
+    200: Array<ExpressionTrace>;
+};
+
+export type ListConversationExpressionTracesResponse = ListConversationExpressionTracesResponses[keyof ListConversationExpressionTracesResponses];
+
+export type ListConversationMessagesData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation identity
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Maximum records to return; zero is accepted. The endpoint clamps larger values.
+         */
+        limit?: number;
+    };
+    url: '/api/v1/conversations/{id}/messages';
+};
+
+export type ListConversationMessagesErrors = {
+    /**
+     * Malformed UUID or query: Axum plain-text rejection
+     */
+    400: string;
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Conversation belongs to another user; administrators are allowed
+     */
+    403: ErrorResponse;
+    /**
+     * Conversation does not exist
+     */
+    404: ErrorResponse;
+    /**
+     * Account or conversation database query failed
+     */
+    500: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type ListConversationMessagesError = ListConversationMessagesErrors[keyof ListConversationMessagesErrors];
+
+export type ListConversationMessagesResponses = {
+    /**
+     * Messages ordered by creation time ascending. limit defaults to 1000 and clamps to 5000.
+     */
+    200: Array<Message>;
+};
+
+export type ListConversationMessagesResponse = ListConversationMessagesResponses[keyof ListConversationMessagesResponses];
 
 export type GetDeliveryData = {
     body?: never;
@@ -898,7 +1361,7 @@ export type GetDeliveryErrors = {
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Delivery absent or owned by another account
      */
@@ -906,7 +1369,7 @@ export type GetDeliveryErrors = {
     /**
      * Ledger unavailable
      */
-    503: DeliveryErrorResponse;
+    503: DeliveryErrorResponse | ErrorResponse;
 };
 
 export type GetDeliveryError = GetDeliveryErrors[keyof GetDeliveryErrors];
@@ -920,7 +1383,7 @@ export type GetDeliveryResponses = {
 
 export type GetDeliveryResponse = GetDeliveryResponses[keyof GetDeliveryResponses];
 
-export type TextChunksData = {
+export type ListDeliveryTextChunksData = {
     body?: never;
     path: {
         /**
@@ -940,7 +1403,7 @@ export type TextChunksData = {
     url: '/api/v1/deliveries/{id}/text-chunks';
 };
 
-export type TextChunksErrors = {
+export type ListDeliveryTextChunksErrors = {
     /**
      * Invalid UUID, cursor or page size
      */
@@ -948,7 +1411,7 @@ export type TextChunksErrors = {
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Delivery absent or owned by another account
      */
@@ -960,21 +1423,21 @@ export type TextChunksErrors = {
     /**
      * Ledger unavailable
      */
-    503: DeliveryErrorResponse;
+    503: DeliveryErrorResponse | ErrorResponse;
 };
 
-export type TextChunksError = TextChunksErrors[keyof TextChunksErrors];
+export type ListDeliveryTextChunksError = ListDeliveryTextChunksErrors[keyof ListDeliveryTextChunksErrors];
 
-export type TextChunksResponses = {
+export type ListDeliveryTextChunksResponses = {
     /**
      * Owner's immutable offered UTF-8 chunks; a durable chunk is not proof it was written or read
      */
     200: Array<TextChunkRecord>;
 };
 
-export type TextChunksResponse = TextChunksResponses[keyof TextChunksResponses];
+export type ListDeliveryTextChunksResponse = ListDeliveryTextChunksResponses[keyof ListDeliveryTextChunksResponses];
 
-export type ListData = {
+export type ListEffectsData = {
     body?: never;
     path?: never;
     query?: {
@@ -994,7 +1457,7 @@ export type ListData = {
     url: '/api/v1/effects';
 };
 
-export type ListErrors = {
+export type ListEffectsErrors = {
     /**
      * Invalid cursor or query
      */
@@ -1002,23 +1465,23 @@ export type ListErrors = {
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Execution ledger unavailable
      */
-    503: ExecutionErrorResponse;
+    503: ExecutionErrorResponse | ErrorResponse;
 };
 
-export type ListError = ListErrors[keyof ListErrors];
+export type ListEffectsError = ListEffectsErrors[keyof ListEffectsErrors];
 
-export type ListResponses = {
+export type ListEffectsResponses = {
     /**
      * Owner's effect records in descending created_at, effect_id order
      */
     200: Array<EffectRecord>;
 };
 
-export type ListResponse = ListResponses[keyof ListResponses];
+export type ListEffectsResponse = ListEffectsResponses[keyof ListEffectsResponses];
 
 export type GetEffectData = {
     body?: never;
@@ -1040,7 +1503,7 @@ export type GetEffectErrors = {
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Effect absent or owned by another account
      */
@@ -1048,7 +1511,7 @@ export type GetEffectErrors = {
     /**
      * Execution ledger unavailable
      */
-    503: ExecutionErrorResponse;
+    503: ExecutionErrorResponse | ErrorResponse;
 };
 
 export type GetEffectError = GetEffectErrors[keyof GetEffectErrors];
@@ -1062,7 +1525,7 @@ export type GetEffectResponses = {
 
 export type GetEffectResponse = GetEffectResponses[keyof GetEffectResponses];
 
-export type CancelData = {
+export type CancelEffectData = {
     body?: never;
     path: {
         /**
@@ -1074,7 +1537,7 @@ export type CancelData = {
     url: '/api/v1/effects/{id}/cancel';
 };
 
-export type CancelErrors = {
+export type CancelEffectErrors = {
     /**
      * Invalid effect UUID
      */
@@ -1082,7 +1545,7 @@ export type CancelErrors = {
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Effect absent or owned by another account
      */
@@ -1094,21 +1557,21 @@ export type CancelErrors = {
     /**
      * Cancellation acknowledgement unavailable
      */
-    503: ExecutionErrorResponse;
+    503: ExecutionErrorResponse | ErrorResponse;
 };
 
-export type CancelError = CancelErrors[keyof CancelErrors];
+export type CancelEffectError = CancelEffectErrors[keyof CancelEffectErrors];
 
-export type CancelResponses = {
+export type CancelEffectResponses = {
     /**
      * Undispatched effect cancelled
      */
     200: EffectRecord;
 };
 
-export type CancelResponse = CancelResponses[keyof CancelResponses];
+export type CancelEffectResponse = CancelEffectResponses[keyof CancelEffectResponses];
 
-export type ConfirmData = {
+export type ConfirmEffectData = {
     body: ConfirmRequest;
     path: {
         /**
@@ -1120,7 +1583,7 @@ export type ConfirmData = {
     url: '/api/v1/effects/{id}/confirm';
 };
 
-export type ConfirmErrors = {
+export type ConfirmEffectErrors = {
     /**
      * Invalid effect UUID or body
      */
@@ -1128,7 +1591,7 @@ export type ConfirmErrors = {
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Owner no longer authorized
      */
@@ -1148,21 +1611,21 @@ export type ConfirmErrors = {
     /**
      * Approval acknowledgement unavailable
      */
-    503: ExecutionErrorResponse;
+    503: ExecutionErrorResponse | ErrorResponse;
 };
 
-export type ConfirmError = ConfirmErrors[keyof ConfirmErrors];
+export type ConfirmEffectError = ConfirmEffectErrors[keyof ConfirmEffectErrors];
 
-export type ConfirmResponses = {
+export type ConfirmEffectResponses = {
     /**
      * Approval recorded; execution may still be pending
      */
     200: EffectRecord;
 };
 
-export type ConfirmResponse = ConfirmResponses[keyof ConfirmResponses];
+export type ConfirmEffectResponse = ConfirmEffectResponses[keyof ConfirmEffectResponses];
 
-export type List2Data = {
+export type ListEmbodimentOperationsData = {
     body?: never;
     path?: never;
     query?: {
@@ -1171,7 +1634,7 @@ export type List2Data = {
     url: '/api/v1/embodiment/operations';
 };
 
-export type List2Errors = {
+export type ListEmbodimentOperationsErrors = {
     /**
      * Invalid query
      */
@@ -1179,23 +1642,25 @@ export type List2Errors = {
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Operation evidence unavailable
      */
-    503: unknown;
+    503: ErrorResponse;
 };
 
-export type List2Responses = {
+export type ListEmbodimentOperationsError = ListEmbodimentOperationsErrors[keyof ListEmbodimentOperationsErrors];
+
+export type ListEmbodimentOperationsResponses = {
     /**
      * Owner's physical operations, newest first
      */
     200: Array<unknown>;
 };
 
-export type List2Response = List2Responses[keyof List2Responses];
+export type ListEmbodimentOperationsResponse = ListEmbodimentOperationsResponses[keyof ListEmbodimentOperationsResponses];
 
-export type GetOperationData = {
+export type GetEmbodimentOperationData = {
     body?: never;
     path: {
         id: string;
@@ -1204,7 +1669,7 @@ export type GetOperationData = {
     url: '/api/v1/embodiment/operations/{id}';
 };
 
-export type GetOperationErrors = {
+export type GetEmbodimentOperationErrors = {
     /**
      * Invalid identity
      */
@@ -1212,7 +1677,7 @@ export type GetOperationErrors = {
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Operation absent or owned by another account
      */
@@ -1220,17 +1685,19 @@ export type GetOperationErrors = {
     /**
      * Operation evidence unavailable
      */
-    503: unknown;
+    503: ErrorResponse;
 };
 
-export type GetOperationResponses = {
+export type GetEmbodimentOperationError = GetEmbodimentOperationErrors[keyof GetEmbodimentOperationErrors];
+
+export type GetEmbodimentOperationResponses = {
     /**
      * Durable operation status and separate physical evidence
      */
     200: unknown;
 };
 
-export type GetDelivery2Data = {
+export type GetMotionDeliveryData = {
     body?: never;
     path: {
         id: string;
@@ -1239,33 +1706,39 @@ export type GetDelivery2Data = {
     url: '/api/v1/motion-deliveries/{id}';
 };
 
-export type GetDelivery2Errors = {
+export type GetMotionDeliveryErrors = {
     /**
      * Invalid UUID
      */
-    400: unknown;
+    400: DeliveryErrorResponse;
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
+    /**
+     * Motion owner is unavailable
+     */
+    403: DeliveryErrorResponse;
     /**
      * Motion delivery absent or owned by another account
      */
-    404: unknown;
+    404: DeliveryErrorResponse;
     /**
      * Ledger unavailable
      */
-    503: unknown;
+    503: DeliveryErrorResponse | ErrorResponse;
 };
 
-export type GetDelivery2Responses = {
+export type GetMotionDeliveryError = GetMotionDeliveryErrors[keyof GetMotionDeliveryErrors];
+
+export type GetMotionDeliveryResponses = {
     /**
      * Owner's immutable motion command and durable device evidence
      */
     200: MotionDeliveryRecord;
 };
 
-export type GetDelivery2Response = GetDelivery2Responses[keyof GetDelivery2Responses];
+export type GetMotionDeliveryResponse = GetMotionDeliveryResponses[keyof GetMotionDeliveryResponses];
 
 export type GetResponseData = {
     body?: never;
@@ -1287,7 +1760,7 @@ export type GetResponseErrors = {
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Response absent or owned by another account
      */
@@ -1295,7 +1768,7 @@ export type GetResponseErrors = {
     /**
      * Ledger unavailable
      */
-    503: DeliveryErrorResponse;
+    503: DeliveryErrorResponse | ErrorResponse;
 };
 
 export type GetResponseError = GetResponseErrors[keyof GetResponseErrors];
@@ -1329,7 +1802,7 @@ export type CancelResponseErrors = {
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Response absent or owned by another account
      */
@@ -1337,7 +1810,7 @@ export type CancelResponseErrors = {
     /**
      * Cancellation acknowledgement unavailable
      */
-    503: DeliveryErrorResponse;
+    503: DeliveryErrorResponse | ErrorResponse;
 };
 
 export type CancelResponseError = CancelResponseErrors[keyof CancelResponseErrors];
@@ -1351,7 +1824,7 @@ export type CancelResponseResponses = {
 
 export type CancelResponseResponse = CancelResponseResponses[keyof CancelResponseResponses];
 
-export type ListDeliveriesData = {
+export type ListResponseDeliveriesData = {
     body?: never;
     path: {
         /**
@@ -1363,7 +1836,7 @@ export type ListDeliveriesData = {
     url: '/api/v1/responses/{id}/deliveries';
 };
 
-export type ListDeliveriesErrors = {
+export type ListResponseDeliveriesErrors = {
     /**
      * Invalid UUID
      */
@@ -1371,7 +1844,7 @@ export type ListDeliveriesErrors = {
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Response absent or owned by another account
      */
@@ -1379,21 +1852,21 @@ export type ListDeliveriesErrors = {
     /**
      * Ledger unavailable
      */
-    503: DeliveryErrorResponse;
+    503: DeliveryErrorResponse | ErrorResponse;
 };
 
-export type ListDeliveriesError = ListDeliveriesErrors[keyof ListDeliveriesErrors];
+export type ListResponseDeliveriesError = ListResponseDeliveriesErrors[keyof ListResponseDeliveriesErrors];
 
-export type ListDeliveriesResponses = {
+export type ListResponseDeliveriesResponses = {
     /**
      * Bounded collection of this response's delivery facts; at most 256
      */
     200: Array<DeliveryRecord>;
 };
 
-export type ListDeliveriesResponse = ListDeliveriesResponses[keyof ListDeliveriesResponses];
+export type ListResponseDeliveriesResponse = ListResponseDeliveriesResponses[keyof ListResponseDeliveriesResponses];
 
-export type ResponseEventsData = {
+export type ListResponseEventsData = {
     body?: never;
     path: {
         /**
@@ -1413,7 +1886,7 @@ export type ResponseEventsData = {
     url: '/api/v1/responses/{id}/events';
 };
 
-export type ResponseEventsErrors = {
+export type ListResponseEventsErrors = {
     /**
      * Invalid UUID, cursor or page size
      */
@@ -1421,7 +1894,7 @@ export type ResponseEventsErrors = {
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Response absent or owned by another account
      */
@@ -1429,21 +1902,21 @@ export type ResponseEventsErrors = {
     /**
      * Ledger unavailable
      */
-    503: DeliveryErrorResponse;
+    503: DeliveryErrorResponse | ErrorResponse;
 };
 
-export type ResponseEventsError = ResponseEventsErrors[keyof ResponseEventsErrors];
+export type ListResponseEventsError = ListResponseEventsErrors[keyof ListResponseEventsErrors];
 
-export type ResponseEventsResponses = {
+export type ListResponseEventsResponses = {
     /**
      * Owner's ordered audit events, including late evidence after Unknown; paginate with the last event ID
      */
     200: Array<DeliveryEvent>;
 };
 
-export type ResponseEventsResponse = ResponseEventsResponses[keyof ResponseEventsResponses];
+export type ListResponseEventsResponse = ListResponseEventsResponses[keyof ListResponseEventsResponses];
 
-export type ForResponseData = {
+export type ListResponseMotionDeliveriesData = {
     body?: never;
     path: {
         id: string;
@@ -1452,33 +1925,39 @@ export type ForResponseData = {
     url: '/api/v1/responses/{id}/motion-deliveries';
 };
 
-export type ForResponseErrors = {
+export type ListResponseMotionDeliveriesErrors = {
     /**
      * Invalid UUID
      */
-    400: unknown;
+    400: DeliveryErrorResponse;
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
+    /**
+     * Motion owner is unavailable
+     */
+    403: DeliveryErrorResponse;
     /**
      * Response absent or owned by another account
      */
-    404: unknown;
+    404: DeliveryErrorResponse;
     /**
      * Ledger unavailable
      */
-    503: unknown;
+    503: DeliveryErrorResponse | ErrorResponse;
 };
 
-export type ForResponseResponses = {
+export type ListResponseMotionDeliveriesError = ListResponseMotionDeliveriesErrors[keyof ListResponseMotionDeliveriesErrors];
+
+export type ListResponseMotionDeliveriesResponses = {
     /**
      * Owner's motion delivery facts; at most 32, software submission is not position confirmation
      */
     200: Array<MotionDeliveryRecord>;
 };
 
-export type ForResponseResponse = ForResponseResponses[keyof ForResponseResponses];
+export type ListResponseMotionDeliveriesResponse = ListResponseMotionDeliveriesResponses[keyof ListResponseMotionDeliveriesResponses];
 
 export type ListSensorsData = {
     body?: never;
@@ -1486,6 +1965,19 @@ export type ListSensorsData = {
     query?: never;
     url: '/api/v1/sensors';
 };
+
+export type ListSensorsErrors = {
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type ListSensorsError = ListSensorsErrors[keyof ListSensorsErrors];
 
 export type ListSensorsResponses = {
     /**
@@ -1503,6 +1995,19 @@ export type RegisterSensorData = {
     url: '/api/v1/sensors';
 };
 
+export type RegisterSensorErrors = {
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type RegisterSensorError = RegisterSensorErrors[keyof RegisterSensorErrors];
+
 export type RegisterSensorResponses = {
     /**
      * Sensor registered
@@ -1512,35 +2017,61 @@ export type RegisterSensorResponses = {
 
 export type RegisterSensorResponse = RegisterSensorResponses[keyof RegisterSensorResponses];
 
-export type IngestReadingData = {
+export type IngestSensorReadingData = {
     body: IngestRequest;
     path?: never;
     query?: never;
     url: '/api/v1/sensors/ingest';
 };
 
-export type IngestReadingResponses = {
+export type IngestSensorReadingErrors = {
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type IngestSensorReadingError = IngestSensorReadingErrors[keyof IngestSensorReadingErrors];
+
+export type IngestSensorReadingResponses = {
     /**
      * Reading ingested
      */
     200: unknown;
 };
 
-export type IngestBatchData = {
+export type IngestSensorBatchData = {
     body: Array<IngestRequest>;
     path?: never;
     query?: never;
     url: '/api/v1/sensors/ingest/batch';
 };
 
-export type IngestBatchResponses = {
+export type IngestSensorBatchErrors = {
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type IngestSensorBatchError = IngestSensorBatchErrors[keyof IngestSensorBatchErrors];
+
+export type IngestSensorBatchResponses = {
     /**
      * Readings ingested
      */
     200: unknown;
 };
 
-export type QueryReadingsData = {
+export type QuerySensorReadingsData = {
     body?: never;
     path?: never;
     query?: {
@@ -1557,14 +2088,27 @@ export type QueryReadingsData = {
     url: '/api/v1/sensors/query';
 };
 
-export type QueryReadingsResponses = {
+export type QuerySensorReadingsErrors = {
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type QuerySensorReadingsError = QuerySensorReadingsErrors[keyof QuerySensorReadingsErrors];
+
+export type QuerySensorReadingsResponses = {
     /**
      * Query sensor readings
      */
     200: Array<SensorReading>;
 };
 
-export type QueryReadingsResponse = QueryReadingsResponses[keyof QueryReadingsResponses];
+export type QuerySensorReadingsResponse = QuerySensorReadingsResponses[keyof QuerySensorReadingsResponses];
 
 export type UnregisterSensorData = {
     body?: never;
@@ -1577,6 +2121,19 @@ export type UnregisterSensorData = {
     query?: never;
     url: '/api/v1/sensors/{sensor_id}';
 };
+
+export type UnregisterSensorErrors = {
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type UnregisterSensorError = UnregisterSensorErrors[keyof UnregisterSensorErrors];
 
 export type UnregisterSensorResponses = {
     /**
@@ -1597,6 +2154,19 @@ export type GetSensorData = {
     url: '/api/v1/sensors/{sensor_id}';
 };
 
+export type GetSensorErrors = {
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type GetSensorError = GetSensorErrors[keyof GetSensorErrors];
+
 export type GetSensorResponses = {
     /**
      * Sensor definition
@@ -1606,7 +2176,7 @@ export type GetSensorResponses = {
 
 export type GetSensorResponse = GetSensorResponses[keyof GetSensorResponses];
 
-export type GetLatestData = {
+export type GetSensorLatestData = {
     body?: never;
     path: {
         /**
@@ -1618,14 +2188,27 @@ export type GetLatestData = {
     url: '/api/v1/sensors/{sensor_id}/latest';
 };
 
-export type GetLatestResponses = {
+export type GetSensorLatestErrors = {
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type GetSensorLatestError = GetSensorLatestErrors[keyof GetSensorLatestErrors];
+
+export type GetSensorLatestResponses = {
     /**
      * Latest sensor reading
      */
     200: null | SensorReading;
 };
 
-export type GetLatestResponse = GetLatestResponses[keyof GetLatestResponses];
+export type GetSensorLatestResponse = GetSensorLatestResponses[keyof GetSensorLatestResponses];
 
 export type ListSkillsData = {
     body?: never;
@@ -1633,6 +2216,19 @@ export type ListSkillsData = {
     query?: never;
     url: '/api/v1/skills';
 };
+
+export type ListSkillsErrors = {
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type ListSkillsError = ListSkillsErrors[keyof ListSkillsErrors];
 
 export type ListSkillsResponses = {
     /**
@@ -1657,10 +2253,20 @@ export type GetSkillData = {
 
 export type GetSkillErrors = {
     /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
      * Skill not found
      */
     404: unknown;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
 };
+
+export type GetSkillError = GetSkillErrors[keyof GetSkillErrors];
 
 export type GetSkillResponses = {
     /**
@@ -1686,7 +2292,7 @@ export type ExecuteToolErrors = {
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Current owner or tool policy does not authorize execution
      */
@@ -1702,7 +2308,7 @@ export type ExecuteToolErrors = {
     /**
      * Execution acknowledgement unavailable; retain request_id
      */
-    503: ExecutionErrorResponse;
+    503: ExecutionErrorResponse | ErrorResponse;
 };
 
 export type ExecuteToolError = ExecuteToolErrors[keyof ExecuteToolErrors];
@@ -1723,6 +2329,19 @@ export type ListUsersData = {
     url: '/api/v1/users';
 };
 
+export type ListUsersErrors = {
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type ListUsersError = ListUsersErrors[keyof ListUsersErrors];
+
 export type ListUsersResponses = {
     /**
      * List users
@@ -1739,6 +2358,19 @@ export type GetMeData = {
     url: '/api/v1/users/me';
 };
 
+export type GetMeErrors = {
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type GetMeError = GetMeErrors[keyof GetMeErrors];
+
 export type GetMeResponses = {
     /**
      * Current user
@@ -1747,6 +2379,63 @@ export type GetMeResponses = {
 };
 
 export type GetMeResponse = GetMeResponses[keyof GetMeResponses];
+
+export type UpdateMeData = {
+    body: UpdateUserRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/users/me';
+};
+
+export type UpdateMeErrors = {
+    /**
+     * Invalid name, role or status: JSON error; malformed JSON or body read failure: plain text
+     */
+    400: ErrorResponse;
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Only administrators may update role or status
+     */
+    403: ErrorResponse;
+    /**
+     * Current user no longer exists or was deleted
+     */
+    404: ErrorResponse;
+    /**
+     * JSON body exceeds the 2 MiB limit
+     */
+    413: string;
+    /**
+     * Missing or unsupported JSON Content-Type
+     */
+    415: string;
+    /**
+     * JSON fields are missing or have invalid types
+     */
+    422: string;
+    /**
+     * User storage unavailable
+     */
+    500: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type UpdateMeError = UpdateMeErrors[keyof UpdateMeErrors];
+
+export type UpdateMeResponses = {
+    /**
+     * Updated current user
+     */
+    200: UserResponse;
+};
+
+export type UpdateMeResponse = UpdateMeResponses[keyof UpdateMeResponses];
 
 export type DeleteUserData = {
     body?: never;
@@ -1759,6 +2448,19 @@ export type DeleteUserData = {
     query?: never;
     url: '/api/v1/users/{id}';
 };
+
+export type DeleteUserErrors = {
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type DeleteUserError = DeleteUserErrors[keyof DeleteUserErrors];
 
 export type DeleteUserResponses = {
     /**
@@ -1778,6 +2480,19 @@ export type GetUserData = {
     query?: never;
     url: '/api/v1/users/{id}';
 };
+
+export type GetUserErrors = {
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type GetUserError = GetUserErrors[keyof GetUserErrors];
 
 export type GetUserResponses = {
     /**
@@ -1799,6 +2514,19 @@ export type UpdateUserData = {
     query?: never;
     url: '/api/v1/users/{id}';
 };
+
+export type UpdateUserErrors = {
+    /**
+     * Missing or invalid token, or inactive account
+     */
+    401: ErrorResponse;
+    /**
+     * Account verification temporarily unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type UpdateUserError = UpdateUserErrors[keyof UpdateUserErrors];
 
 export type UpdateUserResponses = {
     /**
@@ -1824,7 +2552,7 @@ export type DetectTurnErrors = {
     /**
      * Authentication required
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Model capacity reached
      */
@@ -1832,8 +2560,10 @@ export type DetectTurnErrors = {
     /**
      * Model unavailable
      */
-    503: unknown;
+    503: ErrorResponse;
 };
+
+export type DetectTurnError = DetectTurnErrors[keyof DetectTurnErrors];
 
 export type DetectTurnResponses = {
     /**

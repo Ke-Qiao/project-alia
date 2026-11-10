@@ -35,7 +35,7 @@ fn unavailable(error: anyhow::Error) -> AppError {
     )
 }
 
-#[utoipa::path(get, path = "/api/v1/embodiment/operations", tag = "embodiment", security(("bearer" = [])),
+#[utoipa::path(operation_id = "list_embodiment_operations", get, path = "/api/v1/embodiment/operations", tag = "embodiment", security(("bearer" = [])),
     params(ListQuery), responses(
         (status = 200, description = "Owner's physical operations, newest first", body = [serde_json::Value]),
         (status = 400, description = "Invalid query"), (status = 401, description = "Authentication required"),
@@ -60,7 +60,7 @@ pub async fn list(
         .map_err(unavailable)
 }
 
-#[utoipa::path(get, path = "/api/v1/embodiment/operations/{id}", tag = "embodiment", security(("bearer" = [])),
+#[utoipa::path(operation_id = "get_embodiment_operation", get, path = "/api/v1/embodiment/operations/{id}", tag = "embodiment", security(("bearer" = [])),
     params(("id" = Uuid, Path)), responses(
         (status = 200, description = "Durable operation status and separate physical evidence", body = serde_json::Value),
         (status = 400, description = "Invalid identity"), (status = 401, description = "Authentication required"),

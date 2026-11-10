@@ -1,4 +1,4 @@
-import type { AuthResponse, TokenResponse, UserResponse } from '@/lib/api/generated/types.gen';
+import type { AuthResponse, ErrorCode, ErrorReason, TokenResponse, UserResponse } from '@/lib/api/generated/types.gen';
 
 import type { MockAccount, MockDataset } from './dataset';
 
@@ -21,13 +21,13 @@ export interface MockHostOptions {
   persistence?: MockPersistence
 }
 
-function errorResponse(status: number, code: string, message: string): Response {
+function errorResponse(status: number, code: ErrorCode, message: string, reason?: ErrorReason): Response {
   // Same body shape as AppError::into_response in packages/alia-server/src/error.rs.
-  return Response.json({ error: { code, message } }, { status });
+  return Response.json({ error: { code, message, ...(reason && { reason }) } }, { status });
 }
 
-function unauthorized(message: string) {
-  return errorResponse(401, 'AUTH_INVALID_CREDENTIALS', message);
+function unauthorized(message: string, reason: ErrorReason) {
+  return errorResponse(401, 'AUTH_INVALID_CREDENTIALS', message, reason);
 }
 
 function invalid(message: string) {
@@ -78,7 +78,7 @@ export function createMockHost(dataset: MockDataset, options: MockHostOptions) {
     const email = field(body, 'email').trim().toLowerCase();
     if (!email.includes('@')) return invalid('invalid email address');
     const account = state.accounts.find(item => item.user.email === email && item.user.status === 'active');
-    if (account?.password !== field(body, 'password')) return unauthorized('invalid email or password');
+    if (account?.password !== field(body, 'password')) return unauthorized('invalid email or password', 'invalid_credentials');
     account.user.last_login_at = new Date().toISOString();
     return Response.json(authResponse(account.user));
   }
@@ -90,7 +90,7 @@ export function createMockHost(dataset: MockDataset, options: MockHostOptions) {
     if (name.length === 0 || name.length > 120) return invalid('name must be between 1 and 120 characters');
     const password = field(body, 'password');
     if (password.length < 8) return invalid('password must be at least 8 characters');
-    if (state.accounts.some(item => item.user.email === email)) return invalid('email already registered');
+    if (state.accounts.some(item => item.user.email === email)) return errorResponse(409, 'ALREADY_EXISTS', 'email already registered', 'email_already_registered');
 
     const now = new Date().toISOString();
     const account: MockAccount = {
@@ -116,20 +116,24 @@ export function createMockHost(dataset: MockDataset, options: MockHostOptions) {
     const { [token]: userId, ...remaining } = state.refreshTokens;
     state.refreshTokens = remaining;
     const account = state.accounts.find(item => item.user.id === userId);
-    if (!account) return unauthorized('invalid refresh token');
-    if (account.user.status !== 'active') return unauthorized('user is not active');
+    if (!account) return unauthorized('invalid refresh token', 'refresh_token_invalid');
+    if (account.user.status !== 'active') return unauthorized('account does not exist or is not active', 'account_inactive');
     return Response.json(issueTokens(account.user.id));
+  }
+
+  function logout(body: unknown): Response {
+    const token = field(body, 'refresh_token').trim();
+    Reflect.deleteProperty(state.refreshTokens, token);
+    return Response.json({ success: true });
   }
 
   function me(request: Request): Response {
     const header = request.headers.get('Authorization');
-    if (!header) return unauthorized('Missing authorization header');
-    if (!header.startsWith('Bearer ')) return unauthorized('Invalid authorization format');
+    if (!header?.startsWith('Bearer ')) return unauthorized('missing or malformed authorization header', 'token_missing');
     const userId = state.accessTokens[header.slice('Bearer '.length)];
-    if (!userId) return unauthorized('Invalid or expired token');
+    if (!userId) return unauthorized('invalid or expired token', 'token_invalid');
     const account = state.accounts.find(item => item.user.id === userId);
-    if (!account) return unauthorized('Authenticated user no longer exists');
-    if (account.user.status !== 'active') return unauthorized('Authenticated user is not active');
+    if (account?.user.status !== 'active') return unauthorized('account does not exist or is not active', 'account_inactive');
     return Response.json(account.user);
   }
 
@@ -143,6 +147,7 @@ export function createMockHost(dataset: MockDataset, options: MockHostOptions) {
       case 'POST /api/v1/auth/login': return login(body);
       case 'POST /api/v1/auth/register': return register(body);
       case 'POST /api/v1/auth/refresh': return refresh(body);
+      case 'POST /api/v1/auth/logout': return logout(body);
       case 'GET /api/v1/users/me': return me(request);
       default: return errorResponse(404, 'NOT_FOUND', `mock host does not implement ${key}`);
     }

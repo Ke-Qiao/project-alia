@@ -1,0 +1,20 @@
+COMMAND: pnpm web:openapi
+START_UTC: 20261110T204437124160Z
+
+> project-alia@ web:openapi /Users/ke-qiao/Developer/project-alia
+> cargo run -p alia-server --bin openapi -- clients/web/openapi/openapi.json && pnpm --dir clients/web openapi:ts
+
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 20.40s
+     Running `target/debug/openapi clients/web/openapi/openapi.json`
+
+> @alia/web@ openapi:ts /Users/ke-qiao/Developer/project-alia/clients/web
+> openapi-ts
+
+[90m@hey-api/openapi-ts v0.99.0[39m
+
+[90m[Job 1] [39m[90m~[39m [36mGenerating...[39m
+[90m[Job 1] [39m[36m  [1] [39m./openapi/openapi.json
+[90m[Job 1] [39m[32m✓[39m [96m./clients/web/lib/api/generated[39m [90m· 4 files · 79ms[39m
+
+EXIT_CODE: 0

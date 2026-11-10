@@ -1,0 +1,17 @@
+COMMAND: cargo test -p alia-server --lib openapi::tests --offline --locked
+START_UTC: 20261110T203924224106Z
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 20.79s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-7935b3105a1c6046)
+
+running 5 tests
+test openapi::tests::auth_error_injection_preserves_domain_media_is_idempotent_and_handles_every_method ... ok
+test openapi::tests::execution_contract_documents_durable_results_confirmation_and_typed_errors ... ok
+test openapi::tests::secured_operations_document_json_auth_errors_and_public_logout_stays_public ... ok
+test openapi::tests::operation_ids_are_unique_and_resource_names_are_stable ... ok
+test openapi::tests::companion_contract_matches_owner_routes_required_fields_and_real_errors ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 414 filtered out; finished in 0.02s
+
+
+EXIT_CODE: 0

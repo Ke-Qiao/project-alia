@@ -118,19 +118,21 @@ POST 返回 `503 COMPANION_SHADOW_UNCONFIRMED` 或传输结果未知时，只重
 
 ## 错误形状
 
-JSON 错误统一外层为 `{"error": {...}}`，内部 `code` 和 `message` 必填。以下附加字段也必填，不是可选的客户端猜测值。
+JSON 错误统一外层为 `{"error": {...}}`，内部 `code` 和 `message` 必填。普通错误使用共享 `ErrorResponse`，认证错误另带机器可读的 `reason`；没有细分原因时省略该字段。客户端按 `code` 和 `reason` 判断，不匹配消息文字。Companion 的三个特殊回执使用独立类型，以下身份字段必须存在。
 
 | 状态 | `error.code` | 附加字段与处理 |
 | --- | --- | --- |
 | 400 | `VALIDATION_ERROR` | 无；缺字段、未知字段、nil UUID、重复 ID、越界或 enabled 尚不可用 |
-| 401 | `AUTH_INVALID_CREDENTIALS` | 无；缺少/无效/过期 JWT、账户不存在/非 active，或账户验证超时 |
+| 401 | `AUTH_INVALID_CREDENTIALS` | `reason` 为 `token_missing`、`token_invalid` 或 `account_inactive`；缺少/无效/过期 JWT 或账户不存在/非 active |
 | 403 | `AUTH_FORBIDDEN` | 无；owner、来源或当前权限不允许；replay 不区分不存在与其他 owner |
 | 409 | `VERSION_CONFLICT` | 无；CAS revision、operation 意图或规范权限版本冲突 |
 | 410 | `COMPANION_EVIDENCE_ERASED` | 原 `operation_id`；shadow/replay 的私密证据已不能回放 |
 | 503 | `COMPANION_POLICY_UNCONFIRMED` | 原 `expected_revision`；PUT 完成未确认，先 GET 再处理原意图 |
 | 503 | `COMPANION_SHADOW_UNCONFIRMED` | 原 `operation_id`；POST 完成未确认，重试原 ID 和原 Appraisal 集合 |
-| 503 | `SERVICE_UNAVAILABLE` | 无；policy/replay 的读取或存储不可用 |
+| 503 | `SERVICE_UNAVAILABLE` | 所有接口的账户验证超时带 `reason: account_verification_unavailable`；policy/replay 的读取或存储不可用不带 `reason` |
 | 500 | `INTERNAL_DB_ERROR` | 无；认证时账户查询的数据库错误，仅返回通用消息 |
+
+PUT/POST 的 503 也可能来自进入业务操作前的账户验证超时，此时没有 Companion 回执身份字段；OpenAPI 同时声明共享错误与特殊回执。
 
 replay URL 的 UUID 文本解析失败是现有 Axum 提取器返回的 `400 text/plain`；格式正确但为零的 UUID 则是 `400 application/json`。客户端应先检查状态和 Content-Type。应用内 Companion 请求预算为 2 秒；认证查询也有独立的 2 秒预算，客户端 deadline 不是服务端提交或回滚的证明。
 

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CancelData, CancelErrors, CancelResponseData, CancelResponseErrors, CancelResponseResponses, CancelResponses, ConfirmData, ConfirmErrors, ConfirmResponses, DeleteUserData, DeleteUserResponses, DetectTurnData, DetectTurnErrors, DetectTurnResponses, ExecuteToolData, ExecuteToolErrors, ExecuteToolResponses, ForResponseData, ForResponseErrors, ForResponseResponses, GetDelivery2Data, GetDelivery2Errors, GetDelivery2Responses, GetDeliveryData, GetDeliveryErrors, GetDeliveryResponses, GetEffectData, GetEffectErrors, GetEffectResponses, GetLatestData, GetLatestResponses, GetMeData, GetMeResponses, GetOperationData, GetOperationErrors, GetOperationResponses, GetResponseData, GetResponseErrors, GetResponseResponses, GetSensorData, GetSensorResponses, GetSkillData, GetSkillErrors, GetSkillResponses, GetUserData, GetUserResponses, HealthCheckData, HealthCheckResponses, IngestBatchData, IngestBatchResponses, IngestReadingData, IngestReadingResponses, List2Data, List2Errors, List2Responses, ListData, ListDeliveriesData, ListDeliveriesErrors, ListDeliveriesResponses, ListErrors, ListResponses, ListSensorsData, ListSensorsResponses, ListSkillsData, ListSkillsResponses, ListUsersData, ListUsersResponses, LoginData, LoginErrors, LoginResponses, PolicyData, PolicyErrors, PolicyResponses, QueryReadingsData, QueryReadingsResponses, RefreshData, RefreshErrors, RefreshResponses, RegisterData, RegisterErrors, RegisterResponses, RegisterSensorData, RegisterSensorResponses, ReplayData, ReplayErrors, ReplayResponses, ResponseEventsData, ResponseEventsErrors, ResponseEventsResponses, ShadowData, ShadowErrors, ShadowResponses, TextChunksData, TextChunksErrors, TextChunksResponses, UnregisterSensorData, UnregisterSensorResponses, UpdatePolicyData, UpdatePolicyErrors, UpdatePolicyResponses, UpdateUserData, UpdateUserResponses } from './types.gen';
+import type { CancelEffectData, CancelEffectErrors, CancelEffectResponses, CancelResponseData, CancelResponseErrors, CancelResponseResponses, ConfirmEffectData, ConfirmEffectErrors, ConfirmEffectResponses, DeleteConversationData, DeleteConversationErrors, DeleteConversationResponses, DeleteUserData, DeleteUserErrors, DeleteUserResponses, DetectTurnData, DetectTurnErrors, DetectTurnResponses, ExecuteToolData, ExecuteToolErrors, ExecuteToolResponses, GetCompanionPolicyData, GetCompanionPolicyErrors, GetCompanionPolicyResponses, GetCompanionReplayData, GetCompanionReplayErrors, GetCompanionReplayResponses, GetConversationData, GetConversationErrors, GetConversationResponses, GetDeliveryData, GetDeliveryErrors, GetDeliveryResponses, GetEffectData, GetEffectErrors, GetEffectResponses, GetEmbodimentOperationData, GetEmbodimentOperationErrors, GetEmbodimentOperationResponses, GetMeData, GetMeErrors, GetMeResponses, GetMotionDeliveryData, GetMotionDeliveryErrors, GetMotionDeliveryResponses, GetResponseData, GetResponseErrors, GetResponseResponses, GetSensorData, GetSensorErrors, GetSensorLatestData, GetSensorLatestErrors, GetSensorLatestResponses, GetSensorResponses, GetSkillData, GetSkillErrors, GetSkillResponses, GetUserData, GetUserErrors, GetUserResponses, HealthCheckData, HealthCheckResponses, IngestSensorBatchData, IngestSensorBatchErrors, IngestSensorBatchResponses, IngestSensorReadingData, IngestSensorReadingErrors, IngestSensorReadingResponses, ListConversationEventsData, ListConversationEventsErrors, ListConversationEventsResponses, ListConversationExpressionTracesData, ListConversationExpressionTracesErrors, ListConversationExpressionTracesResponses, ListConversationMessagesData, ListConversationMessagesErrors, ListConversationMessagesResponses, ListConversationsData, ListConversationsErrors, ListConversationsResponses, ListDeliveryTextChunksData, ListDeliveryTextChunksErrors, ListDeliveryTextChunksResponses, ListEffectsData, ListEffectsErrors, ListEffectsResponses, ListEmbodimentOperationsData, ListEmbodimentOperationsErrors, ListEmbodimentOperationsResponses, ListResponseDeliveriesData, ListResponseDeliveriesErrors, ListResponseDeliveriesResponses, ListResponseEventsData, ListResponseEventsErrors, ListResponseEventsResponses, ListResponseMotionDeliveriesData, ListResponseMotionDeliveriesErrors, ListResponseMotionDeliveriesResponses, ListSensorsData, ListSensorsErrors, ListSensorsResponses, ListSkillsData, ListSkillsErrors, ListSkillsResponses, ListUsersData, ListUsersErrors, ListUsersResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, QuerySensorReadingsData, QuerySensorReadingsErrors, QuerySensorReadingsResponses, RefreshTokenData, RefreshTokenErrors, RefreshTokenResponses, RegisterData, RegisterErrors, RegisterResponses, RegisterSensorData, RegisterSensorErrors, RegisterSensorResponses, RunCompanionShadowData, RunCompanionShadowErrors, RunCompanionShadowResponses, UnregisterSensorData, UnregisterSensorErrors, UnregisterSensorResponses, UpdateCompanionPolicyData, UpdateCompanionPolicyErrors, UpdateCompanionPolicyResponses, UpdateMeData, UpdateMeErrors, UpdateMeResponses, UpdateUserData, UpdateUserErrors, UpdateUserResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -27,7 +27,16 @@ export const login = <ThrowOnError extends boolean = true>(options: Options<Logi
     }
 });
 
-export const refresh = <ThrowOnError extends boolean = true>(options: Options<RefreshData, ThrowOnError>): RequestResult<RefreshResponses, RefreshErrors, ThrowOnError> => (options.client ?? client).post<RefreshResponses, RefreshErrors, ThrowOnError>({
+export const logout = <ThrowOnError extends boolean = true>(options: Options<LogoutData, ThrowOnError>): RequestResult<LogoutResponses, LogoutErrors, ThrowOnError> => (options.client ?? client).post<LogoutResponses, LogoutErrors, ThrowOnError>({
+    url: '/api/v1/auth/logout',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const refreshToken = <ThrowOnError extends boolean = true>(options: Options<RefreshTokenData, ThrowOnError>): RequestResult<RefreshTokenResponses, RefreshTokenErrors, ThrowOnError> => (options.client ?? client).post<RefreshTokenResponses, RefreshTokenErrors, ThrowOnError>({
     url: '/api/v1/auth/refresh',
     ...options,
     headers: {
@@ -49,7 +58,7 @@ export const register = <ThrowOnError extends boolean = true>(options: Options<R
  * Read the authenticated owner's current policy. The account is rechecked in
  * SQL; admin roles do not select another owner. An absent policy is seeded as shadow.
  */
-export const policy = <ThrowOnError extends boolean = true>(options?: Options<PolicyData, ThrowOnError>): RequestResult<PolicyResponses, PolicyErrors, ThrowOnError> => (options?.client ?? client).get<PolicyResponses, PolicyErrors, ThrowOnError>({
+export const getCompanionPolicy = <ThrowOnError extends boolean = true>(options?: Options<GetCompanionPolicyData, ThrowOnError>): RequestResult<GetCompanionPolicyResponses, GetCompanionPolicyErrors, ThrowOnError> => (options?.client ?? client).get<GetCompanionPolicyResponses, GetCompanionPolicyErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/companion/policy',
     ...options
@@ -61,7 +70,7 @@ export const policy = <ThrowOnError extends boolean = true>(options?: Options<Po
  * On 503, GET and compare the original intent before retrying that exact revision
  * and policy. Never silently advance expected_revision to overwrite another change.
  */
-export const updatePolicy = <ThrowOnError extends boolean = true>(options: Options<UpdatePolicyData, ThrowOnError>): RequestResult<UpdatePolicyResponses, UpdatePolicyErrors, ThrowOnError> => (options.client ?? client).put<UpdatePolicyResponses, UpdatePolicyErrors, ThrowOnError>({
+export const updateCompanionPolicy = <ThrowOnError extends boolean = true>(options: Options<UpdateCompanionPolicyData, ThrowOnError>): RequestResult<UpdateCompanionPolicyResponses, UpdateCompanionPolicyErrors, ThrowOnError> => (options.client ?? client).put<UpdateCompanionPolicyResponses, UpdateCompanionPolicyErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/companion/policy',
     ...options,
@@ -75,7 +84,7 @@ export const updatePolicy = <ThrowOnError extends boolean = true>(options: Optio
  * Read and deterministically replay this owner's original frozen report after
  * rechecking current source/owner authority. This never retries audio or grants live output.
  */
-export const replay = <ThrowOnError extends boolean = true>(options: Options<ReplayData, ThrowOnError>): RequestResult<ReplayResponses, ReplayErrors, ThrowOnError> => (options.client ?? client).get<ReplayResponses, ReplayErrors, ThrowOnError>({
+export const getCompanionReplay = <ThrowOnError extends boolean = true>(options: Options<GetCompanionReplayData, ThrowOnError>): RequestResult<GetCompanionReplayResponses, GetCompanionReplayErrors, ThrowOnError> => (options.client ?? client).get<GetCompanionReplayResponses, GetCompanionReplayErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/companion/replay/{operation_id}',
     ...options
@@ -87,7 +96,7 @@ export const replay = <ThrowOnError extends boolean = true>(options: Options<Rep
  * Repeating the same operation and Appraisal set reads its original frozen receipt;
  * changing that intent conflicts. A new shadow operation while enabled is unavailable.
  */
-export const shadow = <ThrowOnError extends boolean = true>(options: Options<ShadowData, ThrowOnError>): RequestResult<ShadowResponses, ShadowErrors, ThrowOnError> => (options.client ?? client).post<ShadowResponses, ShadowErrors, ThrowOnError>({
+export const runCompanionShadow = <ThrowOnError extends boolean = true>(options: Options<RunCompanionShadowData, ThrowOnError>): RequestResult<RunCompanionShadowResponses, RunCompanionShadowErrors, ThrowOnError> => (options.client ?? client).post<RunCompanionShadowResponses, RunCompanionShadowErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/companion/shadow',
     ...options,
@@ -97,19 +106,55 @@ export const shadow = <ThrowOnError extends boolean = true>(options: Options<Sha
     }
 });
 
+export const listConversations = <ThrowOnError extends boolean = true>(options?: Options<ListConversationsData, ThrowOnError>): RequestResult<ListConversationsResponses, ListConversationsErrors, ThrowOnError> => (options?.client ?? client).get<ListConversationsResponses, ListConversationsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/conversations',
+    ...options
+});
+
+export const deleteConversation = <ThrowOnError extends boolean = true>(options: Options<DeleteConversationData, ThrowOnError>): RequestResult<DeleteConversationResponses, DeleteConversationErrors, ThrowOnError> => (options.client ?? client).delete<DeleteConversationResponses, DeleteConversationErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/conversations/{id}',
+    ...options
+});
+
+export const getConversation = <ThrowOnError extends boolean = true>(options: Options<GetConversationData, ThrowOnError>): RequestResult<GetConversationResponses, GetConversationErrors, ThrowOnError> => (options.client ?? client).get<GetConversationResponses, GetConversationErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/conversations/{id}',
+    ...options
+});
+
+export const listConversationEvents = <ThrowOnError extends boolean = true>(options: Options<ListConversationEventsData, ThrowOnError>): RequestResult<ListConversationEventsResponses, ListConversationEventsErrors, ThrowOnError> => (options.client ?? client).get<ListConversationEventsResponses, ListConversationEventsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/conversations/{id}/events',
+    ...options
+});
+
+export const listConversationExpressionTraces = <ThrowOnError extends boolean = true>(options: Options<ListConversationExpressionTracesData, ThrowOnError>): RequestResult<ListConversationExpressionTracesResponses, ListConversationExpressionTracesErrors, ThrowOnError> => (options.client ?? client).get<ListConversationExpressionTracesResponses, ListConversationExpressionTracesErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/conversations/{id}/expression-traces',
+    ...options
+});
+
+export const listConversationMessages = <ThrowOnError extends boolean = true>(options: Options<ListConversationMessagesData, ThrowOnError>): RequestResult<ListConversationMessagesResponses, ListConversationMessagesErrors, ThrowOnError> => (options.client ?? client).get<ListConversationMessagesResponses, ListConversationMessagesErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/conversations/{id}/messages',
+    ...options
+});
+
 export const getDelivery = <ThrowOnError extends boolean = true>(options: Options<GetDeliveryData, ThrowOnError>): RequestResult<GetDeliveryResponses, GetDeliveryErrors, ThrowOnError> => (options.client ?? client).get<GetDeliveryResponses, GetDeliveryErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/deliveries/{id}',
     ...options
 });
 
-export const textChunks = <ThrowOnError extends boolean = true>(options: Options<TextChunksData, ThrowOnError>): RequestResult<TextChunksResponses, TextChunksErrors, ThrowOnError> => (options.client ?? client).get<TextChunksResponses, TextChunksErrors, ThrowOnError>({
+export const listDeliveryTextChunks = <ThrowOnError extends boolean = true>(options: Options<ListDeliveryTextChunksData, ThrowOnError>): RequestResult<ListDeliveryTextChunksResponses, ListDeliveryTextChunksErrors, ThrowOnError> => (options.client ?? client).get<ListDeliveryTextChunksResponses, ListDeliveryTextChunksErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/deliveries/{id}/text-chunks',
     ...options
 });
 
-export const list = <ThrowOnError extends boolean = true>(options?: Options<ListData, ThrowOnError>): RequestResult<ListResponses, ListErrors, ThrowOnError> => (options?.client ?? client).get<ListResponses, ListErrors, ThrowOnError>({
+export const listEffects = <ThrowOnError extends boolean = true>(options?: Options<ListEffectsData, ThrowOnError>): RequestResult<ListEffectsResponses, ListEffectsErrors, ThrowOnError> => (options?.client ?? client).get<ListEffectsResponses, ListEffectsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/effects',
     ...options
@@ -121,13 +166,13 @@ export const getEffect = <ThrowOnError extends boolean = true>(options: Options<
     ...options
 });
 
-export const cancel = <ThrowOnError extends boolean = true>(options: Options<CancelData, ThrowOnError>): RequestResult<CancelResponses, CancelErrors, ThrowOnError> => (options.client ?? client).post<CancelResponses, CancelErrors, ThrowOnError>({
+export const cancelEffect = <ThrowOnError extends boolean = true>(options: Options<CancelEffectData, ThrowOnError>): RequestResult<CancelEffectResponses, CancelEffectErrors, ThrowOnError> => (options.client ?? client).post<CancelEffectResponses, CancelEffectErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/effects/{id}/cancel',
     ...options
 });
 
-export const confirm = <ThrowOnError extends boolean = true>(options: Options<ConfirmData, ThrowOnError>): RequestResult<ConfirmResponses, ConfirmErrors, ThrowOnError> => (options.client ?? client).post<ConfirmResponses, ConfirmErrors, ThrowOnError>({
+export const confirmEffect = <ThrowOnError extends boolean = true>(options: Options<ConfirmEffectData, ThrowOnError>): RequestResult<ConfirmEffectResponses, ConfirmEffectErrors, ThrowOnError> => (options.client ?? client).post<ConfirmEffectResponses, ConfirmEffectErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/effects/{id}/confirm',
     ...options,
@@ -137,19 +182,19 @@ export const confirm = <ThrowOnError extends boolean = true>(options: Options<Co
     }
 });
 
-export const list2 = <ThrowOnError extends boolean = true>(options?: Options<List2Data, ThrowOnError>): RequestResult<List2Responses, List2Errors, ThrowOnError> => (options?.client ?? client).get<List2Responses, List2Errors, ThrowOnError>({
+export const listEmbodimentOperations = <ThrowOnError extends boolean = true>(options?: Options<ListEmbodimentOperationsData, ThrowOnError>): RequestResult<ListEmbodimentOperationsResponses, ListEmbodimentOperationsErrors, ThrowOnError> => (options?.client ?? client).get<ListEmbodimentOperationsResponses, ListEmbodimentOperationsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/embodiment/operations',
     ...options
 });
 
-export const getOperation = <ThrowOnError extends boolean = true>(options: Options<GetOperationData, ThrowOnError>): RequestResult<GetOperationResponses, GetOperationErrors, ThrowOnError> => (options.client ?? client).get<GetOperationResponses, GetOperationErrors, ThrowOnError>({
+export const getEmbodimentOperation = <ThrowOnError extends boolean = true>(options: Options<GetEmbodimentOperationData, ThrowOnError>): RequestResult<GetEmbodimentOperationResponses, GetEmbodimentOperationErrors, ThrowOnError> => (options.client ?? client).get<GetEmbodimentOperationResponses, GetEmbodimentOperationErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/embodiment/operations/{id}',
     ...options
 });
 
-export const getDelivery2 = <ThrowOnError extends boolean = true>(options: Options<GetDelivery2Data, ThrowOnError>): RequestResult<GetDelivery2Responses, GetDelivery2Errors, ThrowOnError> => (options.client ?? client).get<GetDelivery2Responses, GetDelivery2Errors, ThrowOnError>({
+export const getMotionDelivery = <ThrowOnError extends boolean = true>(options: Options<GetMotionDeliveryData, ThrowOnError>): RequestResult<GetMotionDeliveryResponses, GetMotionDeliveryErrors, ThrowOnError> => (options.client ?? client).get<GetMotionDeliveryResponses, GetMotionDeliveryErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/motion-deliveries/{id}',
     ...options
@@ -167,31 +212,31 @@ export const cancelResponse = <ThrowOnError extends boolean = true>(options: Opt
     ...options
 });
 
-export const listDeliveries = <ThrowOnError extends boolean = true>(options: Options<ListDeliveriesData, ThrowOnError>): RequestResult<ListDeliveriesResponses, ListDeliveriesErrors, ThrowOnError> => (options.client ?? client).get<ListDeliveriesResponses, ListDeliveriesErrors, ThrowOnError>({
+export const listResponseDeliveries = <ThrowOnError extends boolean = true>(options: Options<ListResponseDeliveriesData, ThrowOnError>): RequestResult<ListResponseDeliveriesResponses, ListResponseDeliveriesErrors, ThrowOnError> => (options.client ?? client).get<ListResponseDeliveriesResponses, ListResponseDeliveriesErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/responses/{id}/deliveries',
     ...options
 });
 
-export const responseEvents = <ThrowOnError extends boolean = true>(options: Options<ResponseEventsData, ThrowOnError>): RequestResult<ResponseEventsResponses, ResponseEventsErrors, ThrowOnError> => (options.client ?? client).get<ResponseEventsResponses, ResponseEventsErrors, ThrowOnError>({
+export const listResponseEvents = <ThrowOnError extends boolean = true>(options: Options<ListResponseEventsData, ThrowOnError>): RequestResult<ListResponseEventsResponses, ListResponseEventsErrors, ThrowOnError> => (options.client ?? client).get<ListResponseEventsResponses, ListResponseEventsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/responses/{id}/events',
     ...options
 });
 
-export const forResponse = <ThrowOnError extends boolean = true>(options: Options<ForResponseData, ThrowOnError>): RequestResult<ForResponseResponses, ForResponseErrors, ThrowOnError> => (options.client ?? client).get<ForResponseResponses, ForResponseErrors, ThrowOnError>({
+export const listResponseMotionDeliveries = <ThrowOnError extends boolean = true>(options: Options<ListResponseMotionDeliveriesData, ThrowOnError>): RequestResult<ListResponseMotionDeliveriesResponses, ListResponseMotionDeliveriesErrors, ThrowOnError> => (options.client ?? client).get<ListResponseMotionDeliveriesResponses, ListResponseMotionDeliveriesErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/responses/{id}/motion-deliveries',
     ...options
 });
 
-export const listSensors = <ThrowOnError extends boolean = true>(options?: Options<ListSensorsData, ThrowOnError>): RequestResult<ListSensorsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListSensorsResponses, unknown, ThrowOnError>({
+export const listSensors = <ThrowOnError extends boolean = true>(options?: Options<ListSensorsData, ThrowOnError>): RequestResult<ListSensorsResponses, ListSensorsErrors, ThrowOnError> => (options?.client ?? client).get<ListSensorsResponses, ListSensorsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/sensors',
     ...options
 });
 
-export const registerSensor = <ThrowOnError extends boolean = true>(options: Options<RegisterSensorData, ThrowOnError>): RequestResult<RegisterSensorResponses, unknown, ThrowOnError> => (options.client ?? client).post<RegisterSensorResponses, unknown, ThrowOnError>({
+export const registerSensor = <ThrowOnError extends boolean = true>(options: Options<RegisterSensorData, ThrowOnError>): RequestResult<RegisterSensorResponses, RegisterSensorErrors, ThrowOnError> => (options.client ?? client).post<RegisterSensorResponses, RegisterSensorErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/sensors',
     ...options,
@@ -201,7 +246,7 @@ export const registerSensor = <ThrowOnError extends boolean = true>(options: Opt
     }
 });
 
-export const ingestReading = <ThrowOnError extends boolean = true>(options: Options<IngestReadingData, ThrowOnError>): RequestResult<IngestReadingResponses, unknown, ThrowOnError> => (options.client ?? client).post<IngestReadingResponses, unknown, ThrowOnError>({
+export const ingestSensorReading = <ThrowOnError extends boolean = true>(options: Options<IngestSensorReadingData, ThrowOnError>): RequestResult<IngestSensorReadingResponses, IngestSensorReadingErrors, ThrowOnError> => (options.client ?? client).post<IngestSensorReadingResponses, IngestSensorReadingErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/sensors/ingest',
     ...options,
@@ -211,7 +256,7 @@ export const ingestReading = <ThrowOnError extends boolean = true>(options: Opti
     }
 });
 
-export const ingestBatch = <ThrowOnError extends boolean = true>(options: Options<IngestBatchData, ThrowOnError>): RequestResult<IngestBatchResponses, unknown, ThrowOnError> => (options.client ?? client).post<IngestBatchResponses, unknown, ThrowOnError>({
+export const ingestSensorBatch = <ThrowOnError extends boolean = true>(options: Options<IngestSensorBatchData, ThrowOnError>): RequestResult<IngestSensorBatchResponses, IngestSensorBatchErrors, ThrowOnError> => (options.client ?? client).post<IngestSensorBatchResponses, IngestSensorBatchErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/sensors/ingest/batch',
     ...options,
@@ -221,31 +266,31 @@ export const ingestBatch = <ThrowOnError extends boolean = true>(options: Option
     }
 });
 
-export const queryReadings = <ThrowOnError extends boolean = true>(options?: Options<QueryReadingsData, ThrowOnError>): RequestResult<QueryReadingsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<QueryReadingsResponses, unknown, ThrowOnError>({
+export const querySensorReadings = <ThrowOnError extends boolean = true>(options?: Options<QuerySensorReadingsData, ThrowOnError>): RequestResult<QuerySensorReadingsResponses, QuerySensorReadingsErrors, ThrowOnError> => (options?.client ?? client).get<QuerySensorReadingsResponses, QuerySensorReadingsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/sensors/query',
     ...options
 });
 
-export const unregisterSensor = <ThrowOnError extends boolean = true>(options: Options<UnregisterSensorData, ThrowOnError>): RequestResult<UnregisterSensorResponses, unknown, ThrowOnError> => (options.client ?? client).delete<UnregisterSensorResponses, unknown, ThrowOnError>({
+export const unregisterSensor = <ThrowOnError extends boolean = true>(options: Options<UnregisterSensorData, ThrowOnError>): RequestResult<UnregisterSensorResponses, UnregisterSensorErrors, ThrowOnError> => (options.client ?? client).delete<UnregisterSensorResponses, UnregisterSensorErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/sensors/{sensor_id}',
     ...options
 });
 
-export const getSensor = <ThrowOnError extends boolean = true>(options: Options<GetSensorData, ThrowOnError>): RequestResult<GetSensorResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetSensorResponses, unknown, ThrowOnError>({
+export const getSensor = <ThrowOnError extends boolean = true>(options: Options<GetSensorData, ThrowOnError>): RequestResult<GetSensorResponses, GetSensorErrors, ThrowOnError> => (options.client ?? client).get<GetSensorResponses, GetSensorErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/sensors/{sensor_id}',
     ...options
 });
 
-export const getLatest = <ThrowOnError extends boolean = true>(options: Options<GetLatestData, ThrowOnError>): RequestResult<GetLatestResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetLatestResponses, unknown, ThrowOnError>({
+export const getSensorLatest = <ThrowOnError extends boolean = true>(options: Options<GetSensorLatestData, ThrowOnError>): RequestResult<GetSensorLatestResponses, GetSensorLatestErrors, ThrowOnError> => (options.client ?? client).get<GetSensorLatestResponses, GetSensorLatestErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/sensors/{sensor_id}/latest',
     ...options
 });
 
-export const listSkills = <ThrowOnError extends boolean = true>(options?: Options<ListSkillsData, ThrowOnError>): RequestResult<ListSkillsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListSkillsResponses, unknown, ThrowOnError>({
+export const listSkills = <ThrowOnError extends boolean = true>(options?: Options<ListSkillsData, ThrowOnError>): RequestResult<ListSkillsResponses, ListSkillsErrors, ThrowOnError> => (options?.client ?? client).get<ListSkillsResponses, ListSkillsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/skills',
     ...options
@@ -271,31 +316,41 @@ export const executeTool = <ThrowOnError extends boolean = true>(options: Option
     }
 });
 
-export const listUsers = <ThrowOnError extends boolean = true>(options?: Options<ListUsersData, ThrowOnError>): RequestResult<ListUsersResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListUsersResponses, unknown, ThrowOnError>({
+export const listUsers = <ThrowOnError extends boolean = true>(options?: Options<ListUsersData, ThrowOnError>): RequestResult<ListUsersResponses, ListUsersErrors, ThrowOnError> => (options?.client ?? client).get<ListUsersResponses, ListUsersErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/users',
     ...options
 });
 
-export const getMe = <ThrowOnError extends boolean = true>(options?: Options<GetMeData, ThrowOnError>): RequestResult<GetMeResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetMeResponses, unknown, ThrowOnError>({
+export const getMe = <ThrowOnError extends boolean = true>(options?: Options<GetMeData, ThrowOnError>): RequestResult<GetMeResponses, GetMeErrors, ThrowOnError> => (options?.client ?? client).get<GetMeResponses, GetMeErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/users/me',
     ...options
 });
 
-export const deleteUser = <ThrowOnError extends boolean = true>(options: Options<DeleteUserData, ThrowOnError>): RequestResult<DeleteUserResponses, unknown, ThrowOnError> => (options.client ?? client).delete<DeleteUserResponses, unknown, ThrowOnError>({
+export const updateMe = <ThrowOnError extends boolean = true>(options: Options<UpdateMeData, ThrowOnError>): RequestResult<UpdateMeResponses, UpdateMeErrors, ThrowOnError> => (options.client ?? client).patch<UpdateMeResponses, UpdateMeErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/users/me',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const deleteUser = <ThrowOnError extends boolean = true>(options: Options<DeleteUserData, ThrowOnError>): RequestResult<DeleteUserResponses, DeleteUserErrors, ThrowOnError> => (options.client ?? client).delete<DeleteUserResponses, DeleteUserErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/users/{id}',
     ...options
 });
 
-export const getUser = <ThrowOnError extends boolean = true>(options: Options<GetUserData, ThrowOnError>): RequestResult<GetUserResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetUserResponses, unknown, ThrowOnError>({
+export const getUser = <ThrowOnError extends boolean = true>(options: Options<GetUserData, ThrowOnError>): RequestResult<GetUserResponses, GetUserErrors, ThrowOnError> => (options.client ?? client).get<GetUserResponses, GetUserErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/users/{id}',
     ...options
 });
 
-export const updateUser = <ThrowOnError extends boolean = true>(options: Options<UpdateUserData, ThrowOnError>): RequestResult<UpdateUserResponses, unknown, ThrowOnError> => (options.client ?? client).patch<UpdateUserResponses, unknown, ThrowOnError>({
+export const updateUser = <ThrowOnError extends boolean = true>(options: Options<UpdateUserData, ThrowOnError>): RequestResult<UpdateUserResponses, UpdateUserErrors, ThrowOnError> => (options.client ?? client).patch<UpdateUserResponses, UpdateUserErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/users/{id}',
     ...options,

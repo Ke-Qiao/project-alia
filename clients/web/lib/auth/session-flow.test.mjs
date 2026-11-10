@@ -8,6 +8,7 @@ import { mockDataset } from '../mock/dataset.ts';
 import { createMockHost } from '../mock/host.ts';
 import { createSessionStore, SESSION_STORAGE_KEY } from './session-store.ts';
 import { createAuthFetch, createTokenRefresher } from './token-refresh.ts';
+import { signOut } from './sign-out.ts';
 
 const ORIGIN = 'http://alia.test';
 const [admin] = mockDataset.accounts;
@@ -61,7 +62,8 @@ function createTab(host, storage, runExclusive) {
       const data = await api(authFetch, 'POST', '/api/v1/auth/login', { body: { email, password } });
       store.set({ accessToken: data.access_token, refreshToken: data.refresh_token, user: data.user });
     },
-    me: () => api(authFetch, 'GET', '/api/v1/users/me', { token: store.get()?.accessToken })
+    me: () => api(authFetch, 'GET', '/api/v1/users/me', { token: store.get()?.accessToken }),
+    signOut: () => signOut(store, refreshToken => api(authFetch, 'POST', '/api/v1/auth/logout', { body: { refresh_token: refreshToken } }))
   };
 }
 
@@ -72,7 +74,7 @@ function setup() {
 
 test('wrong password is a 401 on sign-in and does not touch the session or try to refresh', async () => {
   const { tab } = setup();
-  await assert.rejects(tab.signIn(admin.user.email, 'wrong-password'), error => error instanceof ApiError && error.status === 401);
+  await assert.rejects(tab.signIn(admin.user.email, 'wrong-password'), error => error instanceof ApiError && error.status === 401 && error.reason === 'invalid_credentials');
   assert.equal(tab.store.get(), null);
   assert.equal(tab.calls.refresh, 0);
   assert.equal(tab.store.getSignOutReason(), null);
@@ -81,7 +83,7 @@ test('wrong password is a 401 on sign-in and does not touch the session or try t
 test('a disabled account cannot sign in', async () => {
   const { tab } = setup();
   const disabled = mockDataset.accounts.find(account => account.user.status === 'disabled');
-  await assert.rejects(tab.signIn(disabled.user.email, disabled.password), error => error.status === 401);
+  await assert.rejects(tab.signIn(disabled.user.email, disabled.password), error => error.status === 401 && error.reason === 'invalid_credentials');
 });
 
 test('expired access token: concurrent requests share one refresh and all succeed', async () => {
@@ -127,15 +129,32 @@ test('server unreachable during refresh: the session is kept and the error is a 
   assert.notEqual(offlineTab.store.get(), null);
 });
 
-test('sign-out while a refresh is in flight does not bring the session back', async () => {
-  const { host, tab } = setup();
+test('sign-out after the server rotates tokens but before its response arrives cannot restore the session', { timeout: 5000 }, async () => {
+  const host = createMockHost(mockDataset, { origin: ORIGIN });
+  const rotated = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const realFetch = host.fetch;
+  host.fetch = async (input, init) => {
+    const response = await realFetch(input, init);
+    const url = typeof input === 'string' ? input : input.url;
+    if (url.endsWith('/auth/refresh')) {
+      rotated.resolve();
+      await release.promise;
+    }
+    return response;
+  };
+  const tab = createTab(host, memoryStorage());
   await tab.signIn();
   host.controls.expireAccessTokens();
 
   const pending = tab.me();
-  tab.store.clear('manual');
-
-  await assert.rejects(pending, error => error.status === 401);
+  const rejected = assert.rejects(pending, error => error.status === 401);
+  await rotated.promise;
+  await tab.signOut();
+  assert.equal(tab.store.get(), null);
+  release.resolve();
+  await rejected;
+  assert.equal(tab.calls.refresh, 1);
   assert.equal(tab.store.get(), null);
   assert.equal(tab.store.getSignOutReason(), 'manual');
 });
@@ -186,4 +205,108 @@ test('errors are classified so that failures are not shown as empty data', () =>
 
   const html = toApiError('<html>Bad Gateway</html>', { ok: false, status: 502, statusText: 'Bad Gateway' });
   assert.equal(isRetryableError(html), true);
+});
+
+test('duplicate email uses its declared status, code and reason', async () => {
+  const { host } = setup();
+  await assert.rejects(
+    api(host.fetch, 'POST', '/api/v1/auth/register', {
+      body: { email: admin.user.email, name: 'Another account', password: 'another-password' }
+    }),
+    error => error instanceof ApiError && error.status === 409 && error.code === 'ALREADY_EXISTS' && error.reason === 'email_already_registered'
+  );
+});
+
+test('sign-out immediately clears local state and revokes the captured refresh token', async () => {
+  const { host, tab } = setup();
+  await tab.signIn();
+  const oldToken = tab.store.get().refreshToken;
+  const pending = tab.signOut();
+  assert.equal(tab.store.get(), null);
+  assert.equal(tab.store.getSignOutReason(), 'manual');
+  await pending;
+  await assert.rejects(
+    api(host.fetch, 'POST', '/api/v1/auth/refresh', { body: { refresh_token: oldToken } }),
+    error => error.status === 401 && error.reason === 'refresh_token_invalid'
+  );
+});
+
+test('unreachable logout does not prevent local sign-out', async () => {
+  const { host, tab } = setup();
+  await tab.signIn();
+  host.controls.setOffline(true);
+  const pending = tab.signOut();
+  assert.equal(tab.store.get(), null);
+  await pending;
+  assert.equal(tab.store.getSignOutReason(), 'manual');
+});
+
+test('a late logout failure leaves a newly signed-in account untouched', async () => {
+  const { tab } = setup();
+  await tab.signIn();
+  const previous = tab.store.get();
+  const release = Promise.withResolvers();
+  let sentToken;
+  const pending = signOut(tab.store, (token) => {
+    sentToken = token;
+    assert.equal(tab.store.get(), null);
+    return release.promise;
+  });
+  assert.equal(tab.store.get(), null);
+  assert.equal(sentToken, previous.refreshToken);
+  const member = mockDataset.accounts.find(account => account.user.role === 'user' && account.user.status === 'active');
+  await tab.signIn(member.user.email, member.password);
+  const next = tab.store.get();
+  release.reject(new TypeError('Failed to fetch'));
+  await pending;
+  assert.deepEqual(tab.store.get(), next);
+  assert.equal(tab.store.getSignOutReason(), null);
+});
+
+test('sign-out without a session never sends an empty token', async () => {
+  const { tab } = setup();
+  let calls = 0;
+  await signOut(tab.store, () => {
+    calls += 1;
+    return Promise.resolve();
+  });
+  assert.equal(calls, 0);
+  assert.equal(tab.store.get(), null);
+});
+
+test('refresh 503 preserves the session regardless of the error reason', async () => {
+  const host = createMockHost(mockDataset, { origin: ORIGIN });
+  const realFetch = host.fetch;
+  host.fetch = (input, init) => {
+    const url = typeof input === 'string' ? input : input.url;
+    if (url.endsWith('/auth/refresh')) {
+      return Promise.resolve(Response.json({ error: {
+        code: 'SERVICE_UNAVAILABLE', reason: 'account_verification_unavailable', message: 'Account verification unavailable'
+      } }, { status: 503 }));
+    }
+    return realFetch(input, init);
+  };
+  const tab = createTab(host, memoryStorage());
+  await tab.signIn();
+  const before = tab.store.get();
+  host.controls.expireAccessTokens();
+  await assert.rejects(tab.me(), error => error.status === 503 && error.reason === 'account_verification_unavailable');
+  assert.deepEqual(tab.store.get(), before);
+  assert.equal(tab.store.getSignOutReason(), null);
+});
+
+test('non-Alia and malformed errors cannot invent a field-level reason', () => {
+  const response = { ok: false, status: 409, statusText: 'Conflict' };
+  for (const payload of [null, 'proxy failure', { error: null }, { error: { code: 1, reason: {}, message: false } }]) {
+    const error = toApiError(payload, response);
+    assert.equal(error.status, 409);
+    assert.equal(error.code, undefined);
+    assert.equal(error.reason, undefined);
+    assert.equal(describeApiError(error, ORIGIN), typeof payload === 'string' ? payload : 'Conflict');
+  }
+  const structured = toApiError({ error: {
+    code: 'ALREADY_EXISTS', reason: 'email_already_registered', message: 'A different display message'
+  } }, response);
+  assert.equal(structured.reason, 'email_already_registered');
+  assert.equal(describeApiError(structured, ORIGIN), 'A different display message');
 });

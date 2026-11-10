@@ -38,12 +38,21 @@ use crate::api;
         api::auth::login,
         api::auth::register,
         api::auth::refresh,
+        api::auth::logout,
         // Users
         api::users::get_me,
+        api::users::update_user_me,
         api::users::list_users,
         api::users::get_user,
         api::users::update_user,
         api::users::delete_user,
+        // Conversations
+        api::conversations::list_conversations,
+        api::conversations::get_conversation,
+        api::conversations::delete_conversation,
+        api::conversations::get_messages,
+        api::conversations::get_events,
+        api::conversations::get_expression_traces,
         // Sensors
         api::sensors::list_sensors,
         api::sensors::get_sensor,
@@ -58,6 +67,17 @@ use crate::api;
         api::skills::get_skill,
     ),
     components(schemas(
+        crate::error::ErrorResponse,
+        crate::error::ErrorDetail,
+        crate::error::ErrorCode,
+        crate::error::ErrorReason,
+        api::auth::LogoutResult,
+        api::conversations::Conversation,
+        api::conversations::Message,
+        api::conversations::AgentEvent,
+        api::conversations::DeleteConversationResult,
+        crate::expression::ExpressionTrace,
+        crate::expression::ExpressionTraceEventSummary,
         // Health
         api::health::HealthResponse,
         api::health::ModuleStatus,
@@ -130,7 +150,7 @@ use crate::api;
         (name = "execution", description = "Durable effect proposals, owner approval and observed outcomes"),
         (name = "delivery", description = "Canonical responses and separate accepted, submitted and presented evidence; never an audio replay queue"),
     ),
-    modifiers(&SecurityAddon)
+    modifiers(&SecurityAddon, &StandardAuthErrors)
 )]
 pub struct ApiDoc;
 
@@ -151,9 +171,244 @@ impl utoipa::Modify for SecurityAddon {
     }
 }
 
+struct StandardAuthErrors;
+
+impl utoipa::Modify for StandardAuthErrors {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        use utoipa::openapi::{Content, Ref, RefOr, Response, Schema, schema::OneOfBuilder};
+
+        let shared = RefOr::Ref(Ref::from_schema_name("ErrorResponse"));
+        for item in openapi.paths.paths.values_mut() {
+            for operation in [
+                &mut item.get,
+                &mut item.put,
+                &mut item.post,
+                &mut item.delete,
+                &mut item.options,
+                &mut item.head,
+                &mut item.patch,
+                &mut item.trace,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                let security = operation.security.as_ref().or(openapi.security.as_ref());
+                let secured = security.is_some_and(|requirements| {
+                    !requirements.is_empty()
+                        && requirements
+                            .iter()
+                            .all(|requirement| requirement != &Default::default())
+                });
+                if !secured {
+                    continue;
+                }
+                for (status, description) in [
+                    ("401", "Missing or invalid token, or inactive account"),
+                    ("503", "Account verification temporarily unavailable"),
+                ] {
+                    let response = operation
+                        .responses
+                        .responses
+                        .entry(status.into())
+                        .or_insert_with(|| Response::new(description).into());
+                    let RefOr::T(response) = response else {
+                        continue;
+                    };
+                    let content = response
+                        .content
+                        .entry("application/json".into())
+                        .or_insert_with(|| Content::new(Some(shared.clone())));
+                    if status == "401" {
+                        content.schema = Some(shared.clone());
+                        continue;
+                    }
+                    content.schema = Some(match content.schema.take() {
+                        None => shared.clone(),
+                        Some(schema) if schema == shared => schema,
+                        Some(RefOr::T(Schema::OneOf(mut union))) => {
+                            if !union.items.contains(&shared) {
+                                union.items.push(shared.clone());
+                            }
+                            RefOr::T(Schema::OneOf(union))
+                        }
+                        Some(schema) => {
+                            OneOfBuilder::new().item(schema).item(shared.clone()).into()
+                        }
+                    });
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn operation_ids_are_unique_and_resource_names_are_stable() {
+        let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        let mut ids = std::collections::BTreeSet::new();
+        for (path, item) in spec["paths"].as_object().unwrap() {
+            for method in [
+                "get", "put", "post", "delete", "options", "head", "patch", "trace",
+            ] {
+                let Some(operation) = item.get(method) else {
+                    continue;
+                };
+                let id = operation["operationId"].as_str().expect("operationId");
+                assert!(
+                    ids.insert(id),
+                    "duplicate operationId {id}: {method} {path}"
+                );
+                assert!(
+                    !id.ends_with(|c: char| c.is_ascii_digit()),
+                    "numeric suffix: {id}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn secured_operations_document_json_auth_errors_and_public_logout_stays_public() {
+        let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        for (path, item) in spec["paths"].as_object().unwrap() {
+            for method in [
+                "get", "put", "post", "delete", "options", "head", "patch", "trace",
+            ] {
+                let Some(operation) = item.get(method) else {
+                    continue;
+                };
+                if operation["security"].as_array().is_none_or(Vec::is_empty) {
+                    continue;
+                }
+                for status in ["401", "503"] {
+                    assert!(
+                        operation["responses"][status]["content"]["application/json"]["schema"]
+                            .is_object(),
+                        "missing JSON error schema for {method} {path}: {status}"
+                    );
+                }
+                assert_eq!(
+                    operation["responses"]["401"]["content"]["application/json"]["schema"]["$ref"],
+                    "#/components/schemas/ErrorResponse"
+                );
+            }
+        }
+        assert!(
+            spec["paths"]["/api/v1/auth/logout"]["post"]
+                .get("security")
+                .is_none()
+        );
+        for (path, method, id) in [
+            ("/api/v1/auth/logout", "post", "logout"),
+            ("/api/v1/users/me", "patch", "update_me"),
+            ("/api/v1/conversations", "get", "list_conversations"),
+            ("/api/v1/conversations/{id}", "get", "get_conversation"),
+            (
+                "/api/v1/conversations/{id}",
+                "delete",
+                "delete_conversation",
+            ),
+            (
+                "/api/v1/conversations/{id}/messages",
+                "get",
+                "list_conversation_messages",
+            ),
+            (
+                "/api/v1/conversations/{id}/events",
+                "get",
+                "list_conversation_events",
+            ),
+            (
+                "/api/v1/conversations/{id}/expression-traces",
+                "get",
+                "list_conversation_expression_traces",
+            ),
+        ] {
+            assert_eq!(spec["paths"][path][method]["operationId"], id);
+        }
+        for (path, method, has_validation_error) in [
+            ("/api/v1/auth/login", "post", true),
+            ("/api/v1/auth/register", "post", true),
+            ("/api/v1/auth/refresh", "post", false),
+            ("/api/v1/auth/logout", "post", false),
+            ("/api/v1/users/me", "patch", true),
+        ] {
+            let responses = &spec["paths"][path][method]["responses"];
+            for status in ["400", "413", "415", "422"] {
+                assert_eq!(
+                    responses[status]["content"]["text/plain"]["schema"]["type"], "string",
+                    "missing extractor rejection: {method} {path} {status}"
+                );
+            }
+            if has_validation_error {
+                assert_eq!(
+                    responses["400"]["content"]["application/json"]["schema"]["$ref"],
+                    "#/components/schemas/ErrorResponse"
+                );
+            }
+        }
+        for suffix in ["", "/messages", "/events", "/expression-traces"] {
+            let path = format!("/api/v1/conversations/{{id}}{suffix}");
+            let operation = &spec["paths"][path]["get"];
+            assert_eq!(
+                operation["responses"]["400"]["content"]["text/plain"]["schema"]["type"],
+                "string"
+            );
+            for status in ["403", "404"] {
+                assert_eq!(
+                    operation["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+                    "#/components/schemas/ErrorResponse"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn auth_error_injection_preserves_domain_media_is_idempotent_and_handles_every_method() {
+        use utoipa::Modify;
+        let mut spec: utoipa::openapi::OpenApi = serde_json::from_value(serde_json::json!({
+            "openapi": "3.1.0", "info": {"title": "test", "version": "1"},
+            "security": [{"bearer": []}],
+            "paths": {
+                "/secured": {
+                    "get": {"responses": {"503": {"description": "domain", "content": {
+                        "text/plain": {"schema": {"type": "string"}},
+                        "application/json": {"schema": {"$ref": "#/components/schemas/ExecutionErrorResponse"}}
+                    }}}},
+                    "put": {"responses": {}}, "post": {"responses": {}},
+                    "delete": {"responses": {}}, "options": {"responses": {}},
+                    "head": {"responses": {}}, "patch": {"responses": {}}, "trace": {"responses": {}}
+                },
+                "/public": {"get": {"security": [], "responses": {}}},
+                "/optional": {"get": {"security": [{"bearer": []}, {}], "responses": {}}}
+            }
+        })).unwrap();
+        StandardAuthErrors.modify(&mut spec);
+        let once = serde_json::to_value(&spec).unwrap();
+        StandardAuthErrors.modify(&mut spec);
+        assert_eq!(once, serde_json::to_value(&spec).unwrap());
+        for method in [
+            "get", "put", "post", "delete", "options", "head", "patch", "trace",
+        ] {
+            for status in ["401", "503"] {
+                assert!(once["paths"]["/secured"][method]["responses"][status]["content"]["application/json"]["schema"].is_object());
+            }
+        }
+        assert_eq!(
+            once["paths"]["/secured"]["get"]["responses"]["503"]["content"]["text/plain"]["schema"]
+                ["type"],
+            "string"
+        );
+        assert_eq!(once["paths"]["/secured"]["get"]["responses"]["503"]["content"]["application/json"]["schema"]["oneOf"].as_array().unwrap().len(), 2);
+        for path in ["/public", "/optional"] {
+            assert_eq!(
+                once["paths"][path]["get"]["responses"],
+                serde_json::json!({})
+            );
+        }
+    }
 
     #[test]
     fn execution_contract_documents_durable_results_confirmation_and_typed_errors() {
@@ -169,8 +424,11 @@ mod tests {
             assert!(operation.is_object(), "missing {method} {path}");
             assert_eq!(operation["security"][0]["bearer"], serde_json::json!([]));
             assert_eq!(
-                operation["responses"]["503"]["content"]["application/json"]["schema"]["$ref"],
-                "#/components/schemas/ExecutionErrorResponse"
+                operation["responses"]["503"]["content"]["application/json"]["schema"]["oneOf"],
+                serde_json::json!([
+                    {"$ref": "#/components/schemas/ExecutionErrorResponse"},
+                    {"$ref": "#/components/schemas/ErrorResponse"},
+                ])
             );
         }
         let request = &spec["components"]["schemas"]["ExecuteToolRequest"];
@@ -256,17 +514,29 @@ mod tests {
                     op["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
                     format!("#/components/schemas/{expected_success}")
                 );
-                for status in ["401", "403", "500", "503"] {
+                for status in ["401", "403", "500"] {
                     assert_eq!(
                         op["responses"][status]["content"]["application/json"]["schema"]["$ref"],
-                        "#/components/schemas/CompanionErrorResponse"
+                        "#/components/schemas/ErrorResponse"
+                    );
+                }
+                let unavailable = &op["responses"]["503"]["content"]["application/json"]["schema"];
+                if method == "get" {
+                    assert_eq!(unavailable["$ref"], "#/components/schemas/ErrorResponse");
+                } else {
+                    assert_eq!(
+                        unavailable["oneOf"],
+                        json!([
+                            {"$ref": "#/components/schemas/CompanionErrorResponse"},
+                            {"$ref": "#/components/schemas/ErrorResponse"},
+                        ])
                     );
                 }
                 if method != "get" || path.contains("replay") {
                     for status in ["400", "409"] {
                         assert_eq!(
                             op["responses"][status]["content"]["application/json"]["schema"]["$ref"],
-                            "#/components/schemas/CompanionErrorResponse"
+                            "#/components/schemas/ErrorResponse"
                         );
                     }
                 }
@@ -409,7 +679,11 @@ mod tests {
             "#/components/schemas/CompanionErrorDetail"
         );
         let variants = schemas["CompanionErrorDetail"]["oneOf"].as_array().unwrap();
-        assert_eq!(variants.len(), 9);
+        assert_eq!(
+            variants.len(),
+            3,
+            "only Companion identity-bearing receipts belong here"
+        );
         // Compare schemas to the actual response constructors used by handlers,
         // including the shared AppError path; no database or mirror router needed.
         for (status, code, response, identity) in [
@@ -422,7 +696,7 @@ mod tests {
             (
                 401,
                 "AUTH_INVALID_CREDENTIALS",
-                AppError::Auth("Missing authorization header".into()).into_response(),
+                AppError::Unauthenticated(crate::error::AuthFailure::TokenMissing).into_response(),
                 None,
             ),
             (
@@ -495,16 +769,33 @@ mod tests {
                 "INTERNAL_DB_ERROR" => assert_eq!(error["message"], "internal error"),
                 _ => (),
             }
-            let variant = variants
-                .iter()
-                .find(|variant| variant["properties"]["code"]["enum"] == json!([code]))
-                .expect("documented error code");
             let mut fields = vec!["code", "message"];
             if let Some((field, expected)) = identity {
                 fields.push(field);
                 assert_eq!(error[field], expected);
+                let variant = variants
+                    .iter()
+                    .find(|variant| variant["properties"]["code"]["enum"] == json!([code]))
+                    .expect("documented companion receipt code");
+                required_fields(variant, &fields);
+            } else {
+                assert!(
+                    schemas["ErrorCode"]["enum"]
+                        .as_array()
+                        .unwrap()
+                        .contains(&json!(code))
+                );
+                assert_eq!(
+                    schemas["ErrorDetail"]["required"],
+                    json!(["code", "message"])
+                );
+                if status == 401 {
+                    fields.push("reason");
+                    assert_eq!(error["reason"], "token_missing");
+                } else {
+                    assert!(error.get("reason").is_none());
+                }
             }
-            required_fields(variant, &fields);
             assert_eq!(error.as_object().unwrap().len(), fields.len());
         }
         let replay = &spec["paths"]["/api/v1/companion/replay/{operation_id}"]["get"];

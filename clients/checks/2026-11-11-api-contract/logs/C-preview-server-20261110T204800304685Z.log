@@ -1,0 +1,11 @@
+COMMAND: pnpm --dir clients/web exec next start --hostname 127.0.0.1 --port 43110
+START_UTC: 20261110T204800304685Z
+▲ Next.js 16.4.5
+- Local:         http://127.0.0.1:43110
+- Network:       http://127.0.0.1:43110
+✓ Ready in 59ms
+✓ Running next.config.ts took 13ms
+
+STOP: Agent-owned preview stopped after successful browser check (SIGINT).
+EXIT_CODE: 130 (intentional preview shutdown)
+Verified port 43110 has no listener after shutdown; pre-existing port 3100 process was not stopped.
