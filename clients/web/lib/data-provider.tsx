@@ -1,12 +1,10 @@
 'use client';
 
 import { SWRConfig } from 'swr';
-import { tayori } from 'tayori';
 
 import { aliaApiUrl } from '@/lib/api-url';
 import { createClient } from '@/lib/api/generated/client';
-
-const { TayoriProvider } = tayori();
+import { TayoriProvider } from '@/lib/data';
 
 export function DataFetchingProvider({ children }: React.PropsWithChildren) {
   return (

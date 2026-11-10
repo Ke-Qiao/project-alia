@@ -1,0 +1,12 @@
+/private/tmp/alia-infra-fixes-k5niyjql/snapshot/clients/android/app/src/main/AndroidManifest.xml:3: Warning: Should explicitly set android:icon, there is no default [MissingApplicationIcon]
+    <application
+     ~~~~~~~~~~~
+
+   Explanation for issues of type "MissingApplicationIcon":
+   You should set an icon for the application as whole because there is no
+   default. This attribute must be set as a reference to a drawable resource
+   containing the image (for example @drawable/icon).
+
+   https://developer.android.com/studio/publish/preparing#publishing-configure
+
+0 errors, 1 warning

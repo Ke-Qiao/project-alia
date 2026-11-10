@@ -1,0 +1,6 @@
+{
+  "CFBundleIdentifier": "dev.alia.client",
+  "MinimumOSVersion": "18.0",
+  "DTSDKName": "iphonesimulator27.2",
+  "DTPlatformName": "iphonesimulator"
+}

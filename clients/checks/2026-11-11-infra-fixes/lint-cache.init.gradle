@@ -1,0 +1,18 @@
+settingsEvaluated { settings ->
+    settings.dependencyResolutionManagement.repositories {
+        exclusiveContent {
+            forRepository {
+                maven {
+                    name = 'VerifiedLintArtifacts'
+                    url = uri('/private/tmp/alia-infra-fixes-k5niyjql/lint-maven')
+                    metadataSources { mavenPom(); ignoreGradleMetadataRedirection() }
+                }
+            }
+            filter {
+                includeModule('com.android.tools.lint', 'lint-gradle')
+                includeModule('com.android.tools.lint', 'lint-api')
+                includeModule('com.android.tools.external.com-intellij', 'kotlin-compiler')
+            }
+        }
+    }
+}

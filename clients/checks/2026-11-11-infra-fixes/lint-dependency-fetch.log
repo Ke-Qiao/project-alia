@@ -1,0 +1,10 @@
+start_utc=2026-11-10T19:30:09.282693+00:00
+cwd=/Users/ke-qiao/Developer/project-alia
+command=python3 /private/tmp/alia-infra-fixes-k5niyjql/fetch-lint-artifacts.py
+
+{"url": "https://dl.google.com/dl/android/maven2/com/android/tools/lint/lint-gradle/32.5.1/lint-gradle-32.5.1.jar", "bytes": 66292, "sha1_verified": "41bae5a174d551ada0952718a6ec2129328654f2", "sha256": "e8f8ed063b7a62628c8dde69b742f8a86dd4b73a371acebd14c7b21c30624b63", "cache_path": "/Users/ke-qiao/.gradle/caches/modules-2/files-2.1/com.android.tools.lint/lint-gradle/32.5.1/41bae5a174d551ada0952718a6ec2129328654f2/lint-gradle-32.5.1.jar"}
+{"url": "https://dl.google.com/dl/android/maven2/com/android/tools/lint/lint-api/32.5.1/lint-api-32.5.1.jar", "bytes": 1422551, "sha1_verified": "ee37e1179639ad10b5ef5e68accab54f82e5c12a", "sha256": "6b6943f4f6321ad44eb634739f0a67e7991255394d748b4243b999735a29c529", "cache_path": "/Users/ke-qiao/.gradle/caches/modules-2/files-2.1/com.android.tools.lint/lint-api/32.5.1/ee37e1179639ad10b5ef5e68accab54f82e5c12a/lint-api-32.5.1.jar"}
+{"url": "https://dl.google.com/dl/android/maven2/com/android/tools/external/com-intellij/kotlin-compiler/32.5.1/kotlin-compiler-32.5.1.jar", "bytes": 51566947, "sha1_verified": "e14fa86be18b0780ef7d1fa2cd734e6bbf739bf0", "sha256": "5cd8d9d8076fa1b811c81b1704c2c5d70bb3d5b0819fe36b78c1d71a78ea8883", "cache_path": "/Users/ke-qiao/.gradle/caches/modules-2/files-2.1/com.android.tools.external.com-intellij/kotlin-compiler/32.5.1/e14fa86be18b0780ef7d1fa2cd734e6bbf739bf0/kotlin-compiler-32.5.1.jar"}
+
+exit_code=0
+elapsed_seconds=2.769

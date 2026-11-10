@@ -1,0 +1,15 @@
+start_utc=2026-11-10T19:27:57.082384+00:00
+cwd=/Users/ke-qiao/Developer/project-alia
+command=pnpm web:typecheck
+
+
+> project-alia@ web:typecheck /Users/ke-qiao/Developer/project-alia
+> pnpm --dir clients/web typecheck
+
+
+> @alia/web@ typecheck /Users/ke-qiao/Developer/project-alia/clients/web
+> tsc --noEmit
+
+
+exit_code=0
+elapsed_seconds=0.786

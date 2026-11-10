@@ -1,0 +1,15 @@
+start_utc=2026-11-10T19:26:12.986970+00:00
+cwd=/Users/ke-qiao/Developer/project-alia
+command=pnpm web:lint
+
+
+> project-alia@ web:lint /Users/ke-qiao/Developer/project-alia
+> pnpm --dir clients/web lint
+
+
+> @alia/web@ lint /Users/ke-qiao/Developer/project-alia/clients/web
+> eslint .
+
+
+exit_code=0
+elapsed_seconds=2.293

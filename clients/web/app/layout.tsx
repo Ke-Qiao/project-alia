@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-import { DataFetchingProvider } from '@/lib/data';
+import { DataFetchingProvider } from '@/lib/data-provider';
 
 import './globals.css';
 

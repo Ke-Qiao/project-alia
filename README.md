@@ -113,8 +113,8 @@ project-alia/
 Install, generation and build commands are in [clients/README.md](clients/README.md).
 
 - **Web**: React, Next.js, coss-ui, Tailwind CSS, SWR, Hey API and [Tayori](https://tayori.skk.moe), with [eslint-config-sukka](https://github.com/SukkaW/eslint-config-sukka).
-- **iOS 27+**: Swift and SwiftUI.
-- **Android 17**: Kotlin, Jetpack Compose and Material 3 Expressive.
+- **iOS 18+**: Swift and SwiftUI.
+- **Android 13+**: Kotlin, Jetpack Compose and Material 3 Expressive, targeting Android 17 (API 37).
 
 The server retains REST, WebSocket and API documentation endpoints. It does not serve frontend static files or read `ALIA_FRONTEND_DIST`.
 

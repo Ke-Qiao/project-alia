@@ -1,0 +1,19 @@
+start_utc=2026-11-10T19:27:55.915643+00:00
+cwd=/private/tmp/alia-infra-fixes-k5niyjql/coss-probe
+command=env npm_config_store_dir=/private/tmp/alia-infra-fixes-k5niyjql/pnpm-store pnpm ui:add @coss/button --yes
+
+
+> @alia/web@ ui:add /private/tmp/alia-infra-fixes-k5niyjql/coss-probe
+> shadcn add @coss/button --yes
+
+- Checking registry.
+✔ Checking registry.
+- Updating files.
+✔ Created 2 files:
+  - components/ui/spinner.tsx
+  - components/ui/button.tsx
+- Updating app/globals.css
+✔ Updating app/globals.css
+
+exit_code=0
+elapsed_seconds=2.438

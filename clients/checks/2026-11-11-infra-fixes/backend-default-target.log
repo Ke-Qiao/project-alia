@@ -1,0 +1,12 @@
+start_utc=2026-11-10T19:25:41.409757+00:00
+cwd=/Users/ke-qiao/Developer/project-alia
+command=cargo run --offline --locked -p alia-server --config 'target.aarch64-apple-darwin.runner=["python3","/private/tmp/alia-infra-fixes-k5niyjql/inspect-cargo-target.py"]'
+
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.51s
+     Running `python3 /private/tmp/alia-infra-fixes-k5niyjql/inspect-cargo-target.py target/debug/alia-server`
+Cargo selected: target/debug/alia-server
+Runner deliberately did not execute the server.
+
+exit_code=0
+elapsed_seconds=4.625

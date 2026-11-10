@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "dev.alia.client"
-        minSdk = 37
+        minSdk = 33
         targetSdk = 37
         versionCode = 1
         versionName = "0.0.0"
@@ -29,6 +29,10 @@ kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
     }
+}
+
+dependencyLocking {
+    lockAllConfigurations()
 }
 
 dependencies {

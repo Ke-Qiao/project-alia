@@ -1,0 +1,14 @@
+{
+  "packages/alia-server/Cargo.toml": "532476a6851942404b0645758b9a95ab4a95831b9945e627459389a42f5bccd3",
+  "clients/web/package.json": "7c7917ebc5960738b99ce161d3930f36e2eb3f9d01b28de5a01a1d66b161542d",
+  "clients/web/pnpm-lock.yaml": "ffd4c1daba7236a2aead28903e8bf5c64092bfe050677d15992b508fef060ab2",
+  "clients/web/components.json": "7061b11de96bc6f6aa18249cfb336c671c24a2e33717aa56c21fdec6982e7a98",
+  "clients/web/lib/data.ts": "5aba8aba759eb2c4e3bd96b991dae642395708072816d8ac3b9065977ff18fc2",
+  "clients/web/lib/data-provider.tsx": "8b1ed1e5b0a53d8d9ea5a418c4cc7be53aa7dc9048aa709718bf3eb9c2b07611",
+  "clients/web/lib/utils.ts": "a8950be0d3981383f2897a00a5a58913ae927d96e51557d915a76e81fbef4f30",
+  "clients/web/app/layout.tsx": "5245de06c7323c3c31cd6192cea7e7d2247b50475aa70b62a5a8452ec79ad0af",
+  "clients/web/app/globals.css": "0569d9498bb18b47ab9105d65c736fe5002d4dd910fb3485d9d877e1d1bca59e",
+  "clients/ios/Alia.xcodeproj/project.pbxproj": "c43ec62e339918c530669edc80f96eb929cbd8ea414b6d1959ea6fa456984437",
+  "clients/android/app/build.gradle.kts": "41481437afbabc72a43263e3f85e21325e6714aaf13f7560502d33ecd1ba62a0",
+  "clients/android/app/gradle.lockfile": "af8ef6fe3651251e85113af6dec9ee9edf9097f15a033800e76e0d9197b805af"
+}
