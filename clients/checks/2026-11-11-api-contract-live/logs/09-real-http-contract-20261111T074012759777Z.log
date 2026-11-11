@@ -1,0 +1,314 @@
+COMMAND: env ALIA_TEST_RUNTIME_PHASES=1 cargo test -p alia-server --test server_runtime api_contract_ --offline --locked -- --nocapture --test-threads=2
+START_UTC: 20261111T074012759777Z
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.54s
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-b69125e8bfbca854)
+
+running 7 tests
+[runtime-phase] pid=7962 unix_ms=1794382815136 elapsed_ms=0 phase=fixture.permit.begin
+[runtime-phase] pid=7962 unix_ms=1794382815136 elapsed_ms=0 phase=fixture.permit.begin
+[runtime-phase] pid=7962 unix_ms=1794382815137 elapsed_ms=0 phase=fixture.permit.done
+[runtime-phase] pid=7962 unix_ms=1794382815137 elapsed_ms=0 phase=fixture.admin_connect.begin
+[runtime-phase] pid=7962 unix_ms=1794382815137 elapsed_ms=0 phase=fixture.permit.done
+[runtime-phase] pid=7962 unix_ms=1794382815137 elapsed_ms=0 phase=fixture.admin_connect.begin
+[runtime-phase] pid=7962 unix_ms=1794382815145 elapsed_ms=8 phase=fixture.admin_connect.done
+[runtime-phase] pid=7962 unix_ms=1794382815145 elapsed_ms=8 phase=fixture.admin_connect.done
+[runtime-phase] pid=7962 unix_ms=1794382815145 elapsed_ms=8 phase=fixture.create_schema.begin schema=server_runtime_bceda584d60d4febb97fe94737c5dabb
+[runtime-phase] pid=7962 unix_ms=1794382815145 elapsed_ms=8 phase=fixture.create_schema.begin schema=server_runtime_5ab4150a9ef44a64850ddd157849f39d
+[runtime-phase] pid=7962 unix_ms=1794382815146 elapsed_ms=9 phase=fixture.create_schema.done
+[runtime-phase] pid=7962 unix_ms=1794382815146 elapsed_ms=9 phase=fixture.create_schema.done
+[runtime-phase] pid=7962 unix_ms=1794382815146 elapsed_ms=9 phase=fixture.pool_connect.begin
+[runtime-phase] pid=7962 unix_ms=1794382815146 elapsed_ms=9 phase=fixture.pool_connect.begin
+[runtime-phase] pid=7962 unix_ms=1794382815149 elapsed_ms=12 phase=fixture.pool_connect.done
+[runtime-phase] pid=7962 unix_ms=1794382815149 elapsed_ms=12 phase=fixture.pool_connect.done
+[runtime-phase] pid=7962 unix_ms=1794382815153 elapsed_ms=17 phase=fixture.ready
+[runtime-phase] pid=7962 unix_ms=1794382815153 elapsed_ms=17 phase=fixture.ready
+[auth-wire] post /api/v1/auth/register status=200 content_type=application/json
+[auth-wire] post /api/v1/auth/register status=200 content_type=application/json
+[auth-wire] get /api/v1/users/me status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"token_missing","message":"missing or malformed authorization header"}}
+[auth-wire] get /api/v1/users/me status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"token_missing","message":"missing or malformed authorization header"}}
+[auth-wire] get /api/v1/users/me status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"token_invalid","message":"invalid or expired token"}}
+[auth-wire] get /api/v1/users/me status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"token_invalid","message":"invalid or expired token"}}
+[auth-lock] blocker_pid=7976 witnessed_waiters=1
+[auth-wire] post /api/v1/auth/login status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"invalid_credentials","message":"invalid email or password"}}
+[auth-wire] post /api/v1/auth/login status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"invalid_credentials","message":"invalid email or password"}}
+[auth-wire] post /api/v1/auth/refresh status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"refresh_token_invalid","message":"invalid refresh token"}}
+[auth-lock] blocker_pid=7975 witnessed_waiters=2
+[auth-race] statuses=[200, 401]
+[auth-wire] post /api/v1/auth/refresh status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"refresh_token_invalid","message":"invalid refresh token"}}
+[auth-wire] post /api/v1/auth/refresh status=200 content_type=application/json
+[auth-wire] post /api/v1/auth/logout status=200 content_type=application/json
+[auth-wire] post /api/v1/auth/logout status=200 content_type=application/json
+[auth-wire] post /api/v1/auth/refresh status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"refresh_token_invalid","message":"invalid refresh token"}}
+[auth-wire] post /api/v1/auth/login status=200 content_type=application/json
+[auth-wire] get /api/v1/users/me status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"account_inactive","message":"account does not exist or is not active"}}
+[auth-wire] post /api/v1/auth/refresh status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"account_inactive","message":"account does not exist or is not active"}}
+[auth-wire] post /api/v1/auth/login status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"invalid_credentials","message":"invalid email or password"}}
+[auth-wire] post /api/v1/auth/refresh status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"refresh_token_invalid","message":"invalid refresh token"}}
+[runtime-phase] pid=7962 unix_ms=1794382816490 elapsed_ms=1353 phase=fixture.body.returned
+[runtime-phase] pid=7962 unix_ms=1794382816490 elapsed_ms=1353 phase=fixture.close_pool.begin
+[runtime-phase] pid=7962 unix_ms=1794382816490 elapsed_ms=1353 phase=fixture.close_pool.done
+[runtime-phase] pid=7962 unix_ms=1794382816490 elapsed_ms=1353 phase=fixture.drop_schema.begin
+[runtime-phase] pid=7962 unix_ms=1794382816529 elapsed_ms=1392 phase=fixture.drop_schema.done
+[runtime-phase] pid=7962 unix_ms=1794382816529 elapsed_ms=1392 phase=fixture.close_admin.begin
+[runtime-phase] pid=7962 unix_ms=1794382816529 elapsed_ms=1392 phase=fixture.close_admin.done
+[runtime-phase] pid=7962 unix_ms=1794382816529 elapsed_ms=1392 phase=fixture.cleanup.done
+test api_contract_auth::http_auth_reasons_rotation_logout_and_inactive_accounts ... ok
+[runtime-phase] pid=7962 unix_ms=1794382816529 elapsed_ms=1392 phase=fixture.permit.begin
+[runtime-phase] pid=7962 unix_ms=1794382816529 elapsed_ms=1392 phase=fixture.permit.done
+[runtime-phase] pid=7962 unix_ms=1794382816529 elapsed_ms=1392 phase=fixture.admin_connect.begin
+[runtime-phase] pid=7962 unix_ms=1794382816531 elapsed_ms=1394 phase=fixture.admin_connect.done
+[runtime-phase] pid=7962 unix_ms=1794382816531 elapsed_ms=1394 phase=fixture.create_schema.begin schema=server_runtime_f7f430d00aab4077bb4d4f63e79aa5ba
+[runtime-phase] pid=7962 unix_ms=1794382816531 elapsed_ms=1395 phase=fixture.create_schema.done
+[runtime-phase] pid=7962 unix_ms=1794382816531 elapsed_ms=1395 phase=fixture.pool_connect.begin
+[runtime-phase] pid=7962 unix_ms=1794382816533 elapsed_ms=1396 phase=fixture.pool_connect.done
+[runtime-phase] pid=7962 unix_ms=1794382816534 elapsed_ms=1397 phase=fixture.ready
+[auth-wire] post /api/v1/auth/register status=200 content_type=application/json
+[auth-wire] post /api/v1/auth/register status=200 content_type=application/json
+[auth-wire] post /api/v1/auth/login status=400 content_type=text/plain
+[auth-extractor] Failed to parse the request body as JSON: EOF while parsing an object at line 1 column 1
+[auth-wire] post /api/v1/auth/login status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/login status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/login status=422 content_type=text/plain
+[auth-extractor] Failed to deserialize the JSON body into the target type: missing field `email` at line 1 column 11
+[auth-wire] post /api/v1/auth/login status=413 content_type=text/plain
+[auth-extractor] Failed to buffer the request body: length limit exceeded
+[auth-wire] post /api/v1/auth/register status=400 content_type=text/plain
+[auth-extractor] Failed to parse the request body as JSON: EOF while parsing an object at line 1 column 1
+[auth-wire] post /api/v1/auth/register status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/register status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/register status=422 content_type=text/plain
+[auth-extractor] Failed to deserialize the JSON body into the target type: name: invalid type: integer `42`, expected a string at line 1 column 10
+[auth-wire] post /api/v1/auth/register status=413 content_type=text/plain
+[auth-extractor] Failed to buffer the request body: length limit exceeded
+[auth-wire] post /api/v1/auth/refresh status=400 content_type=text/plain
+[auth-extractor] Failed to parse the request body as JSON: EOF while parsing an object at line 1 column 1
+[auth-wire] post /api/v1/auth/refresh status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/refresh status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/refresh status=422 content_type=text/plain
+[auth-extractor] Failed to deserialize the JSON body into the target type: missing field `refresh_token` at line 1 column 11
+[auth-wire] post /api/v1/auth/refresh status=413 content_type=text/plain
+[auth-extractor] Failed to buffer the request body: length limit exceeded
+[auth-wire] post /api/v1/auth/logout status=400 content_type=text/plain
+[auth-extractor] Failed to parse the request body as JSON: EOF while parsing an object at line 1 column 1
+[auth-wire] post /api/v1/auth/logout status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/logout status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/logout status=422 content_type=text/plain
+[auth-extractor] Failed to deserialize the JSON body into the target type: missing field `refresh_token` at line 1 column 11
+[auth-wire] post /api/v1/auth/logout status=413 content_type=text/plain
+[auth-extractor] Failed to buffer the request body: length limit exceeded
+[auth-wire] patch /api/v1/users/me status=400 content_type=text/plain
+[auth-extractor] Failed to parse the request body as JSON: EOF while parsing an object at line 1 column 1
+[auth-wire] patch /api/v1/users/me status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] patch /api/v1/users/me status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] patch /api/v1/users/me status=422 content_type=text/plain
+[auth-extractor] Failed to deserialize the JSON body into the target type: name: invalid type: integer `42`, expected a string at line 1 column 10
+[auth-wire] patch /api/v1/users/me status=413 content_type=text/plain
+[auth-extractor] Failed to buffer the request body: length limit exceeded
+[auth-wire] patch /api/v1/users/me status=200 content_type=application/json
+[auth-wire] patch /api/v1/users/me status=403 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_FORBIDDEN","message":"insufficient permissions"}}
+[auth-wire] patch /api/v1/users/me status=403 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_FORBIDDEN","message":"insufficient permissions"}}
+[auth-wire] patch /api/v1/users/me status=400 content_type=application/json
+[auth-error] {"error":{"code":"VALIDATION_ERROR","message":"name must be between 1 and 120 characters"}}
+[auth-wire] patch /api/v1/users/me status=400 content_type=application/json
+[auth-error] {"error":{"code":"VALIDATION_ERROR","message":"name must be between 1 and 120 characters"}}
+[auth-wire] patch /api/v1/users/me status=200 content_type=application/json
+[runtime-phase] pid=7962 unix_ms=1794382817081 elapsed_ms=1944 phase=fixture.body.returned
+[runtime-phase] pid=7962 unix_ms=1794382817081 elapsed_ms=1944 phase=fixture.close_pool.begin
+[runtime-phase] pid=7962 unix_ms=1794382817081 elapsed_ms=1945 phase=fixture.close_pool.done
+[runtime-phase] pid=7962 unix_ms=1794382817081 elapsed_ms=1945 phase=fixture.drop_schema.begin
+[runtime-phase] pid=7962 unix_ms=1794382817121 elapsed_ms=1984 phase=fixture.drop_schema.done
+[runtime-phase] pid=7962 unix_ms=1794382817121 elapsed_ms=1984 phase=fixture.close_admin.begin
+[runtime-phase] pid=7962 unix_ms=1794382817121 elapsed_ms=1984 phase=fixture.close_admin.done
+[runtime-phase] pid=7962 unix_ms=1794382817121 elapsed_ms=1984 phase=fixture.cleanup.done
+test api_contract_auth::http_json_extractors_and_patch_me_match_declared_wire_contract ... ok
+[runtime-phase] pid=7962 unix_ms=1794382817121 elapsed_ms=1984 phase=fixture.permit.begin
+[runtime-phase] pid=7962 unix_ms=1794382817121 elapsed_ms=1984 phase=fixture.permit.done
+[runtime-phase] pid=7962 unix_ms=1794382817121 elapsed_ms=1984 phase=fixture.admin_connect.begin
+[runtime-phase] pid=7962 unix_ms=1794382817123 elapsed_ms=1986 phase=fixture.admin_connect.done
+[runtime-phase] pid=7962 unix_ms=1794382817123 elapsed_ms=1986 phase=fixture.create_schema.begin schema=server_runtime_c6b323f10b6f427c92bc2b5ef5165eb0
+[runtime-phase] pid=7962 unix_ms=1794382817123 elapsed_ms=1986 phase=fixture.create_schema.done
+[runtime-phase] pid=7962 unix_ms=1794382817123 elapsed_ms=1986 phase=fixture.pool_connect.begin
+[runtime-phase] pid=7962 unix_ms=1794382817125 elapsed_ms=1988 phase=fixture.pool_connect.done
+[runtime-phase] pid=7962 unix_ms=1794382817125 elapsed_ms=1988 phase=fixture.ready
+[auth-lock] blocker_pid=7993 witnessed_waiters=2
+[auth-race] statuses=[200, 409]
+[auth-wire] post /api/v1/auth/register status=409 content_type=application/json
+[auth-error] {"error":{"code":"ALREADY_EXISTS","reason":"email_already_registered","message":"email already registered"}}
+[auth-wire] post /api/v1/auth/register status=200 content_type=application/json
+[auth-wire] post /api/v1/auth/login status=200 content_type=application/json
+[runtime-phase] pid=7962 unix_ms=1794382818061 elapsed_ms=2924 phase=fixture.body.returned
+[runtime-phase] pid=7962 unix_ms=1794382818061 elapsed_ms=2924 phase=fixture.close_pool.begin
+[runtime-phase] pid=7962 unix_ms=1794382818061 elapsed_ms=2924 phase=fixture.close_pool.done
+[runtime-phase] pid=7962 unix_ms=1794382818061 elapsed_ms=2925 phase=fixture.drop_schema.begin
+[auth-wire] get /api/v1/users/me status=503 content_type=application/json
+[auth-error] {"error":{"code":"SERVICE_UNAVAILABLE","reason":"account_verification_unavailable","message":"account verification unavailable"}}
+[auth-lookup-timeout] elapsed_ms=2003
+[auth-wire] get /api/v1/users/me status=200 content_type=application/json
+[runtime-phase] pid=7962 unix_ms=1794382818098 elapsed_ms=2961 phase=fixture.body.returned
+[runtime-phase] pid=7962 unix_ms=1794382818098 elapsed_ms=2961 phase=fixture.close_pool.begin
+[runtime-phase] pid=7962 unix_ms=1794382818098 elapsed_ms=2961 phase=fixture.close_pool.done
+[runtime-phase] pid=7962 unix_ms=1794382818098 elapsed_ms=2961 phase=fixture.drop_schema.begin
+[runtime-phase] pid=7962 unix_ms=1794382818098 elapsed_ms=2962 phase=fixture.drop_schema.done
+[runtime-phase] pid=7962 unix_ms=1794382818099 elapsed_ms=2962 phase=fixture.close_admin.begin
+[runtime-phase] pid=7962 unix_ms=1794382818099 elapsed_ms=2962 phase=fixture.close_admin.done
+[runtime-phase] pid=7962 unix_ms=1794382818099 elapsed_ms=2962 phase=fixture.cleanup.done
+test api_contract_auth::http_registration_normalizes_email_and_serializes_duplicate_writes ... ok
+[runtime-phase] pid=7962 unix_ms=1794382818099 elapsed_ms=2962 phase=fixture.permit.begin
+[runtime-phase] pid=7962 unix_ms=1794382818099 elapsed_ms=2962 phase=fixture.permit.done
+[runtime-phase] pid=7962 unix_ms=1794382818099 elapsed_ms=2962 phase=fixture.admin_connect.begin
+[runtime-phase] pid=7962 unix_ms=1794382818101 elapsed_ms=2964 phase=fixture.admin_connect.done
+[runtime-phase] pid=7962 unix_ms=1794382818101 elapsed_ms=2964 phase=fixture.create_schema.begin schema=server_runtime_8f2454cf84b14d1bae32b104e1a329de
+[runtime-phase] pid=7962 unix_ms=1794382818101 elapsed_ms=2964 phase=fixture.create_schema.done
+[runtime-phase] pid=7962 unix_ms=1794382818101 elapsed_ms=2964 phase=fixture.pool_connect.begin
+[runtime-phase] pid=7962 unix_ms=1794382818103 elapsed_ms=2966 phase=fixture.pool_connect.done
+[runtime-phase] pid=7962 unix_ms=1794382818103 elapsed_ms=2966 phase=fixture.ready
+[runtime-phase] pid=7962 unix_ms=1794382818140 elapsed_ms=3004 phase=fixture.drop_schema.done
+[runtime-phase] pid=7962 unix_ms=1794382818140 elapsed_ms=3004 phase=fixture.close_admin.begin
+[runtime-phase] pid=7962 unix_ms=1794382818141 elapsed_ms=3004 phase=fixture.close_admin.done
+[runtime-phase] pid=7962 unix_ms=1794382818141 elapsed_ms=3004 phase=fixture.cleanup.done
+test api_contract_auth::http_account_lookup_lock_timeout_is_503_and_recovers_after_unlock ... ok
+[runtime-phase] pid=7962 unix_ms=1794382818141 elapsed_ms=3004 phase=fixture.permit.begin
+[runtime-phase] pid=7962 unix_ms=1794382818141 elapsed_ms=3004 phase=fixture.permit.done
+[runtime-phase] pid=7962 unix_ms=1794382818141 elapsed_ms=3004 phase=fixture.admin_connect.begin
+[runtime-phase] pid=7962 unix_ms=1794382818143 elapsed_ms=3006 phase=fixture.admin_connect.done
+[runtime-phase] pid=7962 unix_ms=1794382818143 elapsed_ms=3006 phase=fixture.create_schema.begin schema=server_runtime_c0462c77a7634610b99ad9f74c34965a
+[runtime-phase] pid=7962 unix_ms=1794382818143 elapsed_ms=3006 phase=fixture.create_schema.done
+[runtime-phase] pid=7962 unix_ms=1794382818143 elapsed_ms=3006 phase=fixture.pool_connect.begin
+[runtime-phase] pid=7962 unix_ms=1794382818145 elapsed_ms=3008 phase=fixture.pool_connect.done
+[runtime-phase] pid=7962 unix_ms=1794382818145 elapsed_ms=3008 phase=fixture.ready
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations status=200 OK component=Conversation bytes=243 items=Some(1)
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations status=200 OK component=Conversation bytes=693 items=Some(3)
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/6d4abbb3-7760-44db-9553-1e310c8d7018 status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/dc455d00-4afa-492f-bb65-ef79852af722 status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/347f84c2-7386-4b53-83a9-e930d665e7d3 status=404 Not Found component=ErrorResponse bytes=65 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/not-a-uuid status=400 text=Invalid URL: Cannot parse `id` with value `not-a-uuid`: UUID parsing failed: invalid character: found `n` at 1
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c status=401 Unauthorized component=ErrorResponse bytes=124 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/6d4abbb3-7760-44db-9553-1e310c8d7018 status=200 OK component=Conversation bytes=241 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c status=200 OK component=Conversation bytes=241 items=None
+[conversation-http] http://127.0.0.1:52670/api/v1/conversations/7f1d2efb-932d-4363-8f67-3fe0afe0c8b8/messages status=200 OK component=Message bytes=511 items=Some(3)
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/6d4abbb3-7760-44db-9553-1e310c8d7018/messages status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:52670/api/v1/conversations/7f1d2efb-932d-4363-8f67-3fe0afe0c8b8/events status=200 OK component=AgentEvent bytes=2002 items=Some(8)
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/dc455d00-4afa-492f-bb65-ef79852af722/messages status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:52670/api/v1/conversations/7f1d2efb-932d-4363-8f67-3fe0afe0c8b8/expression-traces status=200 OK component=ExpressionTrace bytes=1289 items=Some(2)
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/347f84c2-7386-4b53-83a9-e930d665e7d3/messages status=404 Not Found component=ErrorResponse bytes=65 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/not-a-uuid/messages status=400 text=Invalid URL: Cannot parse `id` with value `not-a-uuid`: UUID parsing failed: invalid character: found `n` at 1
+[conversation-http] http://127.0.0.1:52670/api/v1/conversations/7f1d2efb-932d-4363-8f67-3fe0afe0c8b8/expression-traces?turn_id=00000000-0000-0000-0000-000000000002 status=200 OK component=ExpressionTrace bytes=806 items=Some(1)
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/messages status=401 Unauthorized component=ErrorResponse bytes=124 items=None
+[conversation-http] http://127.0.0.1:52670/api/v1/conversations/7f1d2efb-932d-4363-8f67-3fe0afe0c8b8/expression-traces?turn_id=b6f05e8c-70b8-441b-85d2-5d686d36bdae status=200 OK component=ExpressionTrace bytes=2 items=Some(0)
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/6d4abbb3-7760-44db-9553-1e310c8d7018/messages status=200 OK component=Message bytes=162 items=Some(1)
+[conversation-http] http://127.0.0.1:52670/api/v1/conversations/7f1d2efb-932d-4363-8f67-3fe0afe0c8b8/expression-traces?limit=1 status=200 OK component=ExpressionTrace bytes=316 items=Some(1)
+[runtime-phase] pid=7962 unix_ms=1794382818386 elapsed_ms=3249 phase=fixture.body.returned
+[runtime-phase] pid=7962 unix_ms=1794382818386 elapsed_ms=3249 phase=fixture.close_pool.begin
+[runtime-phase] pid=7962 unix_ms=1794382818386 elapsed_ms=3249 phase=fixture.close_pool.done
+[runtime-phase] pid=7962 unix_ms=1794382818386 elapsed_ms=3249 phase=fixture.drop_schema.begin
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/messages status=200 OK component=Message bytes=162 items=Some(1)
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/6d4abbb3-7760-44db-9553-1e310c8d7018/events status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/dc455d00-4afa-492f-bb65-ef79852af722/events status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/347f84c2-7386-4b53-83a9-e930d665e7d3/events status=404 Not Found component=ErrorResponse bytes=65 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/not-a-uuid/events status=400 text=Invalid URL: Cannot parse `id` with value `not-a-uuid`: UUID parsing failed: invalid character: found `n` at 1
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/events status=401 Unauthorized component=ErrorResponse bytes=124 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/6d4abbb3-7760-44db-9553-1e310c8d7018/events status=200 OK component=AgentEvent bytes=237 items=Some(1)
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/events status=200 OK component=AgentEvent bytes=237 items=Some(1)
+[runtime-phase] pid=7962 unix_ms=1794382818425 elapsed_ms=3288 phase=fixture.drop_schema.done
+[runtime-phase] pid=7962 unix_ms=1794382818425 elapsed_ms=3288 phase=fixture.close_admin.begin
+[runtime-phase] pid=7962 unix_ms=1794382818425 elapsed_ms=3288 phase=fixture.close_admin.done
+[runtime-phase] pid=7962 unix_ms=1794382818425 elapsed_ms=3288 phase=fixture.cleanup.done
+test api_contract_conversations::conversations_http_preserves_json_and_filters_trace_sources ... ok
+[runtime-phase] pid=7962 unix_ms=1794382818425 elapsed_ms=3289 phase=fixture.permit.begin
+[runtime-phase] pid=7962 unix_ms=1794382818425 elapsed_ms=3289 phase=fixture.permit.done
+[runtime-phase] pid=7962 unix_ms=1794382818425 elapsed_ms=3289 phase=fixture.admin_connect.begin
+[runtime-phase] pid=7962 unix_ms=1794382818427 elapsed_ms=3290 phase=fixture.admin_connect.done
+[runtime-phase] pid=7962 unix_ms=1794382818427 elapsed_ms=3290 phase=fixture.create_schema.begin schema=server_runtime_e425cf324d074664a6f92bdcdf9b2fbd
+[runtime-phase] pid=7962 unix_ms=1794382818427 elapsed_ms=3291 phase=fixture.create_schema.done
+[runtime-phase] pid=7962 unix_ms=1794382818427 elapsed_ms=3291 phase=fixture.pool_connect.begin
+[runtime-phase] pid=7962 unix_ms=1794382818429 elapsed_ms=3292 phase=fixture.pool_connect.done
+[runtime-phase] pid=7962 unix_ms=1794382818429 elapsed_ms=3293 phase=fixture.ready
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/6d4abbb3-7760-44db-9553-1e310c8d7018/expression-traces status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/dc455d00-4afa-492f-bb65-ef79852af722/expression-traces status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/347f84c2-7386-4b53-83a9-e930d665e7d3/expression-traces status=404 Not Found component=ErrorResponse bytes=65 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/not-a-uuid/expression-traces status=400 text=Invalid URL: Cannot parse `id` with value `not-a-uuid`: UUID parsing failed: invalid character: found `n` at 1
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/expression-traces status=401 Unauthorized component=ErrorResponse bytes=124 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/6d4abbb3-7760-44db-9553-1e310c8d7018/expression-traces status=200 OK component=ExpressionTrace bytes=316 items=Some(1)
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/expression-traces status=200 OK component=ExpressionTrace bytes=316 items=Some(1)
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/6d4abbb3-7760-44db-9553-1e310c8d7018 status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/dc455d00-4afa-492f-bb65-ef79852af722 status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/347f84c2-7386-4b53-83a9-e930d665e7d3 status=404 Not Found component=ErrorResponse bytes=65 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/not-a-uuid status=400 text=Invalid URL: Cannot parse `id` with value `not-a-uuid`: UUID parsing failed: invalid character: found `n` at 1
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c status=401 Unauthorized component=ErrorResponse bytes=124 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations?limit=-1 status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations?limit=18446744073709551616 status=400 text=Failed to deserialize query string: limit: number too large to fit in target type
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations?limit=one status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/messages?limit=-1 status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/messages?limit=18446744073709551616 status=400 text=Failed to deserialize query string: limit: number too large to fit in target type
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/messages?limit=one status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/events?limit=-1 status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/events?limit=18446744073709551616 status=400 text=Failed to deserialize query string: limit: number too large to fit in target type
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/events?limit=one status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/expression-traces?limit=-1 status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/expression-traces?limit=18446744073709551616 status=400 text=Failed to deserialize query string: limit: number too large to fit in target type
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/expression-traces?limit=one status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c/expression-traces?turn_id=bad status=400 text=Failed to deserialize query string: turn_id: UUID parsing failed: invalid length: expected length 32 for simple format, found 3
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c status=200 OK component=DeleteConversationResult bytes=16 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/61409bcb-4858-4417-813e-df16481a0a8c status=404 Not Found component=ErrorResponse bytes=65 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/6d4abbb3-7760-44db-9553-1e310c8d7018 status=200 OK component=Conversation bytes=241 items=None
+[conversation-http] http://127.0.0.1:52665/api/v1/conversations/dc455d00-4afa-492f-bb65-ef79852af722 status=200 OK component=DeleteConversationResult bytes=16 items=None
+[runtime-phase] pid=7962 unix_ms=1794382818519 elapsed_ms=3382 phase=fixture.body.returned
+[runtime-phase] pid=7962 unix_ms=1794382818519 elapsed_ms=3382 phase=fixture.close_pool.begin
+[runtime-phase] pid=7962 unix_ms=1794382818519 elapsed_ms=3382 phase=fixture.close_pool.done
+[runtime-phase] pid=7962 unix_ms=1794382818519 elapsed_ms=3382 phase=fixture.drop_schema.begin
+[runtime-phase] pid=7962 unix_ms=1794382818562 elapsed_ms=3425 phase=fixture.drop_schema.done
+[runtime-phase] pid=7962 unix_ms=1794382818562 elapsed_ms=3425 phase=fixture.close_admin.begin
+[runtime-phase] pid=7962 unix_ms=1794382818562 elapsed_ms=3425 phase=fixture.close_admin.done
+[runtime-phase] pid=7962 unix_ms=1794382818562 elapsed_ms=3425 phase=fixture.cleanup.done
+test api_contract_conversations::conversations_http_authority_rejections_and_owned_delete ... ok
+[conversation-http] http://127.0.0.1:52681/api/v1/conversations?limit=0 status=200 OK component=Conversation bytes=2 items=Some(0)
+[conversation-http] http://127.0.0.1:52681/api/v1/conversations status=200 OK component=Conversation bytes=23013 items=Some(100)
+[conversation-http] http://127.0.0.1:52681/api/v1/conversations?limit=18446744073709551615 status=200 OK component=Conversation bytes=114909 items=Some(500)
+[conversation-http] http://127.0.0.1:52681/api/v1/conversations/d43cc047-8901-491e-bcc8-437bc91b49fa/messages?limit=0 status=200 OK component=Message bytes=2 items=Some(0)
+[conversation-http] http://127.0.0.1:52681/api/v1/conversations/d43cc047-8901-491e-bcc8-437bc91b49fa/messages status=200 OK component=Message bytes=136894 items=Some(1000)
+[conversation-http] http://127.0.0.1:52681/api/v1/conversations/d43cc047-8901-491e-bcc8-437bc91b49fa/messages?limit=18446744073709551615 status=200 OK component=Message bytes=688894 items=Some(5000)
+[conversation-http] http://127.0.0.1:52681/api/v1/conversations/d43cc047-8901-491e-bcc8-437bc91b49fa/events?limit=0 status=200 OK component=AgentEvent bytes=2 items=Some(0)
+[conversation-http] http://127.0.0.1:52681/api/v1/conversations/d43cc047-8901-491e-bcc8-437bc91b49fa/events status=200 OK component=AgentEvent bytes=236787 items=Some(1000)
+[conversation-http] http://127.0.0.1:52681/api/v1/conversations/d43cc047-8901-491e-bcc8-437bc91b49fa/events?limit=18446744073709551615 status=200 OK component=AgentEvent bytes=1192787 items=Some(5000)
+[conversation-http] http://127.0.0.1:52681/api/v1/conversations/d43cc047-8901-491e-bcc8-437bc91b49fa/expression-traces?limit=0 status=200 OK component=ExpressionTrace bytes=2 items=Some(0)
+[conversation-http] http://127.0.0.1:52681/api/v1/conversations/d43cc047-8901-491e-bcc8-437bc91b49fa/expression-traces status=200 OK component=ExpressionTrace bytes=118984 items=Some(1)
+[conversation-http] http://127.0.0.1:52681/api/v1/conversations/d43cc047-8901-491e-bcc8-437bc91b49fa/expression-traces?limit=18446744073709551615 status=200 OK component=ExpressionTrace bytes=602984 items=Some(1)
+[runtime-phase] pid=7962 unix_ms=1794382818965 elapsed_ms=3828 phase=fixture.body.returned
+[runtime-phase] pid=7962 unix_ms=1794382818965 elapsed_ms=3828 phase=fixture.close_pool.begin
+[runtime-phase] pid=7962 unix_ms=1794382818965 elapsed_ms=3828 phase=fixture.close_pool.done
+[runtime-phase] pid=7962 unix_ms=1794382818965 elapsed_ms=3828 phase=fixture.drop_schema.begin
+[runtime-phase] pid=7962 unix_ms=1794382819002 elapsed_ms=3865 phase=fixture.drop_schema.done
+[runtime-phase] pid=7962 unix_ms=1794382819002 elapsed_ms=3865 phase=fixture.close_admin.begin
+[runtime-phase] pid=7962 unix_ms=1794382819002 elapsed_ms=3865 phase=fixture.close_admin.done
+[runtime-phase] pid=7962 unix_ms=1794382819002 elapsed_ms=3866 phase=fixture.cleanup.done
+test api_contract_conversations::conversations_http_zero_default_and_clamped_limits ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 105 filtered out; finished in 3.87s
+
+
+EXIT_CODE: 0

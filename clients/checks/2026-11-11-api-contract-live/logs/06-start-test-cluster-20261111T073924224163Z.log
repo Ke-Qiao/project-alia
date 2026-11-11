@@ -1,0 +1,6 @@
+COMMAND: /opt/homebrew/opt/postgresql@18/bin/pg_ctl -D /private/tmp/alia-api-contract-20261111-ks58v_1w/data -l /Users/ke-qiao/Developer/project-alia/run/api-contract-live-2026-11-11/postgresql.log -w -t 15 start
+START_UTC: 20261111T073924224163Z
+waiting for server to start.... done
+server started
+
+EXIT_CODE: 0

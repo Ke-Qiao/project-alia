@@ -1,0 +1,23 @@
+COMMAND: /opt/homebrew/opt/postgresql@18/bin/initdb -D /private/tmp/alia-api-contract-20261111-ks58v_1w/data -U alia_test --auth-local=trust --auth-host=trust --encoding=UTF8 --locale=C
+START_UTC: 20261111T073810026705Z
+The files belonging to this database system will be owned by user "ke-qiao".
+This user must also own the server process.
+
+The database cluster will be initialized with locale "C".
+The default text search configuration will be set to "english".
+
+Data page checksums are enabled.
+
+creating directory /private/tmp/alia-api-contract-20261111-ks58v_1w/data ... ok
+creating subdirectories ... ok
+selecting dynamic shared memory implementation ... sysv
+selecting default "max_connections" ... 20
+selecting default "shared_buffers" ... 400kB
+selecting default time zone ... Asia/Shanghai
+creating configuration files ... ok
+running bootstrap script ... 2026-11-11 15:38:10.760 CST [7252] FATAL:  could not create shared memory segment: Operation not permitted
+2026-11-11 15:38:10.760 CST [7252] DETAIL:  Failed system call was shmget(key=71050003, size=56, 03600).
+child process exited with exit code 1
+initdb: removing data directory "/private/tmp/alia-api-contract-20261111-ks58v_1w/data"
+
+EXIT_CODE: 1

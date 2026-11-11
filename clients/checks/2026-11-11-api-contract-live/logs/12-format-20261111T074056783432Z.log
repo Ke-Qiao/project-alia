@@ -1,0 +1,4 @@
+COMMAND: cargo fmt --all -- --check
+START_UTC: 20261111T074056783432Z
+
+EXIT_CODE: 0

@@ -1,0 +1,14 @@
+COMMAND: /opt/homebrew/opt/postgresql@17/bin/initdb -D /private/tmp/alia-api-contract-20261111-ks58v_1w/data -U alia_test --auth-local=trust --auth-host=trust --no-locale --encoding=UTF8
+START_UTC: 20261111T083326518371Z
+The files belonging to this database system will be owned by user "ke-qiao".
+This user must also own the server process.
+
+The database cluster will be initialized with locale "C".
+The default text search configuration will be set to "english".
+
+Data page checksums are disabled.
+
+initdb: error: directory "/private/tmp/alia-api-contract-20261111-ks58v_1w/data" exists but is not empty
+initdb: hint: If you want to create a new database system, either remove or empty the directory "/private/tmp/alia-api-contract-20261111-ks58v_1w/data" or run initdb with an argument other than "/private/tmp/alia-api-contract-20261111-ks58v_1w/data".
+
+EXIT_CODE: 1

@@ -1,0 +1,4 @@
+COMMAND: /opt/homebrew/opt/postgresql@17/bin/createdb -h 127.0.0.1 -p 50196 -U alia_test alia_api_contract
+START_UTC: 20261111T083420742608Z
+
+EXIT_CODE: 0

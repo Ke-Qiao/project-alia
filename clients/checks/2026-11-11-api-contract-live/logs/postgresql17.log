@@ -1,0 +1,504 @@
+2026-11-11 16:34:06.782 CST [24816] LOG:  starting PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+2026-11-11 16:34:06.782 CST [24816] LOG:  listening on IPv4 address "127.0.0.1", port 50196
+2026-11-11 16:34:06.783 CST [24816] LOG:  listening on Unix socket "/private/tmp/alia-api-contract-pg17-20261111-u5orc0u9/socket/.s.PGSQL.50196"
+2026-11-11 16:34:06.785 CST [24819] LOG:  database system was shut down at 2026-11-11 16:33:52 CST
+2026-11-11 16:34:06.787 CST [24816] LOG:  database system is ready to accept connections
+2026-11-11 16:35:09.065 CST [25377] ERROR:  injected context_leases write failure
+2026-11-11 16:35:09.065 CST [25377] CONTEXT:  PL/pgSQL function reject_live_write() line 1 at RAISE
+2026-11-11 16:35:09.065 CST [25377] STATEMENT:  INSERT INTO context_leases(context_id,owner_id,request_id,context_key,purpose,channel_id,conversation_id,source_event_id,source_received_at,source_privacy_epoch,policy_version,dependencies,dependencies_digest,materialized_digest,valid_until) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT(owner_id,request_id,context_key) DO NOTHING
+2026-11-11 16:35:09.108 CST [25377] ERROR:  injected delivery_responses write failure
+2026-11-11 16:35:09.108 CST [25377] CONTEXT:  PL/pgSQL function reject_live_write() line 1 at RAISE
+2026-11-11 16:35:09.108 CST [25377] STATEMENT:  INSERT INTO delivery_responses(response_id,user_id,request_id,output_key,conversation_id,source_event_id,source_received_at,source_privacy_epoch,channel_id,kind,content,intent_digest,context_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+2026-11-11 16:35:09.142 CST [25377] ERROR:  injected companion_live_pending write failure
+2026-11-11 16:35:09.142 CST [25377] CONTEXT:  PL/pgSQL function reject_live_write() line 1 at RAISE
+2026-11-11 16:35:09.142 CST [25377] STATEMENT:  UPDATE companion_live_pending SET state='admitted' WHERE candidate_id=$1
+2026-11-11 16:35:09.869 CST [25400] ERROR:  Companion charges and identities cannot be deleted
+2026-11-11 16:35:09.869 CST [25400] CONTEXT:  PL/pgSQL function companion_live_immutable() line 3 at RAISE
+2026-11-11 16:35:09.869 CST [25400] STATEMENT:  DELETE FROM companion_admissions
+2026-11-11 16:35:10.866 CST [25437] ERROR:  injected Companion candidate failure
+2026-11-11 16:35:10.866 CST [25437] CONTEXT:  PL/pgSQL function fail_companion_candidate() line 1 at RAISE
+2026-11-11 16:35:10.866 CST [25437] STATEMENT:  INSERT INTO companion_candidates(candidate_id,owner_id,operation_id,dedup_key,private_candidate) VALUES($1,$2,$3,$4,$5)
+2026-11-11 16:35:11.450 CST [25388] ERROR:  Original Companion admission opportunity expired
+2026-11-11 16:35:11.450 CST [25388] CONTEXT:  PL/pgSQL function companion_admission_commit_deadline() line 4 at RAISE
+2026-11-11 16:35:11.450 CST [25388] STATEMENT:  COMMIT
+2026-11-11 16:35:11.450 CST [25388] WARNING:  there is no transaction in progress
+2026-11-11 16:35:11.982 CST [25467] ERROR:  original relationship stamp is immutable
+2026-11-11 16:35:11.982 CST [25467] CONTEXT:  PL/pgSQL function preserve_source_relationship_stamp() line 4 at RAISE
+2026-11-11 16:35:11.982 CST [25467] STATEMENT:  UPDATE chat_messages SET source_relationship_epoch=source_relationship_epoch+1 WHERE id=$1
+2026-11-11 16:35:11.989 CST [25467] ERROR:  original relationship stamp is immutable
+2026-11-11 16:35:11.989 CST [25467] CONTEXT:  PL/pgSQL function preserve_source_relationship_stamp() line 4 at RAISE
+2026-11-11 16:35:11.989 CST [25467] STATEMENT:  UPDATE chat_messages SET source_relationship_epoch=$1 WHERE id=$2
+2026-11-11 16:35:11.990 CST [25467] ERROR:  injected session update failure
+2026-11-11 16:35:11.990 CST [25467] CONTEXT:  PL/pgSQL function fail_source_session_update() line 1 at RAISE
+2026-11-11 16:35:11.990 CST [25467] STATEMENT:  UPDATE chat_sessions SET updated_at=clock_timestamp() WHERE id=$1
+2026-11-11 16:35:11.991 CST [25470] ERROR:  injected session update failure
+2026-11-11 16:35:11.991 CST [25470] CONTEXT:  PL/pgSQL function fail_source_session_update() line 1 at RAISE
+2026-11-11 16:35:11.991 CST [25470] STATEMENT:  UPDATE "chat_sessions" SET "updated_at" = $1 WHERE "chat_sessions"."id" = $2
+2026-11-11 16:35:12.772 CST [25487] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:35:12.772 CST [25487] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:35:12.772 CST [25487] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:35:12.792 CST [25490] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:35:12.792 CST [25490] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:35:12.792 CST [25490] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:35:13.100 CST [25498] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:35:13.100 CST [25498] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:35:13.100 CST [25498] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:35:13.309 CST [25504] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:35:13.309 CST [25504] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:35:13.309 CST [25504] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:35:13.390 CST [25506] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:35:13.390 CST [25506] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:35:13.390 CST [25506] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:35:13.535 CST [25511] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:35:13.535 CST [25511] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:35:13.535 CST [25511] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:35:13.670 CST [25520] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:35:13.670 CST [25520] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:35:13.670 CST [25520] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:35:15.836 CST [25571] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:35:15.836 CST [25571] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:35:15.836 CST [25571] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:35:16.056 CST [25573] ERROR:  injected assistant commit failure
+2026-11-11 16:35:16.056 CST [25573] CONTEXT:  PL/pgSQL function fail_assistant_commit() line 1 at RAISE
+2026-11-11 16:35:16.056 CST [25573] STATEMENT:  INSERT INTO chat_messages(id,session_id,user_id,role,content,created_at,source_received_at,source_privacy_epoch) VALUES($1,$2,NULL,'assistant',$3,clock_timestamp(),$4,$5) ON CONFLICT(id) DO NOTHING
+2026-11-11 16:35:16.371 CST [25590] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:35:16.371 CST [25590] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:35:16.371 CST [25590] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:35:16.617 CST [25593] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:35:16.617 CST [25593] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:35:16.617 CST [25593] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:35:17.051 CST [25603] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:35:17.051 CST [25603] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:35:17.051 CST [25603] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:35:17.336 CST [25624] ERROR:  injected deferred commit rejection
+2026-11-11 16:35:17.336 CST [25624] CONTEXT:  PL/pgSQL function block_skill_commit() line 1 at RAISE
+2026-11-11 16:35:17.336 CST [25624] STATEMENT:  COMMIT
+2026-11-11 16:35:17.336 CST [25624] WARNING:  there is no transaction in progress
+2026-11-11 16:35:17.531 CST [25622] ERROR:  injected deferred commit rejection
+2026-11-11 16:35:17.531 CST [25622] CONTEXT:  PL/pgSQL function block_skill_commit() line 1 at RAISE
+2026-11-11 16:35:17.531 CST [25622] STATEMENT:  COMMIT
+2026-11-11 16:35:17.532 CST [25622] WARNING:  there is no transaction in progress
+2026-11-11 16:35:17.607 CST [25629] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:35:17.607 CST [25629] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:35:17.607 CST [25629] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:35:18.140 CST [25638] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:35:18.140 CST [25638] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:35:18.140 CST [25638] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:35:21.306 CST [25736] ERROR:  injected rebuild receipt failure
+2026-11-11 16:35:21.306 CST [25736] CONTEXT:  PL/pgSQL function fail_rebuild_receipt() line 8 at RAISE
+2026-11-11 16:35:21.306 CST [25736] STATEMENT:  UPDATE appraisal_rebuild_items SET status='committed',claim_token=NULL,claim_until=NULL,receipt=$4 WHERE operation_id=$1 AND source_event_id=$2 AND status='claimed' AND claim_token=$3
+2026-11-11 16:35:27.168 CST [25890] ERROR:  injected failure after vector deletion
+2026-11-11 16:35:27.168 CST [25890] CONTEXT:  PL/pgSQL function fail_erasure_after_vectors() line 1 at RAISE
+	SQL statement "UPDATE memory_items
+	        SET status='deleted',revision=revision+1,content='',summary=NULL,
+	            evidence='{}',metadata='{}',topic_tags='{}',affect_tags='{}',
+	            source_event_ids='{}',superseded_by=NULL,
+	            expires_at=clock_timestamp(),updated_at=clock_timestamp()
+	        WHERE user_id=p_owner AND tenant_id=p_tenant AND id=ANY(erased_ids)
+	          AND status<>'deleted'"
+	PL/pgSQL function erase_memory_closure(uuid,uuid,uuid[]) line 50 at SQL statement
+2026-11-11 16:35:27.168 CST [25890] STATEMENT:  SELECT erase_memory_closure($1,$2,ARRAY(SELECT jsonb_array_elements_text($3::jsonb)::uuid UNION SELECT a.memory_id FROM memory_appraisal_sources a JOIN memory_items m ON m.id=a.memory_id WHERE a.owner_id=$1 AND m.user_id=$1 AND m.tenant_id=$2)) AS erased
+2026-11-11 16:35:27.173 CST [25890] ERROR:  injected failure after vector deletion
+2026-11-11 16:35:27.173 CST [25890] CONTEXT:  PL/pgSQL function fail_erasure_after_vectors() line 1 at RAISE
+	SQL statement "UPDATE memory_items
+	        SET status='deleted',revision=revision+1,content='',summary=NULL,
+	            evidence='{}',metadata='{}',topic_tags='{}',affect_tags='{}',
+	            source_event_ids='{}',superseded_by=NULL,
+	            expires_at=clock_timestamp(),updated_at=clock_timestamp()
+	        WHERE user_id=p_owner AND tenant_id=p_tenant AND id=ANY(erased_ids)
+	          AND status<>'deleted'"
+	PL/pgSQL function erase_memory_closure(uuid,uuid,uuid[]) line 50 at SQL statement
+	SQL statement "SELECT erase_memory_closure(NEW.user_id,'00000000-0000-0000-0000-000000000000',
+	            ARRAY(SELECT a.memory_id FROM memory_appraisal_sources a
+	                JOIN memory_items m ON m.id=a.memory_id
+	                WHERE a.owner_id=NEW.user_id AND m.user_id=NEW.user_id
+	                  AND m.tenant_id='00000000-0000-0000-0000-000000000000'))"
+	PL/pgSQL function erase_private_appraisal_derivatives() line 5 at PERFORM
+2026-11-11 16:35:27.173 CST [25890] STATEMENT:  UPDATE memory_privacy_state SET privacy_epoch=privacy_epoch+1 WHERE user_id=$1
+2026-11-11 16:35:29.613 CST [25935] ERROR:  injected erase failure
+2026-11-11 16:35:29.613 CST [25935] CONTEXT:  PL/pgSQL function deny_cache_erase() line 1 at RAISE
+2026-11-11 16:35:29.613 CST [25935] STATEMENT:  DELETE FROM llm_cache WHERE user_id=$1
+2026-11-11 16:35:31.242 CST [25972] ERROR:  embedding profile identity is immutable
+2026-11-11 16:35:31.242 CST [25972] CONTEXT:  PL/pgSQL function protect_embedding_profile_identity() line 6 at RAISE
+2026-11-11 16:35:31.242 CST [25972] STATEMENT:  UPDATE embedding_profiles SET model='silently replaced' WHERE id=$1
+2026-11-11 16:35:31.243 CST [25973] ERROR:  embedding profile identity is immutable
+2026-11-11 16:35:31.243 CST [25973] CONTEXT:  PL/pgSQL function protect_embedding_profile_identity() line 6 at RAISE
+2026-11-11 16:35:31.243 CST [25973] STATEMENT:  UPDATE embedding_profiles SET request_descriptor='{}' WHERE id=$1
+2026-11-11 16:35:31.430 CST [25986] ERROR:  relation "context_leases" does not exist at character 15
+2026-11-11 16:35:31.430 CST [25986] STATEMENT:  SELECT * FROM context_leases WHERE context_id=$1 AND owner_id=$2
+2026-11-11 16:35:31.598 CST [25982] ERROR:  null value in column "user_id" of relation "llm_cache" violates not-null constraint
+2026-11-11 16:35:31.598 CST [25982] DETAIL:  Failing row contains (6f952f31-9125-41ff-aadb-20f9e8c21fdc, null, default, 0967115f2813a3541eaef77de9d9d5773f1c0c04314b0bbfe4ff3b3b1c55b5d5, same, other owner, {"policy": "private_exact", "schema": "alia.cache_metadata.v1", ..., 0, 2026-11-11 08:35:31.585648+00, 2026-11-11 09:35:31.585648+00, 2, 81273219-bbef-44c6-b4b2-acb7e1ca7d9b, 9fa2a27a-248e-47b7-b854-3f7d7d64ec05, active, 250630abd48e64eec80262ef22b77a6d5a1782d3b073b9985d71848881ddf295, 2026-11-11 08:35:31.587416+00).
+2026-11-11 16:35:31.598 CST [25982] STATEMENT:  UPDATE llm_cache SET user_id=NULL
+2026-11-11 16:35:31.810 CST [25993] ERROR:  injected cache replacement failure
+2026-11-11 16:35:31.810 CST [25993] CONTEXT:  PL/pgSQL function deny_vector_removal() line 1 at RAISE
+2026-11-11 16:35:31.810 CST [25993] STATEMENT:  DELETE FROM llm_cache_embeddings WHERE cache_id=$1
+2026-11-11 16:35:32.745 CST [26019] ERROR:  context leases are immutable
+2026-11-11 16:35:32.745 CST [26019] CONTEXT:  PL/pgSQL function reject_context_lease_update() line 2 at RAISE
+2026-11-11 16:35:32.745 CST [26019] STATEMENT:  UPDATE context_leases SET policy_version=policy_version+1 WHERE context_id=$1
+2026-11-11 16:35:33.285 CST [24817] LOG:  checkpoint starting: wal
+2026-11-11 16:35:34.820 CST [26085] ERROR:  injected lease write failure
+2026-11-11 16:35:34.820 CST [26085] CONTEXT:  PL/pgSQL function fail_context_insert() line 1 at RAISE
+2026-11-11 16:35:34.820 CST [26085] STATEMENT:  INSERT INTO context_leases(context_id,owner_id,request_id,context_key,purpose,channel_id,conversation_id,source_event_id,source_received_at,source_privacy_epoch,policy_version,dependencies,dependencies_digest,materialized_digest,valid_until) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT(owner_id,request_id,context_key) DO NOTHING
+2026-11-11 16:35:34.824 CST [26085] ERROR:  division by zero
+2026-11-11 16:35:34.824 CST [26085] STATEMENT:  SELECT m.id::text,m.revision,m.kind,m.scope,m.memory_layer,m.node_type,m.content,m.summary,m.confidence,m.salience,m.importance,m.visibility,m.sensitive,m.status,to_jsonb(m.topic_tags) AS topic_tags,to_jsonb(m.affect_tags) AS affect_tags,to_jsonb(m.source_event_ids) AS source_event_ids,m.evidence,m.metadata,m.superseded_by::text,m.expires_at FROM memory_items m WHERE m.tenant_id=$1 AND m.user_id=$2 AND m.status='active' AND NOT m.sensitive AND m.visibility<>'private_runtime' AND ($3::text[] IS NULL OR m.memory_layer=ANY($3)) AND (m.expires_at IS NULL OR m.expires_at>clock_timestamp()) ORDER BY m.importance DESC,m.salience DESC,m.updated_at DESC,m.id LIMIT 200
+2026-11-11 16:35:36.376 CST [26130] ERROR:  dispatch audit failure
+2026-11-11 16:35:36.376 CST [26130] CONTEXT:  PL/pgSQL function fail_dispatch() line 1 at RAISE
+2026-11-11 16:35:36.376 CST [26130] STATEMENT:  INSERT INTO delivery_events(response_id,delivery_id,kind,payload) VALUES($1,$2,$3,$4)
+2026-11-11 16:35:37.866 CST [26233] ERROR:  injected receipt audit failure
+2026-11-11 16:35:37.866 CST [26233] CONTEXT:  PL/pgSQL function fail_progress() line 1 at RAISE
+2026-11-11 16:35:37.866 CST [26233] STATEMENT:  INSERT INTO delivery_events(response_id,delivery_id,kind,payload) VALUES($1,$2,$3,$4)
+2026-11-11 16:35:41.100 CST [26307] ERROR:  injected offered audit failure
+2026-11-11 16:35:41.100 CST [26307] CONTEXT:  PL/pgSQL function fail_offer() line 1 at RAISE
+2026-11-11 16:35:41.100 CST [26307] STATEMENT:  INSERT INTO delivery_events(response_id,delivery_id,kind,payload) VALUES($1,$2,$3,$4)
+2026-11-11 16:35:53.563 CST [26343] ERROR:  canceling statement due to statement timeout
+2026-11-11 16:35:53.563 CST [26343] STATEMENT:  SELECT r.response_id FROM delivery_responses r JOIN output_control_scopes s USING(response_id) WHERE s.status='active' AND s.deadline_at<=clock_timestamp() ORDER BY s.deadline_at LIMIT $1 FOR NO KEY UPDATE OF r SKIP LOCKED
+2026-11-11 16:35:57.617 CST [26470] ERROR:  new row for relation "deliveries" violates check constraint "deliveries_media_evidence"
+2026-11-11 16:35:57.617 CST [26470] DETAIL:  Failing row contains (3ebf143d-64a0-461c-b82f-0de7abed9970, 3a5ec873-d7eb-4b6c-a6e0-939f07c0ffa8, text:response, {"representation": "plain_utf8"}, null, null, 43677ca6bba6cd95f1a172d8e1441cc78b36bbdd45dc540ee0f65b113c7e238f, sending, a9ae6da5-7498-4896-bf33-219b7e1ba976, c8e3fc9e-2e9e-4487-adcc-1a9c3c26df64, 2026-11-11 08:36:12.612033+00, 2026-11-11 08:37:57.614481+00, f, 24000, 1, 0, 0, null, null, f, 0, null, null, 2026-11-11 08:35:57.612034+00, 2026-11-11 08:35:57.617874+00, text, {"text_id": "8e0520d2-030f-4f7b-b7e4-c7039882cfbd", "channel_ins..., 0, 0, f, null).
+2026-11-11 16:35:57.617 CST [26470] STATEMENT:  UPDATE deliveries SET source_sample_rate=$2,source_channels=$3,updated_at=clock_timestamp() WHERE delivery_id=$1
+2026-11-11 16:35:58.032 CST [26483] ERROR:  injected text durable offer failure
+2026-11-11 16:35:58.032 CST [26483] CONTEXT:  PL/pgSQL function reject_text_offer() line 1 at RAISE
+2026-11-11 16:35:58.032 CST [26483] STATEMENT:  INSERT INTO delivery_text_chunks(delivery_id,sequence,utf8_offset,text) VALUES($1,$2,$3,$4)
+2026-11-11 16:35:58.780 CST [26502] ERROR:  column "origin_mode" does not exist at character 283
+2026-11-11 16:35:58.780 CST [26502] STATEMENT:  SELECT jsonb_build_object(
+	                'appraisals', (SELECT count(*) FROM appraisal_records),
+	                'responses', (SELECT count(*) FROM delivery_responses),
+	                'source_claims', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+	                    SELECT origin_mode, count(*) AS count
+	                    FROM companion_source_claims GROUP BY origin_mode ORDER BY origin_mode) v),
+	                'rejected_sources', (SELECT count(*) FROM companion_rejected_sources),
+	                'pending', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+	                    SELECT state, retirement_reason, count(*) AS count
+	                    FROM companion_live_pending GROUP BY state, retirement_reason
+	                    ORDER BY state, retirement_reason) v),
+	                'admissions', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+	                    SELECT state, retirement_reason, count(*) AS count
+	                    FROM companion_admissions GROUP BY state, retirement_reason
+	                    ORDER BY state, retirement_reason) v),
+	                'output_controls', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+	                    SELECT status, last_command_sequence,
+	                    floor(extract(epoch FROM (deadline_at-clock_timestamp()))*1000) AS remaining_ms,
+	                    latest_receipt #>> '{receipt,snapshot,phase}' AS receipt_phase
+	                    FROM output_control_scopes ORDER BY created_at) v),
+	                'control_commands', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+	                    SELECT sequence, status,
+	                    floor(extract(epoch FROM (deadline_at-clock_timestamp()))*1000) AS remaining_ms,
+	                    latest_receipt #>> '{receipt,snapshot,phase}' AS receipt_phase
+	                    FROM output_control_commands ORDER BY created_at, sequence) v),
+	                'task_db_waits', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+	                    SELECT state, wait_event_type, count(*) AS count
+	                    FROM pg_stat_activity WHERE datname=current_database()
+	                    GROUP BY state, wait_event_type ORDER BY state, wait_event_type) v)) AS summary
+2026-11-11 16:36:12.399 CST [26697] ERROR:  column "policy" of relation "context_policy" does not exist at character 46
+2026-11-11 16:36:12.399 CST [26697] STATEMENT:  INSERT INTO context_policy(singleton,version,policy,policy_digest) VALUES(TRUE,1,$1,$2) ON CONFLICT DO NOTHING
+2026-11-11 16:36:12.536 CST [26703] ERROR:  column "password_hash" of relation "users" does not exist at character 33
+2026-11-11 16:36:12.536 CST [26703] STATEMENT:  INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Delivery test','not-a-login','user','active')
+2026-11-11 16:36:16.140 CST [26748] ERROR:  relation "motion_deliveries" does not exist at character 25
+2026-11-11 16:36:16.140 CST [26748] STATEMENT:  WITH expired AS (UPDATE motion_deliveries SET status='unknown',unknown_reason='motion observation owner expired',updated_at=clock_timestamp() WHERE status IN ('sending','observing') AND (lease_expires_at<=clock_timestamp() OR observation_deadline_at<=clock_timestamp()) RETURNING delivery_id,response_id) INSERT INTO delivery_events(response_id,kind,payload) SELECT response_id,'motion_unknown',jsonb_build_object('motion_delivery_id',delivery_id,'reason','motion observation owner expired') FROM expired
+2026-11-11 16:36:56.165 CST [27084] ERROR:  injected outbox insert failure
+2026-11-11 16:36:56.165 CST [27084] CONTEXT:  PL/pgSQL function fail_outbox_insert() line 1 at RAISE
+2026-11-11 16:36:56.165 CST [27084] STATEMENT:  INSERT INTO execution_outbox(effect_id) VALUES($1)
+2026-11-11 16:36:56.670 CST [27096] ERROR:  injected execution event failure
+2026-11-11 16:36:56.670 CST [27096] CONTEXT:  PL/pgSQL function fail_event_insert() line 1 at RAISE
+2026-11-11 16:36:56.670 CST [27096] STATEMENT:  INSERT INTO execution_events(event_id,effect_id,event_type,actor_id,evidence) VALUES($1,$2,$3,$4,$5)
+2026-11-11 16:36:56.693 CST [27099] ERROR:  injected completion update failure
+2026-11-11 16:36:56.693 CST [27099] CONTEXT:  PL/pgSQL function fail_completion_update() line 1 at RAISE
+2026-11-11 16:36:56.693 CST [27099] STATEMENT:  UPDATE execution_effects SET status=$2,completion=$3,updated_at=clock_timestamp() WHERE effect_id=$1
+2026-11-11 16:36:57.569 CST [27130] ERROR:  injected outbox delete failure
+2026-11-11 16:36:57.569 CST [27130] CONTEXT:  PL/pgSQL function fail_outbox_delete() line 1 at RAISE
+2026-11-11 16:36:57.569 CST [27130] STATEMENT:  DELETE FROM execution_outbox WHERE effect_id=$1
+2026-11-11 16:36:58.495 CST [27165] LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 16:37:05.847 CST [27280] ERROR:  injected receipt write failure
+2026-11-11 16:37:05.847 CST [27280] CONTEXT:  PL/pgSQL function reject_receipt() line 1 at RAISE
+2026-11-11 16:37:05.847 CST [27280] STATEMENT:  UPDATE execution_effects SET status=$2,completion=$3,updated_at=clock_timestamp() WHERE effect_id=$1
+2026-11-11 16:37:05.951 CST [27278] ERROR:  injected receipt write failure
+2026-11-11 16:37:05.951 CST [27278] CONTEXT:  PL/pgSQL function reject_receipt() line 1 at RAISE
+2026-11-11 16:37:05.951 CST [27278] STATEMENT:  UPDATE execution_effects SET status=$2,completion=$3,updated_at=clock_timestamp() WHERE effect_id=$1
+2026-11-11 16:37:06.054 CST [27279] ERROR:  injected receipt write failure
+2026-11-11 16:37:06.054 CST [27279] CONTEXT:  PL/pgSQL function reject_receipt() line 1 at RAISE
+2026-11-11 16:37:06.054 CST [27279] STATEMENT:  UPDATE execution_effects SET status=$2,completion=$3,updated_at=clock_timestamp() WHERE effect_id=$1
+2026-11-11 16:37:07.073 CST [27301] ERROR:  injected cancellation write failure
+2026-11-11 16:37:07.073 CST [27301] CONTEXT:  PL/pgSQL function reject_cancel() line 1 at RAISE
+2026-11-11 16:37:07.073 CST [27301] STATEMENT:  UPDATE execution_effects SET status='cancelled',updated_at=clock_timestamp() WHERE effect_id=$1
+2026-11-11 16:37:07.074 CST [27301] ERROR:  injected cancellation write failure
+2026-11-11 16:37:07.074 CST [27301] CONTEXT:  PL/pgSQL function reject_cancel() line 1 at RAISE
+2026-11-11 16:37:07.074 CST [27301] STATEMENT:  UPDATE execution_effects SET status='cancelled',updated_at=clock_timestamp() WHERE effect_id=$1
+2026-11-11 16:37:19.957 CST [27437] ERROR:  injected vector failure
+2026-11-11 16:37:19.957 CST [27437] CONTEXT:  PL/pgSQL function fail_vector_insert() line 1 at RAISE
+2026-11-11 16:37:19.957 CST [27437] STATEMENT:  INSERT INTO memory_embeddings(memory_id,profile_id,source_revision,input_digest,policy_version,privacy_epoch,dimensions,embedding) VALUES($1,$2,$3,$4,$5,$6,$7,$8::vector) ON CONFLICT(memory_id,profile_id) DO NOTHING
+2026-11-11 16:37:23.843 CST [24817] LOG:  checkpoint complete: wrote 4037 buffers (24.6%); 0 WAL file(s) added, 2 removed, 31 recycled; write=105.329 s, sync=2.187 s, total=110.559 s; sync files=117245, longest=0.021 s, average=0.001 s; distance=535482 kB, estimate=535482 kB; lsn=0/421C2408, redo lsn=0/22009388
+2026-11-11 16:37:26.119 CST [24817] LOG:  checkpoint starting: wal
+2026-11-11 16:37:56.386 CST [27624] ERROR:  injected vector failure
+2026-11-11 16:37:56.386 CST [27624] CONTEXT:  PL/pgSQL function fail_vector_insert() line 1 at RAISE
+2026-11-11 16:37:56.386 CST [27624] STATEMENT:  INSERT INTO memory_embeddings(memory_id,profile_id,source_revision,input_digest,policy_version,privacy_epoch,dimensions,embedding) VALUES($1,$2,$3,$4,$5,$6,$7,$8::vector) ON CONFLICT(memory_id,profile_id) DO NOTHING
+2026-11-11 16:38:01.832 CST [27740] ERROR:  injected forget failure
+2026-11-11 16:38:01.832 CST [27740] CONTEXT:  PL/pgSQL function reject_forget() line 1 at RAISE
+	SQL statement "UPDATE memory_items
+	        SET status='deleted',revision=revision+1,content='',summary=NULL,
+	            evidence='{}',metadata='{}',topic_tags='{}',affect_tags='{}',
+	            source_event_ids='{}',superseded_by=NULL,
+	            expires_at=clock_timestamp(),updated_at=clock_timestamp()
+	        WHERE user_id=p_owner AND tenant_id=p_tenant AND id=ANY(erased_ids)
+	          AND status<>'deleted'"
+	PL/pgSQL function erase_memory_closure(uuid,uuid,uuid[]) line 50 at SQL statement
+2026-11-11 16:38:01.832 CST [27740] STATEMENT:  SELECT erase_memory_closure($1,$2,ARRAY(SELECT jsonb_array_elements_text($3::jsonb)::uuid UNION SELECT a.memory_id FROM memory_appraisal_sources a JOIN memory_items m ON m.id=a.memory_id WHERE a.owner_id=$1 AND m.user_id=$1 AND m.tenant_id=$2)) AS erased
+2026-11-11 16:38:01.836 CST [27741] ERROR:  injected forget failure
+2026-11-11 16:38:01.836 CST [27741] CONTEXT:  PL/pgSQL function reject_forget() line 1 at RAISE
+	SQL statement "UPDATE memory_items
+	        SET status='deleted',revision=revision+1,content='',summary=NULL,
+	            evidence='{}',metadata='{}',topic_tags='{}',affect_tags='{}',
+	            source_event_ids='{}',superseded_by=NULL,
+	            expires_at=clock_timestamp(),updated_at=clock_timestamp()
+	        WHERE user_id=p_owner AND tenant_id=p_tenant AND id=ANY(erased_ids)
+	          AND status<>'deleted'"
+	PL/pgSQL function erase_memory_closure(uuid,uuid,uuid[]) line 50 at SQL statement
+2026-11-11 16:38:01.836 CST [27741] STATEMENT:  SELECT erase_memory_closure($1,$2,ARRAY(SELECT jsonb_array_elements_text($3::jsonb)::uuid UNION SELECT a.memory_id FROM memory_appraisal_sources a JOIN memory_items m ON m.id=a.memory_id WHERE a.owner_id=$1 AND m.user_id=$1 AND m.tenant_id=$2)) AS erased
+2026-11-11 16:38:01.837 CST [27740] ERROR:  injected forget failure
+2026-11-11 16:38:01.837 CST [27740] CONTEXT:  PL/pgSQL function reject_forget() line 1 at RAISE
+	SQL statement "UPDATE memory_items
+	        SET status='deleted',revision=revision+1,content='',summary=NULL,
+	            evidence='{}',metadata='{}',topic_tags='{}',affect_tags='{}',
+	            source_event_ids='{}',superseded_by=NULL,
+	            expires_at=clock_timestamp(),updated_at=clock_timestamp()
+	        WHERE user_id=p_owner AND tenant_id=p_tenant AND id=ANY(erased_ids)
+	          AND status<>'deleted'"
+	PL/pgSQL function erase_memory_closure(uuid,uuid,uuid[]) line 50 at SQL statement
+2026-11-11 16:38:01.837 CST [27740] STATEMENT:  SELECT erase_memory_closure($1,$2,ARRAY(SELECT jsonb_array_elements_text($3::jsonb)::uuid UNION SELECT a.memory_id FROM memory_appraisal_sources a JOIN memory_items m ON m.id=a.memory_id WHERE a.owner_id=$1 AND m.user_id=$1 AND m.tenant_id=$2)) AS erased
+2026-11-11 16:38:02.753 CST [27775] ERROR:  duplicate key value violates unique constraint "memory_items_pkey"
+2026-11-11 16:38:02.753 CST [27775] DETAIL:  Key (id)=(7cc03921-21a2-4f7a-997b-220e007230e1) already exists.
+2026-11-11 16:38:02.753 CST [27775] STATEMENT:  
+	            INSERT INTO memory_items (
+	                id, tenant_id, user_id, conversation_id, kind, scope, memory_layer,
+	                node_type, content, summary, confidence, salience, importance,
+	                affect_tags, topic_tags, source_event_ids, evidence, metadata,
+	                status, superseded_by, visibility, sensitive, expires_at, updated_at
+	            )
+	            VALUES (
+	                $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7,
+	                $8, $9, $10, $11, $12, $13,
+	                ARRAY(SELECT jsonb_array_elements_text($14::jsonb)),
+	                ARRAY(SELECT jsonb_array_elements_text($15::jsonb)),
+	                ARRAY(SELECT jsonb_array_elements_text($16::jsonb)::uuid),
+	                $17::jsonb, $18::jsonb, $19, $20::uuid, $21, $22, $23, NOW()
+	            )
+	            
+2026-11-11 16:38:03.160 CST [27790] ERROR:  injected batch rejection
+2026-11-11 16:38:03.160 CST [27790] CONTEXT:  PL/pgSQL function reject_batch_update() line 1 at RAISE
+2026-11-11 16:38:03.160 CST [27790] STATEMENT:  UPDATE memory_items SET content=COALESCE($4,content),summary=CASE WHEN $4::text IS NULL THEN summary ELSE NULL END,metadata=COALESCE($5::jsonb,metadata),importance=COALESCE($6,importance),confidence=COALESCE($7,confidence),salience=COALESCE($8,salience),visibility=COALESCE($9,visibility),status=COALESCE($10,status),superseded_by=COALESCE($11::uuid,superseded_by),source_event_ids=ARRAY(SELECT DISTINCT v FROM unnest(source_event_ids || ARRAY(SELECT jsonb_array_elements_text($13::jsonb)::uuid)) AS ids(v)),revision=revision+1,updated_at=clock_timestamp() WHERE id=$1::uuid AND user_id=$2 AND tenant_id=$3 AND revision=$12 AND status<>'deleted'
+2026-11-11 16:38:03.167 CST [27790] ERROR:  injected batch rejection
+2026-11-11 16:38:03.167 CST [27790] CONTEXT:  PL/pgSQL function reject_batch_update() line 1 at RAISE
+	SQL statement "UPDATE memory_items
+	        SET status='deleted',revision=revision+1,content='',summary=NULL,
+	            evidence='{}',metadata='{}',topic_tags='{}',affect_tags='{}',
+	            source_event_ids='{}',superseded_by=NULL,
+	            expires_at=clock_timestamp(),updated_at=clock_timestamp()
+	        WHERE user_id=p_owner AND tenant_id=p_tenant AND id=ANY(erased_ids)
+	          AND status<>'deleted'"
+	PL/pgSQL function erase_memory_closure(uuid,uuid,uuid[]) line 50 at SQL statement
+2026-11-11 16:38:03.167 CST [27790] STATEMENT:  SELECT erase_memory_closure($1,$2,ARRAY(SELECT jsonb_array_elements_text($3::jsonb)::uuid UNION SELECT a.memory_id FROM memory_appraisal_sources a JOIN memory_items m ON m.id=a.memory_id WHERE a.owner_id=$1 AND m.user_id=$1 AND m.tenant_id=$2)) AS erased
+2026-11-11 16:38:03.174 CST [27790] ERROR:  injected provenance rejection
+2026-11-11 16:38:03.174 CST [27790] CONTEXT:  PL/pgSQL function reject_batch_source() line 1 at RAISE
+2026-11-11 16:38:03.174 CST [27790] STATEMENT:  INSERT INTO memory_sources(memory_id,source_id,source_revision) VALUES($1::uuid,$2::uuid,$3) ON CONFLICT(memory_id,source_id) DO UPDATE SET source_revision=EXCLUDED.source_revision
+2026-11-11 16:38:03.294 CST [27793] ERROR:  duplicate key value violates unique constraint "memory_items_pkey"
+2026-11-11 16:38:03.294 CST [27793] DETAIL:  Key (id)=(849c2cc3-1397-4c17-970a-49ebe2a8ad10) already exists.
+2026-11-11 16:38:03.294 CST [27793] STATEMENT:  
+	            INSERT INTO memory_items (
+	                id, tenant_id, user_id, conversation_id, kind, scope, memory_layer,
+	                node_type, content, summary, confidence, salience, importance,
+	                affect_tags, topic_tags, source_event_ids, evidence, metadata,
+	                status, superseded_by, visibility, sensitive, expires_at, updated_at
+	            )
+	            VALUES (
+	                $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7,
+	                $8, $9, $10, $11, $12, $13,
+	                ARRAY(SELECT jsonb_array_elements_text($14::jsonb)),
+	                ARRAY(SELECT jsonb_array_elements_text($15::jsonb)),
+	                ARRAY(SELECT jsonb_array_elements_text($16::jsonb)::uuid),
+	                $17::jsonb, $18::jsonb, $19, $20::uuid, $21, $22, $23, NOW()
+	            )
+	            
+2026-11-11 16:38:03.306 CST [27793] ERROR:  duplicate key value violates unique constraint "memory_items_pkey"
+2026-11-11 16:38:03.306 CST [27793] DETAIL:  Key (id)=(849c2cc3-1397-4c17-970a-49ebe2a8ad10) already exists.
+2026-11-11 16:38:03.306 CST [27793] STATEMENT:  
+	            INSERT INTO memory_items (
+	                id, tenant_id, user_id, conversation_id, kind, scope, memory_layer,
+	                node_type, content, summary, confidence, salience, importance,
+	                affect_tags, topic_tags, source_event_ids, evidence, metadata,
+	                status, superseded_by, visibility, sensitive, expires_at, updated_at
+	            )
+	            VALUES (
+	                $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7,
+	                $8, $9, $10, $11, $12, $13,
+	                ARRAY(SELECT jsonb_array_elements_text($14::jsonb)),
+	                ARRAY(SELECT jsonb_array_elements_text($15::jsonb)),
+	                ARRAY(SELECT jsonb_array_elements_text($16::jsonb)::uuid),
+	                $17::jsonb, $18::jsonb, $19, $20::uuid, $21, $22, $23, NOW()
+	            )
+	            
+2026-11-11 16:38:05.107 CST [27815] ERROR:  division by zero
+2026-11-11 16:38:05.107 CST [27815] STATEMENT:  CREATE TABLE partial_write (value TEXT); INSERT INTO retained VALUES (2); SELECT 1 / 0;
+2026-11-11 16:38:05.120 CST [27819] ERROR:  division by zero
+2026-11-11 16:38:05.120 CST [27819] STATEMENT:  CREATE TABLE partial_write (id INTEGER); SELECT 1 / 0;
+2026-11-11 16:38:05.681 CST [27830] ERROR:  injected motion audit failure
+2026-11-11 16:38:05.681 CST [27830] CONTEXT:  PL/pgSQL function deny_motion_dispatch() line 1 at RAISE
+2026-11-11 16:38:05.681 CST [27830] STATEMENT:  INSERT INTO delivery_events(response_id,kind,payload) VALUES($1,$2,$3)
+2026-11-11 16:38:06.658 CST [27867] ERROR:  injected control audit failure
+2026-11-11 16:38:06.658 CST [27867] CONTEXT:  PL/pgSQL function reject_control_audit() line 1 at RAISE
+2026-11-11 16:38:06.658 CST [27867] STATEMENT:  INSERT INTO delivery_events(response_id,delivery_id,kind,payload) VALUES($1,$2,$3,$4)
+2026-11-11 16:38:06.665 CST [27865] ERROR:  injected control audit failure
+2026-11-11 16:38:06.665 CST [27865] CONTEXT:  PL/pgSQL function reject_control_audit() line 1 at RAISE
+2026-11-11 16:38:06.665 CST [27865] STATEMENT:  INSERT INTO delivery_events(response_id,delivery_id,kind,payload) VALUES($1,$2,$3,$4)
+2026-11-11 16:38:20.123 CST [28116] ERROR:  injected refresh insert failure
+2026-11-11 16:38:20.123 CST [28116] CONTEXT:  PL/pgSQL function fail_refresh_insert() line 1 at RAISE
+2026-11-11 16:38:20.123 CST [28116] STATEMENT:  INSERT INTO "refresh_tokens" ("id", "user_id", "token_hash", "user_agent", "ip_address", "issued_at", "expires_at", "revoked_at") VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING "id", "user_id", "token_hash", "user_agent", "ip_address", "issued_at", "expires_at", "revoked_at"
+2026-11-11 16:38:20.491 CST [28120] ERROR:  injected auth insert failure
+2026-11-11 16:38:20.491 CST [28120] CONTEXT:  PL/pgSQL function fail_auth_insert() line 1 at RAISE
+2026-11-11 16:38:20.491 CST [28120] STATEMENT:  INSERT INTO "user_identity_links" ("id", "user_id", "provider", "subject", "label", "confidence_threshold", "metadata", "verified_at", "created_at", "updated_at") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING "id", "user_id", "provider", "subject", "label", "confidence_threshold", "metadata", "verified_at", "created_at", "updated_at"
+2026-11-11 16:38:20.696 CST [28124] ERROR:  injected auth insert failure
+2026-11-11 16:38:20.696 CST [28124] CONTEXT:  PL/pgSQL function fail_auth_insert() line 1 at RAISE
+2026-11-11 16:38:20.696 CST [28124] STATEMENT:  INSERT INTO "refresh_tokens" ("id", "user_id", "token_hash", "user_agent", "ip_address", "issued_at", "expires_at", "revoked_at") VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING "id", "user_id", "token_hash", "user_agent", "ip_address", "issued_at", "expires_at", "revoked_at"
+2026-11-11 16:38:20.852 CST [28139] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:20.852 CST [28139] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:20.852 CST [28139] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:20.953 CST [28139] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:20.953 CST [28139] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:20.953 CST [28139] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:21.069 CST [28139] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:21.069 CST [28139] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:21.069 CST [28139] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:21.153 CST [28146] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:21.153 CST [28146] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:21.153 CST [28146] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:21.224 CST [28145] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:21.224 CST [28145] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:21.224 CST [28145] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:21.233 CST [28140] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:21.233 CST [28140] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:21.233 CST [28140] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:21.335 CST [28144] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:21.335 CST [28144] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:21.335 CST [28144] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:21.457 CST [28140] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:21.457 CST [28140] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:21.457 CST [28140] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:21.493 CST [28144] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:21.493 CST [28144] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:21.493 CST [28144] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:21.706 CST [28146] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:21.706 CST [28146] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:21.706 CST [28146] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:21.756 CST [28140] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:21.756 CST [28140] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:21.756 CST [28140] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:21.980 CST [28150] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:21.980 CST [28150] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:21.980 CST [28150] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:22.048 CST [28157] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:22.048 CST [28157] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:22.048 CST [28157] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:22.063 CST [28154] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:22.063 CST [28154] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:22.063 CST [28154] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:22.124 CST [28152] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:22.124 CST [28152] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:22.124 CST [28152] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:22.181 CST [28150] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:22.181 CST [28150] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:22.181 CST [28150] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:22.244 CST [28153] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:22.244 CST [28153] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:22.244 CST [28153] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:22.413 CST [28152] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:22.413 CST [28152] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:22.413 CST [28152] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:22.678 CST [28153] ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 16:38:22.678 CST [28153] HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 16:38:22.678 CST [28153] STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 16:38:23.105 CST [28187] LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 16:38:23.105 CST [28185] LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 16:38:24.660 CST [28164] ERROR:  canceling statement due to statement timeout
+2026-11-11 16:38:24.660 CST [28164] CONTEXT:  while locking tuple (0,1) in relation "context_policy"
+2026-11-11 16:38:24.660 CST [28164] STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR SHARE
+2026-11-11 16:38:25.952 CST [28220] LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 16:38:26.410 CST [28230] ERROR:  injected policy write failure
+2026-11-11 16:38:26.410 CST [28230] CONTEXT:  PL/pgSQL function fail_context_policy() line 1 at RAISE
+2026-11-11 16:38:26.410 CST [28230] STATEMENT:  UPDATE context_policy SET version=version+1,policy=$2,policy_digest=$3,updated_at=clock_timestamp() WHERE singleton AND version=$1 RETURNING version
+2026-11-11 16:38:26.668 CST [28232] ERROR:  injected response commit failure
+2026-11-11 16:38:26.668 CST [28232] CONTEXT:  PL/pgSQL function fail_response_commit() line 1 at RAISE
+2026-11-11 16:38:26.668 CST [28232] STATEMENT:  INSERT INTO chat_messages(id,session_id,user_id,role,content,created_at,source_received_at,source_privacy_epoch) VALUES($1,$2,NULL,'assistant',$3,clock_timestamp(),$4,$5) ON CONFLICT(id) DO NOTHING
+2026-11-11 16:38:26.672 CST [28233] ERROR:  injected response commit failure
+2026-11-11 16:38:26.672 CST [28233] CONTEXT:  PL/pgSQL function fail_response_commit() line 1 at RAISE
+2026-11-11 16:38:26.672 CST [28233] STATEMENT:  UPDATE chat_sessions SET updated_at=clock_timestamp() WHERE id=$1 AND creator_id=$2
+2026-11-11 16:38:39.103 CST [28328] LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 16:38:39.104 CST [28331] LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 16:38:39.567 CST [28338] ERROR:  injected embedding policy failure
+2026-11-11 16:38:39.567 CST [28338] CONTEXT:  PL/pgSQL function reject_profile_policy_update() line 1 at RAISE
+2026-11-11 16:38:39.567 CST [28338] STATEMENT:  UPDATE context_policy SET version=version+1,policy=$2,policy_digest=$3,updated_at=clock_timestamp() WHERE singleton AND version=$1 RETURNING version
+2026-11-11 16:38:48.287 CST [28384] ERROR:  canceling statement due to statement timeout
+2026-11-11 16:38:48.287 CST [28384] CONTEXT:  SQL statement "SELECT pg_advisory_xact_lock(167160445)"
+	PL/pgSQL function hold_appraisal_mutation() line 1 at PERFORM
+2026-11-11 16:38:48.287 CST [28384] STATEMENT:  INSERT INTO appraisal_records(appraisal_id,owner_id,request_id,context_id,occurrence_key,interpreter_id,interpreter_version,policy_version,interpretation_policy_digest,source_event_id,source_privacy_epoch,source_relationship_epoch,source_received_at,input_digest,result_digest,source_fact,events,roots,roots_digest,effective_at,valid_until) VALUES($1,$2,$3,$4,$5,'alia.appraisal',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+2026-11-11 16:38:48.287 CST [28384] LOG:  could not send data to client: Broken pipe
+2026-11-11 16:38:48.287 CST [28384] FATAL:  connection to client lost
+2026-11-11 16:38:48.893 CST [28416] ERROR:  injected appraisal failure
+2026-11-11 16:38:48.893 CST [28416] CONTEXT:  PL/pgSQL function fail_appraisal_write() line 1 at RAISE
+2026-11-11 16:38:48.893 CST [28416] STATEMENT:  INSERT INTO appraisal_records(appraisal_id,owner_id,request_id,context_id,occurrence_key,interpreter_id,interpreter_version,policy_version,interpretation_policy_digest,source_event_id,source_privacy_epoch,source_relationship_epoch,source_received_at,input_digest,result_digest,source_fact,events,roots,roots_digest,effective_at,valid_until) VALUES($1,$2,$3,$4,$5,'alia.appraisal',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+2026-11-11 16:38:48.974 CST [28427] ERROR:  injected relationship delete failure
+2026-11-11 16:38:48.974 CST [28427] CONTEXT:  PL/pgSQL function fail_relationship_delete() line 1 at RAISE
+2026-11-11 16:38:48.974 CST [28427] STATEMENT:  DELETE FROM appraisal_records WHERE owner_id=$1
+2026-11-11 16:38:49.740 CST [28447] WARNING:  there is no transaction in progress
+2026-11-11 16:38:50.131 CST [28459] LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 16:38:50.462 CST [28465] LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 16:38:53.102 CST [24817] LOG:  checkpoint complete: wrote 6829 buffers (41.7%); 0 WAL file(s) added, 1 removed, 32 recycled; write=82.991 s, sync=1.096 s, total=86.984 s; sync files=58473, longest=0.014 s, average=0.001 s; distance=540637 kB, estimate=540637 kB; lsn=0/61DFB768, redo lsn=0/43000B58
+2026-11-11 16:38:56.219 CST [28510] ERROR:  injected insights log failure
+2026-11-11 16:38:56.219 CST [28510] CONTEXT:  PL/pgSQL function reject_insights_log() line 1 at RAISE
+2026-11-11 16:38:56.219 CST [28510] STATEMENT:  INSERT INTO "insight_logs" ("id", "user_id", "phase", "trigger_type", "summary", "nodes_created", "nodes_updated", "nodes_merged", "edges_created", "model_used", "duration_ms", "created_at") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING "id", "user_id", "phase", "trigger_type", "summary", "nodes_created", "nodes_updated", "nodes_merged", "edges_created", "model_used", "duration_ms", "created_at"
+2026-11-11 16:38:56.544 CST [28533] ERROR:  column b.delivery_id does not exist at character 141
+2026-11-11 16:38:56.544 CST [28533] HINT:  Perhaps you meant to reference the column "c.delivery_id".
+2026-11-11 16:38:56.544 CST [28533] STATEMENT:  SELECT to_jsonb(b) || jsonb_build_object('latest_checkpoint',(SELECT c.progress FROM motion_delivery_late_checkpoints c WHERE c.delivery_id=b.delivery_id ORDER BY c.receipt_sequence DESC LIMIT 1)) AS record FROM motion_deliveries b JOIN delivery_responses r USING(response_id) WHERE b.delivery_id=$1 AND r.user_id=$2
+2026-11-11 16:38:56.745 CST [24817] LOG:  checkpoint starting: wal
+2026-11-11 16:38:56.887 CST [28546] LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 16:38:57.885 CST [28591] ERROR:  fixture-only policy failure
+2026-11-11 16:38:57.885 CST [28591] CONTEXT:  PL/pgSQL function fail_appraisal_policy() line 1 at RAISE
+2026-11-11 16:38:57.885 CST [28591] STATEMENT:  UPDATE context_policy SET version=version+1,policy=$2,policy_digest=$3,updated_at=clock_timestamp() WHERE singleton AND version=$1 RETURNING version
+2026-11-11 16:38:58.029 CST [28601] ERROR:  injected relationship clear transaction failure
+2026-11-11 16:38:58.029 CST [28601] CONTEXT:  PL/pgSQL function fail_relationship_clear_api() line 1 at RAISE
+2026-11-11 16:38:58.029 CST [28601] STATEMENT:  UPDATE relationship_authority SET relationship_epoch=$2,updated_at=clock_timestamp() WHERE owner_id=$1
+2026-11-11 16:38:58.664 CST [28619] ERROR:  injected tool catalog failure
+2026-11-11 16:38:58.664 CST [28619] CONTEXT:  PL/pgSQL function reject_tool_catalog() line 2 at RAISE
+2026-11-11 16:38:58.664 CST [28619] STATEMENT:  INSERT INTO "tools" ("id", "name", "description", "parameters", "source", "require_confirmation", "required_role", "routing_keywords", "routing_examples", "routing_text", "routing_embedding", "enabled", "created_at", "updated_at") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING "id", "name", "description", "parameters", "source", "require_confirmation", "required_role", "routing_keywords", "routing_examples", "routing_text", "routing_embedding", "enabled", "created_at", "updated_at"
+2026-11-11 16:38:58.705 CST [28620] LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 16:38:58.705 CST [28621] LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 16:38:58.923 CST [28625] WARNING:  there is no transaction in progress
+2026-11-11 16:38:59.400 CST [28644] ERROR:  private settings fixture SQL failure
+2026-11-11 16:38:59.400 CST [28644] CONTEXT:  PL/pgSQL function fail_settings_privacy() line 2 at RAISE
+2026-11-11 16:38:59.400 CST [28644] STATEMENT:  UPDATE context_policy SET version=version+1,policy=$2,policy_digest=$3,updated_at=clock_timestamp() WHERE singleton AND version=$1 RETURNING version
+2026-11-11 16:39:00.277 CST [28607] ERROR:  canceling statement due to statement timeout
+2026-11-11 16:39:00.277 CST [28607] CONTEXT:  while locking tuple (0,1) in relation "context_policy"
+2026-11-11 16:39:00.277 CST [28607] STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR SHARE
+2026-11-11 16:39:00.601 CST [28673] ERROR:  relation "users" does not exist at character 115
+2026-11-11 16:39:00.601 CST [28673] STATEMENT:  SELECT a.owner_id,a.appraisal_id FROM appraisal_records a JOIN companion_policies p ON p.owner_id=a.owner_id JOIN users u ON u.id=a.owner_id AND u.status='active' JOIN memory_privacy_state privacy ON privacy.user_id=a.owner_id AND privacy.privacy_epoch=a.source_privacy_epoch JOIN relationship_authority relationship ON relationship.owner_id=a.owner_id AND relationship.relationship_epoch=a.source_relationship_epoch JOIN context_policy g ON g.singleton AND g.version=a.policy_version WHERE (g.policy->'appraisal'->'affect'->>'enabled')::boolean AND (g.policy->'appraisal'->'affect'->>'relationship_profile_user_visible')::boolean AND g.policy->>'paused_until' IS NULL AND a.status='active' AND a.source_fact->>'kind'='user_message' AND p.policy->>'mode'='enabled' AND NOT (p.policy->>'quiet')::boolean AND NOT (p.policy->>'paused')::boolean AND p.enabled_since IS NOT NULL AND a.effective_at>=p.enabled_since AND a.effective_at<=clock_timestamp() AND a.valid_until>clock_timestamp() AND a.effective_at+((p.policy->>'candidate_ttl_seconds')::integer*interval '1 second')>clock_timestamp() AND NOT EXISTS(SELECT 1 FROM companion_source_claims c WHERE c.owner_id=a.owner_id AND c.source_event_id=a.source_event_id) AND NOT EXISTS(SELECT 1 FROM companion_rejected_sources r WHERE r.owner_id=a.owner_id AND r.appraisal_id=a.appraisal_id) AND (SELECT count(*) FROM companion_live_pending l WHERE l.owner_id=a.owner_id AND l.private_candidate IS NOT NULL)<4 ORDER BY a.effective_at,a.appraisal_id LIMIT $1
+2026-11-11 16:39:00.601 CST [28674] ERROR:  relation "users" does not exist at character 26
+2026-11-11 16:39:00.601 CST [28674] STATEMENT:  SELECT "users"."id" FROM "users" WHERE "users"."id" = $1 AND "users"."status" = $2 AND "users"."role" = $3 LIMIT $4
+2026-11-11 16:39:01.087 CST [28687] ERROR:  relation "users" does not exist at character 26
+2026-11-11 16:39:01.087 CST [28687] STATEMENT:  SELECT "users"."id" FROM "users" WHERE "users"."id" = $1 AND "users"."status" = $2 AND "users"."role" = $3 LIMIT $4
+2026-11-11 16:39:02.867 CST [28677] ERROR:  canceling statement due to statement timeout
+2026-11-11 16:39:02.867 CST [28677] STATEMENT:  SELECT a.owner_id,a.appraisal_id FROM appraisal_records a JOIN companion_policies p ON p.owner_id=a.owner_id JOIN users u ON u.id=a.owner_id AND u.status='active' JOIN memory_privacy_state privacy ON privacy.user_id=a.owner_id AND privacy.privacy_epoch=a.source_privacy_epoch JOIN relationship_authority relationship ON relationship.owner_id=a.owner_id AND relationship.relationship_epoch=a.source_relationship_epoch JOIN context_policy g ON g.singleton AND g.version=a.policy_version WHERE (g.policy->'appraisal'->'affect'->>'enabled')::boolean AND (g.policy->'appraisal'->'affect'->>'relationship_profile_user_visible')::boolean AND g.policy->>'paused_until' IS NULL AND a.status='active' AND a.source_fact->>'kind'='user_message' AND p.policy->>'mode'='enabled' AND NOT (p.policy->>'quiet')::boolean AND NOT (p.policy->>'paused')::boolean AND p.enabled_since IS NOT NULL AND a.effective_at>=p.enabled_since AND a.effective_at<=clock_timestamp() AND a.valid_until>clock_timestamp() AND a.effective_at+((p.policy->>'candidate_ttl_seconds')::integer*interval '1 second')>clock_timestamp() AND NOT EXISTS(SELECT 1 FROM companion_source_claims c WHERE c.owner_id=a.owner_id AND c.source_event_id=a.source_event_id) AND NOT EXISTS(SELECT 1 FROM companion_rejected_sources r WHERE r.owner_id=a.owner_id AND r.appraisal_id=a.appraisal_id) AND (SELECT count(*) FROM companion_live_pending l WHERE l.owner_id=a.owner_id AND l.private_candidate IS NOT NULL)<4 ORDER BY a.effective_at,a.appraisal_id LIMIT $1
+2026-11-11 16:39:03.311 CST [28702] ERROR:  canceling statement due to statement timeout
+2026-11-11 16:39:03.311 CST [28702] STATEMENT:  SELECT a.owner_id,a.appraisal_id FROM appraisal_records a JOIN companion_policies p ON p.owner_id=a.owner_id JOIN users u ON u.id=a.owner_id AND u.status='active' JOIN memory_privacy_state privacy ON privacy.user_id=a.owner_id AND privacy.privacy_epoch=a.source_privacy_epoch JOIN relationship_authority relationship ON relationship.owner_id=a.owner_id AND relationship.relationship_epoch=a.source_relationship_epoch JOIN context_policy g ON g.singleton AND g.version=a.policy_version WHERE (g.policy->'appraisal'->'affect'->>'enabled')::boolean AND (g.policy->'appraisal'->'affect'->>'relationship_profile_user_visible')::boolean AND g.policy->>'paused_until' IS NULL AND a.status='active' AND a.source_fact->>'kind'='user_message' AND p.policy->>'mode'='enabled' AND NOT (p.policy->>'quiet')::boolean AND NOT (p.policy->>'paused')::boolean AND p.enabled_since IS NOT NULL AND a.effective_at>=p.enabled_since AND a.effective_at<=clock_timestamp() AND a.valid_until>clock_timestamp() AND a.effective_at+((p.policy->>'candidate_ttl_seconds')::integer*interval '1 second')>clock_timestamp() AND NOT EXISTS(SELECT 1 FROM companion_source_claims c WHERE c.owner_id=a.owner_id AND c.source_event_id=a.source_event_id) AND NOT EXISTS(SELECT 1 FROM companion_rejected_sources r WHERE r.owner_id=a.owner_id AND r.appraisal_id=a.appraisal_id) AND (SELECT count(*) FROM companion_live_pending l WHERE l.owner_id=a.owner_id AND l.private_candidate IS NOT NULL)<4 ORDER BY a.effective_at,a.appraisal_id LIMIT $1
+2026-11-11 16:39:03.941 CST [28735] WARNING:  there is no transaction in progress
+2026-11-11 16:39:04.462 CST [28755] ERROR:  relation "skill_preferred_tools" does not exist at character 121
+2026-11-11 16:39:04.462 CST [28755] STATEMENT:  SELECT "skill_preferred_tools"."skill_id", "skill_preferred_tools"."tool_id", "skill_preferred_tools"."created_at" FROM "skill_preferred_tools"
+2026-11-11 16:39:04.464 CST [28761] ERROR:  relation "skill_preferred_tools" does not exist at character 121
+2026-11-11 16:39:04.464 CST [28761] STATEMENT:  SELECT "skill_preferred_tools"."skill_id", "skill_preferred_tools"."tool_id", "skill_preferred_tools"."created_at" FROM "skill_preferred_tools" WHERE "skill_preferred_tools"."skill_id" = $1
+2026-11-11 16:39:04.469 CST [28761] ERROR:  relation "tools" does not exist at character 334
+2026-11-11 16:39:04.469 CST [28761] STATEMENT:  SELECT "tools"."id", "tools"."name", "tools"."description", "tools"."parameters", "tools"."source", "tools"."require_confirmation", "tools"."required_role", "tools"."routing_keywords", "tools"."routing_examples", "tools"."routing_text", "tools"."routing_embedding", "tools"."enabled", "tools"."created_at", "tools"."updated_at" FROM "tools" WHERE "tools"."enabled" = $1
+2026-11-11 16:39:07.619 CST [28811] WARNING:  there is no transaction in progress
+2026-11-11 16:39:38.896 CST [28832] LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 16:40:20.231 CST [24816] LOG:  received fast shutdown request
+2026-11-11 16:40:20.231 CST [24816] LOG:  aborting any active transactions
+2026-11-11 16:40:20.239 CST [24816] LOG:  background worker "logical replication launcher" (PID 24822) exited with exit code 1
+2026-11-11 16:40:22.708 CST [24817] LOG:  checkpoint complete: wrote 5719 buffers (34.9%); 0 WAL file(s) added, 0 removed, 33 recycled; write=83.501 s, sync=0.391 s, total=85.964 s; sync files=25067, longest=0.005 s, average=0.001 s; distance=540720 kB, estimate=540720 kB; lsn=0/6F06E6B0, redo lsn=0/6400CC10
+2026-11-11 16:40:22.709 CST [24817] LOG:  shutting down
+2026-11-11 16:40:22.709 CST [24817] LOG:  checkpoint starting: shutdown immediate
+2026-11-11 16:40:23.302 CST [24817] LOG:  checkpoint complete: wrote 13615 buffers (83.1%); 0 WAL file(s) added, 0 removed, 11 recycled; write=0.028 s, sync=0.015 s, total=0.594 s; sync files=60, longest=0.004 s, average=0.001 s; distance=180614 kB, estimate=504709 kB; lsn=0/6F06E728, redo lsn=0/6F06E728
+2026-11-11 16:40:23.306 CST [24816] LOG:  database system is shut down

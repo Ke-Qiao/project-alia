@@ -1,0 +1,319 @@
+COMMAND: brew info --json=v2 postgresql@18 pgvector
+START_UTC: 20261111T073615254871Z
+{
+  "formulae": [
+    {
+      "name": "postgresql@18",
+      "full_name": "postgresql@18",
+      "tap": "homebrew/core",
+      "oldnames": [],
+      "aliases": [
+        "postgres",
+        "postgresql"
+      ],
+      "versioned_formulae": [
+        "postgresql@17",
+        "postgresql@16",
+        "postgresql@15",
+        "postgresql@14",
+        "postgresql@13",
+        "postgresql@12"
+      ],
+      "desc": "Object-relational database system",
+      "license": "PostgreSQL",
+      "homepage": "https://www.postgresql.org/",
+      "versions": {
+        "stable": "18.6",
+        "head": null,
+        "bottle": true
+      },
+      "urls": {
+        "stable": {
+          "url": "https://ftp.postgresql.org/pub/source/v18.6/postgresql-18.6.tar.bz2",
+          "tag": null,
+          "revision": null,
+          "using": null,
+          "checksum": "555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f"
+        }
+      },
+      "patches": [],
+      "revision": 0,
+      "version_scheme": 0,
+      "compatibility_version": null,
+      "autobump": true,
+      "no_autobump_message": null,
+      "skip_livecheck": false,
+      "bottle": {
+        "stable": {
+          "rebuild": 1,
+          "root_url": "https://ghcr.io/v2/homebrew/core",
+          "files": {
+            "arm64_tahoe": {
+              "cellar": "/opt/homebrew/Cellar",
+              "url": "https://ghcr.io/v2/homebrew/core/postgresql/18/blobs/sha256:b526e79ca83b7c161a391585e70148c5aa45c53a8f593b398bc4a281f6922bd9",
+              "sha256": "b526e79ca83b7c161a391585e70148c5aa45c53a8f593b398bc4a281f6922bd9"
+            }
+          }
+        }
+      },
+      "pour_bottle_only_if": null,
+      "keg_only": true,
+      "keg_only_reason": {
+        "reason": ":versioned_formula",
+        "explanation": ""
+      },
+      "options": [],
+      "build_dependencies": [
+        "docbook",
+        "docbook-xsl",
+        "gettext",
+        "pkgconf"
+      ],
+      "dependencies": [
+        "icu4c@78",
+        "krb5",
+        "lz4",
+        "openssl@3",
+        "readline",
+        "zstd",
+        "gettext"
+      ],
+      "test_dependencies": [],
+      "recommended_dependencies": [],
+      "optional_dependencies": [],
+      "uses_from_macos": [
+        {
+          "bison": "build"
+        },
+        {
+          "flex": "build"
+        },
+        "curl",
+        "libxml2",
+        "libxslt",
+        "openldap",
+        "perl"
+      ],
+      "uses_from_macos_bounds": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {}
+      ],
+      "requirements": [],
+      "conflicts_with": [],
+      "conflicts_with_reasons": [],
+      "link_overwrite": [],
+      "caveats": "This formula has created a default database cluster with:\n  initdb --locale=en_US.UTF-8 -E UTF-8 $HOMEBREW_PREFIX/var/postgresql@18\n\nWhen uninstalling, some dead symlinks are left behind so you may want to run:\n  brew cleanup --prune-prefix\n\nIf the service fails to start with a \"postmaster.pid\" lock file error after\nan unclean shutdown, and no postgres is running, remove the stale file:\n  rm $HOMEBREW_PREFIX/var/postgresql@18/postmaster.pid\n",
+      "installed": [],
+      "linked_keg": null,
+      "pinned": false,
+      "outdated": false,
+      "deprecated": false,
+      "deprecation_date": "2030-11-14",
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "deprecate_args": {
+        "date": "2030-11-14",
+        "because": "unsupported",
+        "replacement_formula": null,
+        "replacement_cask": null
+      },
+      "disabled": false,
+      "disable_date": "2031-11-14",
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null,
+      "disable_args": {
+        "date": "2031-11-14",
+        "because": "unsupported",
+        "replacement_formula": null,
+        "replacement_cask": null
+      },
+      "post_install_steps": [
+        {
+          "path": {
+            "base": "var",
+            "path": "log"
+          },
+          "type": "mkdir_p"
+        },
+        {
+          "source": {
+            "base": "prefix",
+            "path": "include/postgresql"
+          },
+          "target": {
+            "base": "homebrew_prefix",
+            "path": "include/{{formula_name}}"
+          },
+          "type": "link_dir"
+        },
+        {
+          "source": {
+            "base": "prefix",
+            "path": "lib/postgresql"
+          },
+          "target": {
+            "base": "homebrew_prefix",
+            "path": "lib/{{formula_name}}"
+          },
+          "type": "link_dir"
+        },
+        {
+          "source": {
+            "base": "prefix",
+            "path": "share/postgresql"
+          },
+          "target": {
+            "base": "homebrew_prefix",
+            "path": "share/{{formula_name}}"
+          },
+          "type": "link_dir"
+        },
+        {
+          "source": {
+            "base": "prefix",
+            "path": "bin"
+          },
+          "target": {
+            "base": "homebrew_prefix",
+            "path": "bin"
+          },
+          "suffix": "-{{version.major}}",
+          "type": "link_children"
+        },
+        {
+          "path": {
+            "base": "var",
+            "path": "{{formula_name}}"
+          },
+          "using": "postgresql_initdb",
+          "type": "init_data_dir"
+        }
+      ],
+      "post_install_defined": false,
+      "service": {
+        "run": [
+          "/opt/homebrew/opt/postgresql@18/bin/postgres",
+          "-D",
+          "/opt/homebrew/var/postgresql@18"
+        ],
+        "run_type": "immediate",
+        "keep_alive": {
+          "crashed": true
+        },
+        "environment_variables": {
+          "LC_ALL": "en_US.UTF-8"
+        },
+        "working_dir": "/opt/homebrew",
+        "log_path": "/opt/homebrew/var/log/postgresql@18.log",
+        "error_log_path": "/opt/homebrew/var/log/postgresql@18.log",
+        "stop_timeout": 120
+      },
+      "tap_git_head": "3c67e3bead974da3bb6dd425ad669a031a657860",
+      "ruby_source_path": "Formula/p/postgresql@18.rb",
+      "ruby_source_checksum": {
+        "sha256": "9ce527d794be8165e8cd970125bdc36492866e15cdddee9d4a817435ee167fb3"
+      }
+    },
+    {
+      "name": "pgvector",
+      "full_name": "pgvector",
+      "tap": "homebrew/core",
+      "oldnames": [],
+      "aliases": [],
+      "versioned_formulae": [],
+      "desc": "Open-source vector similarity search for Postgres",
+      "license": "PostgreSQL",
+      "homepage": "https://github.com/pgvector/pgvector",
+      "versions": {
+        "stable": "0.8.7",
+        "head": null,
+        "bottle": true
+      },
+      "urls": {
+        "stable": {
+          "url": "https://github.com/pgvector/pgvector/archive/refs/tags/v0.8.7.tar.gz",
+          "tag": null,
+          "revision": null,
+          "using": null,
+          "checksum": "cac0b10c360f05b2d521200105ba3697e773d4cd3731f5a915a7e37ebe0bea85"
+        }
+      },
+      "patches": [],
+      "revision": 0,
+      "version_scheme": 0,
+      "compatibility_version": null,
+      "autobump": true,
+      "no_autobump_message": null,
+      "skip_livecheck": false,
+      "bottle": {
+        "stable": {
+          "rebuild": 0,
+          "root_url": "https://ghcr.io/v2/homebrew/core",
+          "files": {
+            "arm64_tahoe": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/pgvector/blobs/sha256:326bc17440a773b75b054d83d7905b46b370b1a1b6543fff077186b5a632253b",
+              "sha256": "326bc17440a773b75b054d83d7905b46b370b1a1b6543fff077186b5a632253b"
+            }
+          }
+        }
+      },
+      "pour_bottle_only_if": null,
+      "keg_only": false,
+      "keg_only_reason": null,
+      "options": [],
+      "build_dependencies": [
+        "postgresql@17",
+        "postgresql@18"
+      ],
+      "dependencies": [],
+      "test_dependencies": [
+        "postgresql@17",
+        "postgresql@18"
+      ],
+      "recommended_dependencies": [],
+      "optional_dependencies": [],
+      "uses_from_macos": [],
+      "uses_from_macos_bounds": [],
+      "requirements": [],
+      "conflicts_with": [],
+      "conflicts_with_reasons": [],
+      "link_overwrite": [],
+      "caveats": null,
+      "installed": [],
+      "linked_keg": null,
+      "pinned": false,
+      "outdated": false,
+      "deprecated": false,
+      "deprecation_date": null,
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "deprecate_args": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null,
+      "disable_args": null,
+      "post_install_steps": [],
+      "post_install_defined": false,
+      "service": null,
+      "tap_git_head": "3c67e3bead974da3bb6dd425ad669a031a657860",
+      "ruby_source_path": "Formula/p/pgvector.rb",
+      "ruby_source_checksum": {
+        "sha256": "f543c3f0c30422b0ae48376b3d178f7247905ff6c7fb5fb57ac55c8389e6a5fc"
+      }
+    }
+  ],
+  "casks": []
+}
+
+EXIT_CODE: 0

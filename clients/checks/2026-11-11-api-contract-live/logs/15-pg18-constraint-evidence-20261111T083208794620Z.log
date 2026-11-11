@@ -1,0 +1,25 @@
+COMMAND: /opt/homebrew/opt/postgresql@18/bin/psql postgresql://alia_test@127.0.0.1:52558/alia_api_contract -X -v ON_ERROR_STOP=1 -c 'SELECT n.nspname,t.relname,c.contype,c.conname,pg_get_constraintdef(c.oid) FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname LIKE '"'"'migration_test_%'"'"' AND t.relname IN ('"'"'motion_deliveries'"'"','"'"'motion_delivery_late_checkpoints'"'"') AND c.conname LIKE '"'"'body_%'"'"' ORDER BY n.nspname,t.relname,c.conname;'
+START_UTC: 20261111T083208794620Z
+                     nspname                     |             relname              | contype |                         conname                          |       pg_get_constraintdef       
+-------------------------------------------------+----------------------------------+---------+----------------------------------------------------------+----------------------------------
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_deliveries                | n       | body_deliveries_channel_id_not_null                      | NOT NULL channel_id
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_deliveries                | n       | body_deliveries_command_not_null                         | NOT NULL command
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_deliveries                | n       | body_deliveries_created_at_not_null                      | NOT NULL created_at
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_deliveries                | n       | body_deliveries_delivery_id_not_null                     | NOT NULL delivery_id
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_deliveries                | n       | body_deliveries_dispatch_id_not_null                     | NOT NULL dispatch_id
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_deliveries                | n       | body_deliveries_identity_not_null                        | NOT NULL identity
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_deliveries                | n       | body_deliveries_lease_expires_at_not_null                | NOT NULL lease_expires_at
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_deliveries                | n       | body_deliveries_observation_deadline_at_not_null         | NOT NULL observation_deadline_at
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_deliveries                | n       | body_deliveries_output_key_not_null                      | NOT NULL output_key
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_deliveries                | n       | body_deliveries_response_id_not_null                     | NOT NULL response_id
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_deliveries                | n       | body_deliveries_source_command_id_not_null               | NOT NULL source_command_id
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_deliveries                | n       | body_deliveries_status_not_null                          | NOT NULL status
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_deliveries                | n       | body_deliveries_updated_at_not_null                      | NOT NULL updated_at
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_delivery_late_checkpoints | n       | body_delivery_late_checkpoints_created_at_not_null       | NOT NULL created_at
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_delivery_late_checkpoints | n       | body_delivery_late_checkpoints_delivery_id_not_null      | NOT NULL delivery_id
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_delivery_late_checkpoints | n       | body_delivery_late_checkpoints_progress_not_null         | NOT NULL progress
+ migration_test_e7a854df246548e3ac104be485f706e3 | motion_delivery_late_checkpoints | n       | body_delivery_late_checkpoints_receipt_sequence_not_null | NOT NULL receipt_sequence
+(17 rows)
+
+
+EXIT_CODE: 0

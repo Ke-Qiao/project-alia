@@ -49,3 +49,27 @@
 **影响。** 达到上限后不能用 API 接着读取；较长会话的后续消息和事件可能一直读不到。跟踪的截断点可能落在一个 turn 中间，返回数组的顺序也不能当作时间线。
 
 **待考察。** 明确各列表的读取方向和稳定排序键，为超长历史提供继续读取的游标。表达跟踪另需决定分页单位是完整 turn 还是源事件，以及如何标记不完整的 turn。
+
+## 7. 软件检查脚本直接信任外部测试数据库 URL
+
+**现状。** [`verify-software.sh`](../../../scripts/verify-software.sh) 仅在 `ALIA_TEST_DATABASE_URL` 为空时创建独立 PostgreSQL 容器；非空时直接把该 URL 交给所有测试，不核对主机、数据库身份或是否为可丢弃实例。[`server_runtime::Fixture`](../tests/server_runtime.rs) 和其他数据库 fixture 根据它创建并删除 UUID schema。[`migrations::run`](../src/modules/platform/migrations.rs) 即使在独立 schema 下也会在数据库的 `public` 安装 pgvector。Cargo 的 `--offline` 只限制依赖获取，不限制测试连接数据库或网络。
+
+**影响。** 环境变量误指向开发或正式数据库时，测试仍会发出 DDL、写入并清理数据；UUID schema 不能阻止数据库级扩展变更。2026-11-11 检查使用新建的独立原生 PostgreSQL 集群，没有使用旧数据库；地址和数据目录见[运行记录](../../../clients/checks/2026-11-11-api-contract-live/README.md)。
+
+**待考察。** 明确脚本是否应始终创建自有临时实例，以及确需使用外部测试实例时应如何验证其身份和可丢弃属性。处理前保留当前行为；不能仅凭变量名含 `TEST` 就判断连接安全。
+
+## 8. 插件存储测试在连接的默认 schema 安装表
+
+**现状。** [`postgres_plugin_storage_round_trips_records_and_policy`](../tests/plugin_storage.rs) 直接 `Database::connect(ALIA_TEST_DATABASE_URL)`；`apply_plugin_storage_migration` 在同一连接执行 `CREATE EXTENSION IF NOT EXISTS pgcrypto` 和插件存储迁移，没有像 [`delivery_support::Fixture`](../tests/delivery_support/mod.rs) 那样建立 UUID schema。记录使用随机插件名，并在成功路径按插件清理，但建表和扩展仍留在该数据库，异常中断也可能留下测试记录。
+
+**影响。** 即使其他用例都隔离 schema，这个测试也会改变连接默认 schema；将整组测试交给已有数据库会扩大影响范围。本轮使用独立集群，不会因此改变旧数据库。
+
+**待考察。** 考虑复用已有临时 schema 方式，并在失败路径保证池和 schema 清理；同时保留真实 PostgreSQL 行为和现有存储策略断言。这是后续测试隔离设计事项，本轮只留档，不调整测试或实现。
+
+## 9. PostgreSQL 18 新增的非空约束仍保留迁移前的名称
+
+**现状。** 项目 [`verify-software.sh`](../../../scripts/verify-software.sh) 使用 `pgvector/pgvector:pg17`。[`m20261019_000001_rename_body_delivery.sql`](../migrations/m20261019_000001_rename_body_delivery.sql) 显式重命名两张表及已知的主键、外键、唯一和检查约束，没有处理非空约束。[`motion_rename_preserves_historical_json_and_unknown_without_replay`](../tests/migrations.rs) 最后统计所有 `conname LIKE 'body_%'` 的约束并要求为 0。[PostgreSQL 18 版本说明](https://www.postgresql.org/docs/18/release-18.html)记录了列的 `NOT NULL` 声明开始进入 `pg_constraint` 的变化。
+
+**影响。** 2026-11-11 使用原生 PostgreSQL 18.6 执行该检查时，表已经成功改名，历史 `unknown` 状态、dispatch ID、command / progress JSON 和事件内容的前置断言均通过，但最后的名称统计返回 17。[目录查询](../../../clients/checks/2026-11-11-api-contract-live/logs/15-pg18-constraint-evidence-20261111T083208794620Z.log)确认全部为 `contype=n` 的 `NOT NULL` 约束，名称仍以 `body_` 开头。这是主版本变化带来的目录命名问题，不能据此声称历史命令重放或数据丢失；该用例在失败点之后的断言当次没有执行。
+
+**待考察。** 明确 PostgreSQL 18 的支持范围；若要支持，决定这些目录名称是否也要按业务词汇统一，并通过新的向前迁移处理已安装实例，保持已应用迁移不可改写。相应测试应同时检查历史数据、非空约束本身和命名策略，不能仅过滤 `contype=n` 来隐藏差异。本轮只记录，保留原实现和原断言；按项目当前指定的 PostgreSQL 17 另建独立集群完整重跑，该用例和其余用例均通过，见[最终运行记录](../../../clients/checks/2026-11-11-api-contract-live/README.md)。这不关闭 PostgreSQL 18 的命名兼容事项。

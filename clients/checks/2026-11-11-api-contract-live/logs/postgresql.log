@@ -1,0 +1,705 @@
+2026-11-11 15:39:24.581 CST [7647] @ LOG:  starting PostgreSQL 18.6 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.3.34.2), 64-bit
+2026-11-11 15:39:24.582 CST [7647] @ LOG:  listening on IPv4 address "127.0.0.1", port 52558
+2026-11-11 15:39:24.582 CST [7647] @ LOG:  listening on Unix socket "/private/tmp/alia-api-contract-20261111-ks58v_1w/socket/.s.PGSQL.52558"
+2026-11-11 15:39:24.585 CST [7654] @ LOG:  database system was shut down at 2026-11-11 15:38:36 CST
+2026-11-11 15:39:24.586 CST [7647] @ LOG:  database system is ready to accept connections
+2026-11-11 15:40:16.294 CST [7979] alia_test@alia_api_contract LOG:  process 7979 still waiting for AccessShareLock on relation 17595 of database 16384 after 202.050 ms at character 187
+2026-11-11 15:40:16.294 CST [7979] alia_test@alia_api_contract DETAIL:  Process holding the lock: 7976. Wait queue: 7979.
+2026-11-11 15:40:16.294 CST [7979] alia_test@alia_api_contract STATEMENT:  SELECT "users"."id", "users"."email", "users"."name", "users"."password_hash", "users"."role", "users"."status", "users"."last_login_at", "users"."created_at", "users"."updated_at" FROM "users" WHERE "users"."id" = $1 LIMIT $2
+2026-11-11 15:40:16.516 CST [7979] alia_test@alia_api_contract LOG:  process 7979 still waiting for AccessShareLock on relation 17595 of database 16384 after 423.303 ms at character 187
+2026-11-11 15:40:16.516 CST [7979] alia_test@alia_api_contract DETAIL:  Process holding the lock: 7976. Wait queue: 7979.
+2026-11-11 15:40:16.516 CST [7979] alia_test@alia_api_contract STATEMENT:  SELECT "users"."id", "users"."email", "users"."name", "users"."password_hash", "users"."role", "users"."status", "users"."last_login_at", "users"."created_at", "users"."updated_at" FROM "users" WHERE "users"."id" = $1 LIMIT $2
+2026-11-11 15:40:18.095 CST [7979] alia_test@alia_api_contract LOG:  process 7979 acquired AccessShareLock on relation 17595 of database 16384 after 2002.877 ms at character 187
+2026-11-11 15:40:18.095 CST [7979] alia_test@alia_api_contract STATEMENT:  SELECT "users"."id", "users"."email", "users"."name", "users"."password_hash", "users"."role", "users"."status", "users"."last_login_at", "users"."created_at", "users"."updated_at" FROM "users" WHERE "users"."id" = $1 LIMIT $2
+2026-11-11 15:41:15.969 CST [9394] alia_test@alia_api_contract ERROR:  injected context_leases write failure
+2026-11-11 15:41:15.969 CST [9394] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_live_write() line 1 at RAISE
+2026-11-11 15:41:15.969 CST [9394] alia_test@alia_api_contract STATEMENT:  INSERT INTO context_leases(context_id,owner_id,request_id,context_key,purpose,channel_id,conversation_id,source_event_id,source_received_at,source_privacy_epoch,policy_version,dependencies,dependencies_digest,materialized_digest,valid_until) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT(owner_id,request_id,context_key) DO NOTHING
+2026-11-11 15:41:16.015 CST [9394] alia_test@alia_api_contract ERROR:  injected delivery_responses write failure
+2026-11-11 15:41:16.015 CST [9394] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_live_write() line 1 at RAISE
+2026-11-11 15:41:16.015 CST [9394] alia_test@alia_api_contract STATEMENT:  INSERT INTO delivery_responses(response_id,user_id,request_id,output_key,conversation_id,source_event_id,source_received_at,source_privacy_epoch,channel_id,kind,content,intent_digest,context_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+2026-11-11 15:41:16.061 CST [9394] alia_test@alia_api_contract ERROR:  injected companion_live_pending write failure
+2026-11-11 15:41:16.061 CST [9394] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_live_write() line 1 at RAISE
+2026-11-11 15:41:16.061 CST [9394] alia_test@alia_api_contract STATEMENT:  UPDATE companion_live_pending SET state='admitted' WHERE candidate_id=$1
+2026-11-11 15:41:16.730 CST [9416] alia_test@alia_api_contract ERROR:  Companion charges and identities cannot be deleted
+2026-11-11 15:41:16.730 CST [9416] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function companion_live_immutable() line 3 at RAISE
+2026-11-11 15:41:16.730 CST [9416] alia_test@alia_api_contract STATEMENT:  DELETE FROM companion_admissions
+2026-11-11 15:41:17.759 CST [9474] alia_test@alia_api_contract ERROR:  injected Companion candidate failure
+2026-11-11 15:41:17.759 CST [9474] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_companion_candidate() line 1 at RAISE
+2026-11-11 15:41:17.759 CST [9474] alia_test@alia_api_contract STATEMENT:  INSERT INTO companion_candidates(candidate_id,owner_id,operation_id,dedup_key,private_candidate) VALUES($1,$2,$3,$4,$5)
+2026-11-11 15:41:18.383 CST [9404] alia_test@alia_api_contract ERROR:  Original Companion admission opportunity expired
+2026-11-11 15:41:18.383 CST [9404] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function companion_admission_commit_deadline() line 4 at RAISE
+2026-11-11 15:41:18.383 CST [9404] alia_test@alia_api_contract STATEMENT:  COMMIT
+2026-11-11 15:41:18.383 CST [9404] alia_test@alia_api_contract WARNING:  there is no transaction in progress
+2026-11-11 15:41:19.051 CST [9521] alia_test@alia_api_contract ERROR:  original relationship stamp is immutable
+2026-11-11 15:41:19.051 CST [9521] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function preserve_source_relationship_stamp() line 4 at RAISE
+2026-11-11 15:41:19.051 CST [9521] alia_test@alia_api_contract STATEMENT:  UPDATE chat_messages SET source_relationship_epoch=source_relationship_epoch+1 WHERE id=$1
+2026-11-11 15:41:19.057 CST [9521] alia_test@alia_api_contract ERROR:  original relationship stamp is immutable
+2026-11-11 15:41:19.057 CST [9521] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function preserve_source_relationship_stamp() line 4 at RAISE
+2026-11-11 15:41:19.057 CST [9521] alia_test@alia_api_contract STATEMENT:  UPDATE chat_messages SET source_relationship_epoch=$1 WHERE id=$2
+2026-11-11 15:41:19.057 CST [9521] alia_test@alia_api_contract ERROR:  injected session update failure
+2026-11-11 15:41:19.057 CST [9521] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_source_session_update() line 1 at RAISE
+2026-11-11 15:41:19.057 CST [9521] alia_test@alia_api_contract STATEMENT:  UPDATE chat_sessions SET updated_at=clock_timestamp() WHERE id=$1
+2026-11-11 15:41:19.058 CST [9522] alia_test@alia_api_contract ERROR:  injected session update failure
+2026-11-11 15:41:19.058 CST [9522] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_source_session_update() line 1 at RAISE
+2026-11-11 15:41:19.058 CST [9522] alia_test@alia_api_contract STATEMENT:  UPDATE "chat_sessions" SET "updated_at" = $1 WHERE "chat_sessions"."id" = $2
+2026-11-11 15:41:20.151 CST [9551] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:41:20.151 CST [9551] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:41:20.151 CST [9551] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:41:20.167 CST [9552] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:41:20.167 CST [9552] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:41:20.167 CST [9552] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:41:20.540 CST [9566] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:41:20.540 CST [9566] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:41:20.540 CST [9566] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:41:20.760 CST [9571] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:41:20.760 CST [9571] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:41:20.760 CST [9571] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:41:20.818 CST [9577] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:41:20.818 CST [9577] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:41:20.818 CST [9577] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:41:20.976 CST [9579] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:41:20.976 CST [9579] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:41:20.976 CST [9579] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:41:21.085 CST [9585] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:41:21.085 CST [9585] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:41:21.085 CST [9585] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:41:22.890 CST [9635] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:41:22.890 CST [9635] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:41:22.890 CST [9635] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:41:23.133 CST [9638] alia_test@alia_api_contract ERROR:  injected assistant commit failure
+2026-11-11 15:41:23.133 CST [9638] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_assistant_commit() line 1 at RAISE
+2026-11-11 15:41:23.133 CST [9638] alia_test@alia_api_contract STATEMENT:  INSERT INTO chat_messages(id,session_id,user_id,role,content,created_at,source_received_at,source_privacy_epoch) VALUES($1,$2,NULL,'assistant',$3,clock_timestamp(),$4,$5) ON CONFLICT(id) DO NOTHING
+2026-11-11 15:41:23.466 CST [9649] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:41:23.466 CST [9649] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:41:23.466 CST [9649] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:41:23.620 CST [9664] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:41:23.620 CST [9664] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:41:23.620 CST [9664] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:41:23.902 CST [9678] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:41:23.902 CST [9678] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:41:23.902 CST [9678] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:41:24.310 CST [9694] alia_test@alia_api_contract ERROR:  injected deferred commit rejection
+2026-11-11 15:41:24.310 CST [9694] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function block_skill_commit() line 1 at RAISE
+2026-11-11 15:41:24.310 CST [9694] alia_test@alia_api_contract STATEMENT:  COMMIT
+2026-11-11 15:41:24.311 CST [9694] alia_test@alia_api_contract WARNING:  there is no transaction in progress
+2026-11-11 15:41:24.326 CST [9684] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:41:24.326 CST [9684] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:41:24.326 CST [9684] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:41:24.447 CST [9689] alia_test@alia_api_contract ERROR:  injected deferred commit rejection
+2026-11-11 15:41:24.447 CST [9689] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function block_skill_commit() line 1 at RAISE
+2026-11-11 15:41:24.447 CST [9689] alia_test@alia_api_contract STATEMENT:  COMMIT
+2026-11-11 15:41:24.447 CST [9689] alia_test@alia_api_contract WARNING:  there is no transaction in progress
+2026-11-11 15:41:24.818 CST [9710] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:41:24.818 CST [9710] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:41:24.818 CST [9710] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:41:26.565 CST [9713] alia_test@alia_api_contract LOG:  process 9713 still waiting for ExclusiveLock on advisory lock [16384,1095518529,1296648018,1] after 1648.686 ms
+2026-11-11 15:41:26.565 CST [9713] alia_test@alia_api_contract DETAIL:  Process holding the lock: 9717. Wait queue: 9713.
+2026-11-11 15:41:26.565 CST [9713] alia_test@alia_api_contract STATEMENT:  SELECT pg_advisory_xact_lock($1)
+2026-11-11 15:41:26.845 CST [9713] alia_test@alia_api_contract LOG:  process 9713 acquired ExclusiveLock on advisory lock [16384,1095518529,1296648018,1] after 1928.822 ms
+2026-11-11 15:41:26.845 CST [9713] alia_test@alia_api_contract STATEMENT:  SELECT pg_advisory_xact_lock($1)
+2026-11-11 15:41:29.484 CST [9802] alia_test@alia_api_contract ERROR:  injected rebuild receipt failure
+2026-11-11 15:41:29.484 CST [9802] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_rebuild_receipt() line 8 at RAISE
+2026-11-11 15:41:29.484 CST [9802] alia_test@alia_api_contract STATEMENT:  UPDATE appraisal_rebuild_items SET status='committed',claim_token=NULL,claim_until=NULL,receipt=$4 WHERE operation_id=$1 AND source_event_id=$2 AND status='claimed' AND claim_token=$3
+2026-11-11 15:41:37.997 CST [7652] @ LOG:  checkpoint starting: wal
+2026-11-11 15:41:38.403 CST [9881] alia_test@alia_api_contract ERROR:  injected failure after vector deletion
+2026-11-11 15:41:38.403 CST [9881] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_erasure_after_vectors() line 1 at RAISE
+	SQL statement "UPDATE memory_items
+	        SET status='deleted',revision=revision+1,content='',summary=NULL,
+	            evidence='{}',metadata='{}',topic_tags='{}',affect_tags='{}',
+	            source_event_ids='{}',superseded_by=NULL,
+	            expires_at=clock_timestamp(),updated_at=clock_timestamp()
+	        WHERE user_id=p_owner AND tenant_id=p_tenant AND id=ANY(erased_ids)
+	          AND status<>'deleted'"
+	PL/pgSQL function erase_memory_closure(uuid,uuid,uuid[]) line 50 at SQL statement
+2026-11-11 15:41:38.403 CST [9881] alia_test@alia_api_contract STATEMENT:  SELECT erase_memory_closure($1,$2,ARRAY(SELECT jsonb_array_elements_text($3::jsonb)::uuid UNION SELECT a.memory_id FROM memory_appraisal_sources a JOIN memory_items m ON m.id=a.memory_id WHERE a.owner_id=$1 AND m.user_id=$1 AND m.tenant_id=$2)) AS erased
+2026-11-11 15:41:38.428 CST [9881] alia_test@alia_api_contract ERROR:  injected failure after vector deletion
+2026-11-11 15:41:38.428 CST [9881] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_erasure_after_vectors() line 1 at RAISE
+	SQL statement "UPDATE memory_items
+	        SET status='deleted',revision=revision+1,content='',summary=NULL,
+	            evidence='{}',metadata='{}',topic_tags='{}',affect_tags='{}',
+	            source_event_ids='{}',superseded_by=NULL,
+	            expires_at=clock_timestamp(),updated_at=clock_timestamp()
+	        WHERE user_id=p_owner AND tenant_id=p_tenant AND id=ANY(erased_ids)
+	          AND status<>'deleted'"
+	PL/pgSQL function erase_memory_closure(uuid,uuid,uuid[]) line 50 at SQL statement
+	SQL statement "SELECT erase_memory_closure(NEW.user_id,'00000000-0000-0000-0000-000000000000',
+	            ARRAY(SELECT a.memory_id FROM memory_appraisal_sources a
+	                JOIN memory_items m ON m.id=a.memory_id
+	                WHERE a.owner_id=NEW.user_id AND m.user_id=NEW.user_id
+	                  AND m.tenant_id='00000000-0000-0000-0000-000000000000'))"
+	PL/pgSQL function erase_private_appraisal_derivatives() line 5 at PERFORM
+2026-11-11 15:41:38.428 CST [9881] alia_test@alia_api_contract STATEMENT:  UPDATE memory_privacy_state SET privacy_epoch=privacy_epoch+1 WHERE user_id=$1
+2026-11-11 15:41:46.810 CST [9960] alia_test@alia_api_contract ERROR:  injected erase failure
+2026-11-11 15:41:46.810 CST [9960] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function deny_cache_erase() line 1 at RAISE
+2026-11-11 15:41:46.810 CST [9960] alia_test@alia_api_contract STATEMENT:  DELETE FROM llm_cache WHERE user_id=$1
+2026-11-11 15:41:49.960 CST [9996] alia_test@alia_api_contract ERROR:  embedding profile identity is immutable
+2026-11-11 15:41:49.960 CST [9996] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function protect_embedding_profile_identity() line 6 at RAISE
+2026-11-11 15:41:49.960 CST [9996] alia_test@alia_api_contract STATEMENT:  UPDATE embedding_profiles SET model='silently replaced' WHERE id=$1
+2026-11-11 15:41:49.960 CST [9997] alia_test@alia_api_contract ERROR:  embedding profile identity is immutable
+2026-11-11 15:41:49.960 CST [9997] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function protect_embedding_profile_identity() line 6 at RAISE
+2026-11-11 15:41:49.960 CST [9997] alia_test@alia_api_contract STATEMENT:  UPDATE embedding_profiles SET request_descriptor='{}' WHERE id=$1
+2026-11-11 15:41:50.128 CST [10005] alia_test@alia_api_contract ERROR:  relation "context_leases" does not exist at character 15
+2026-11-11 15:41:50.128 CST [10005] alia_test@alia_api_contract STATEMENT:  SELECT * FROM context_leases WHERE context_id=$1 AND owner_id=$2
+2026-11-11 15:41:50.680 CST [10003] alia_test@alia_api_contract ERROR:  null value in column "user_id" of relation "llm_cache" violates not-null constraint
+2026-11-11 15:41:50.680 CST [10003] alia_test@alia_api_contract DETAIL:  Failing row contains (4cf7c32c-f1de-4f2a-8605-de4af8c67bb2, null, default, 0967115f2813a3541eaef77de9d9d5773f1c0c04314b0bbfe4ff3b3b1c55b5d5, same, other owner, {"policy": "private_exact", "schema": "alia.cache_metadata.v1", ..., 0, 2026-11-11 07:41:50.646709+00, 2026-11-11 08:41:50.646709+00, 2, b2148e43-b254-495c-8b0f-d6ad6cc7c158, 6c06b56f-2305-4525-be46-04fb7f2664d5, active, 250630abd48e64eec80262ef22b77a6d5a1782d3b073b9985d71848881ddf295, 2026-11-11 07:41:50.652171+00).
+2026-11-11 15:41:50.680 CST [10003] alia_test@alia_api_contract STATEMENT:  UPDATE llm_cache SET user_id=NULL
+2026-11-11 15:41:51.228 CST [10010] alia_test@alia_api_contract ERROR:  injected cache replacement failure
+2026-11-11 15:41:51.228 CST [10010] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function deny_vector_removal() line 1 at RAISE
+2026-11-11 15:41:51.228 CST [10010] alia_test@alia_api_contract STATEMENT:  DELETE FROM llm_cache_embeddings WHERE cache_id=$1
+2026-11-11 15:41:55.169 CST [10043] alia_test@alia_api_contract ERROR:  context leases are immutable
+2026-11-11 15:41:55.169 CST [10043] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_context_lease_update() line 2 at RAISE
+2026-11-11 15:41:55.169 CST [10043] alia_test@alia_api_contract STATEMENT:  UPDATE context_leases SET policy_version=policy_version+1 WHERE context_id=$1
+2026-11-11 15:42:00.412 CST [10113] alia_test@alia_api_contract ERROR:  injected lease write failure
+2026-11-11 15:42:00.412 CST [10113] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_context_insert() line 1 at RAISE
+2026-11-11 15:42:00.412 CST [10113] alia_test@alia_api_contract STATEMENT:  INSERT INTO context_leases(context_id,owner_id,request_id,context_key,purpose,channel_id,conversation_id,source_event_id,source_received_at,source_privacy_epoch,policy_version,dependencies,dependencies_digest,materialized_digest,valid_until) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT(owner_id,request_id,context_key) DO NOTHING
+2026-11-11 15:42:00.427 CST [10113] alia_test@alia_api_contract ERROR:  division by zero
+2026-11-11 15:42:00.427 CST [10113] alia_test@alia_api_contract STATEMENT:  SELECT m.id::text,m.revision,m.kind,m.scope,m.memory_layer,m.node_type,m.content,m.summary,m.confidence,m.salience,m.importance,m.visibility,m.sensitive,m.status,to_jsonb(m.topic_tags) AS topic_tags,to_jsonb(m.affect_tags) AS affect_tags,to_jsonb(m.source_event_ids) AS source_event_ids,m.evidence,m.metadata,m.superseded_by::text,m.expires_at FROM memory_items m WHERE m.tenant_id=$1 AND m.user_id=$2 AND m.status='active' AND NOT m.sensitive AND m.visibility<>'private_runtime' AND ($3::text[] IS NULL OR m.memory_layer=ANY($3)) AND (m.expires_at IS NULL OR m.expires_at>clock_timestamp()) ORDER BY m.importance DESC,m.salience DESC,m.updated_at DESC,m.id LIMIT 200
+2026-11-11 15:42:04.261 CST [10159] alia_test@alia_api_contract ERROR:  dispatch audit failure
+2026-11-11 15:42:04.261 CST [10159] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_dispatch() line 1 at RAISE
+2026-11-11 15:42:04.261 CST [10159] alia_test@alia_api_contract STATEMENT:  INSERT INTO delivery_events(response_id,delivery_id,kind,payload) VALUES($1,$2,$3,$4)
+2026-11-11 15:42:07.123 CST [10209] alia_test@alia_api_contract ERROR:  injected receipt audit failure
+2026-11-11 15:42:07.123 CST [10209] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_progress() line 1 at RAISE
+2026-11-11 15:42:07.123 CST [10209] alia_test@alia_api_contract STATEMENT:  INSERT INTO delivery_events(response_id,delivery_id,kind,payload) VALUES($1,$2,$3,$4)
+2026-11-11 15:42:12.220 CST [10267] alia_test@alia_api_contract ERROR:  injected offered audit failure
+2026-11-11 15:42:12.220 CST [10267] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_offer() line 1 at RAISE
+2026-11-11 15:42:12.220 CST [10267] alia_test@alia_api_contract STATEMENT:  INSERT INTO delivery_events(response_id,delivery_id,kind,payload) VALUES($1,$2,$3,$4)
+2026-11-11 15:42:18.634 CST [10251] alia_test@alia_api_contract LOG:  process 10251 still waiting for RowShareLock on relation 438511 of database 16384 after 201.450 ms at character 308
+2026-11-11 15:42:18.634 CST [10251] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10249. Wait queue: 10251.
+2026-11-11 15:42:18.634 CST [10251] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(d) || jsonb_build_object('text', CASE WHEN d.media_kind='text' THEN jsonb_build_object('identity',d.text_identity,'offered_utf8_bytes',d.text_offered_utf8_bytes,'offered_chunks',d.text_offered_chunks,'end_offered',d.text_end_offered,'progress',d.text_progress) ELSE NULL END) AS record FROM deliveries d WHERE d.status IN ('pending','sending','observing') AND d.lease_expires_at<=clock_timestamp() ORDER BY d.lease_expires_at LIMIT $1 FOR UPDATE OF d SKIP LOCKED
+2026-11-11 15:42:20.488 CST [10251] alia_test@alia_api_contract LOG:  process 10251 acquired RowShareLock on relation 438511 of database 16384 after 2055.462 ms at character 308
+2026-11-11 15:42:20.488 CST [10251] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(d) || jsonb_build_object('text', CASE WHEN d.media_kind='text' THEN jsonb_build_object('identity',d.text_identity,'offered_utf8_bytes',d.text_offered_utf8_bytes,'offered_chunks',d.text_offered_chunks,'end_offered',d.text_end_offered,'progress',d.text_progress) ELSE NULL END) AS record FROM deliveries d WHERE d.status IN ('pending','sending','observing') AND d.lease_expires_at<=clock_timestamp() ORDER BY d.lease_expires_at LIMIT $1 FOR UPDATE OF d SKIP LOCKED
+2026-11-11 15:42:20.546 CST [10271] alia_test@alia_api_contract LOG:  process 10271 still waiting for ShareLock on transaction 13721 after 202.044 ms
+2026-11-11 15:42:20.546 CST [10271] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10270. Wait queue: 10271.
+2026-11-11 15:42:20.546 CST [10271] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,1) in relation "memory_privacy_state"
+2026-11-11 15:42:20.546 CST [10271] alia_test@alia_api_contract STATEMENT:  SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE
+2026-11-11 15:42:20.644 CST [10271] alia_test@alia_api_contract LOG:  process 10271 acquired ShareLock on transaction 13721 after 300.116 ms
+2026-11-11 15:42:20.644 CST [10271] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,1) in relation "memory_privacy_state"
+2026-11-11 15:42:20.644 CST [10271] alia_test@alia_api_contract STATEMENT:  SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE
+2026-11-11 15:42:21.191 CST [7652] @ LOG:  checkpoint complete: wrote 8166 buffers (49.8%), wrote 8 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=39.874 s, sync=1.204 s, total=43.195 s; sync files=81705, longest=0.002 s, average=0.001 s; distance=533125 kB, estimate=533125 kB; lsn=0/3FC4F980, redo lsn=0/2202E588
+2026-11-11 15:42:26.122 CST [10311] alia_test@alia_api_contract LOG:  process 10311 still waiting for AccessShareLock on relation 451339 of database 16384 after 202.100 ms at character 53
+2026-11-11 15:42:26.122 CST [10311] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10310. Wait queue: 10311.
+2026-11-11 15:42:26.122 CST [10311] alia_test@alia_api_contract STATEMENT:  SELECT r.response_id FROM delivery_responses r JOIN output_control_scopes s USING(response_id) WHERE s.status='active' AND s.deadline_at<=clock_timestamp() ORDER BY s.deadline_at LIMIT $1 FOR NO KEY UPDATE OF r SKIP LOCKED
+2026-11-11 15:42:27.722 CST [10311] alia_test@alia_api_contract ERROR:  canceling statement due to statement timeout
+2026-11-11 15:42:27.722 CST [10311] alia_test@alia_api_contract STATEMENT:  SELECT r.response_id FROM delivery_responses r JOIN output_control_scopes s USING(response_id) WHERE s.status='active' AND s.deadline_at<=clock_timestamp() ORDER BY s.deadline_at LIMIT $1 FOR NO KEY UPDATE OF r SKIP LOCKED
+2026-11-11 15:42:32.323 CST [10388] alia_test@alia_api_contract ERROR:  new row for relation "deliveries" violates check constraint "deliveries_media_evidence"
+2026-11-11 15:42:32.323 CST [10388] alia_test@alia_api_contract DETAIL:  Failing row contains (5217366a-6256-48ea-9188-e0dcef275474, 885d43bd-4b9f-435c-b9fa-366f37fbc1fe, text:response, {"representation": "plain_utf8"}, null, null, b003004aa5f1a6fcaa81e0c77874435dfd086ecb8191339a91b8ec6035a8acdc, sending, 3282c33d-0f2a-4a36-9b45-11139fdfa08b, 4e4f7388-133a-4cc8-a664-7a4bb931facb, 2026-11-11 07:42:47.314964+00, 2026-11-11 07:44:32.318065+00, f, 24000, 1, 0, 0, null, null, f, 0, null, null, 2026-11-11 07:42:32.314966+00, 2026-11-11 07:42:32.322987+00, text, {"text_id": "bfd8c369-dd87-40e5-a75e-2a3b53dc7400", "channel_ins..., 0, 0, f, null).
+2026-11-11 15:42:32.323 CST [10388] alia_test@alia_api_contract STATEMENT:  UPDATE deliveries SET source_sample_rate=$2,source_channels=$3,updated_at=clock_timestamp() WHERE delivery_id=$1
+2026-11-11 15:42:33.349 CST [10404] alia_test@alia_api_contract ERROR:  injected text durable offer failure
+2026-11-11 15:42:33.349 CST [10404] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_text_offer() line 1 at RAISE
+2026-11-11 15:42:33.349 CST [10404] alia_test@alia_api_contract STATEMENT:  INSERT INTO delivery_text_chunks(delivery_id,sequence,utf8_offset,text) VALUES($1,$2,$3,$4)
+2026-11-11 15:42:33.503 CST [7652] @ LOG:  checkpoint starting: wal
+2026-11-11 15:42:36.400 CST [10431] alia_test@alia_api_contract ERROR:  column "origin_mode" does not exist at character 283
+2026-11-11 15:42:36.400 CST [10431] alia_test@alia_api_contract STATEMENT:  SELECT jsonb_build_object(
+	                'appraisals', (SELECT count(*) FROM appraisal_records),
+	                'responses', (SELECT count(*) FROM delivery_responses),
+	                'source_claims', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+	                    SELECT origin_mode, count(*) AS count
+	                    FROM companion_source_claims GROUP BY origin_mode ORDER BY origin_mode) v),
+	                'rejected_sources', (SELECT count(*) FROM companion_rejected_sources),
+	                'pending', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+	                    SELECT state, retirement_reason, count(*) AS count
+	                    FROM companion_live_pending GROUP BY state, retirement_reason
+	                    ORDER BY state, retirement_reason) v),
+	                'admissions', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+	                    SELECT state, retirement_reason, count(*) AS count
+	                    FROM companion_admissions GROUP BY state, retirement_reason
+	                    ORDER BY state, retirement_reason) v),
+	                'output_controls', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+	                    SELECT status, last_command_sequence,
+	                    floor(extract(epoch FROM (deadline_at-clock_timestamp()))*1000) AS remaining_ms,
+	                    latest_receipt #>> '{receipt,snapshot,phase}' AS receipt_phase
+	                    FROM output_control_scopes ORDER BY created_at) v),
+	                'control_commands', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+	                    SELECT sequence, status,
+	                    floor(extract(epoch FROM (deadline_at-clock_timestamp()))*1000) AS remaining_ms,
+	                    latest_receipt #>> '{receipt,snapshot,phase}' AS receipt_phase
+	                    FROM output_control_commands ORDER BY created_at, sequence) v),
+	                'task_db_waits', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+	                    SELECT state, wait_event_type, count(*) AS count
+	                    FROM pg_stat_activity WHERE datname=current_database()
+	                    GROUP BY state, wait_event_type ORDER BY state, wait_event_type) v)) AS summary
+2026-11-11 15:42:50.123 CST [10529] alia_test@alia_api_contract ERROR:  column "policy" of relation "context_policy" does not exist at character 46
+2026-11-11 15:42:50.123 CST [10529] alia_test@alia_api_contract STATEMENT:  INSERT INTO context_policy(singleton,version,policy,policy_digest) VALUES(TRUE,1,$1,$2) ON CONFLICT DO NOTHING
+2026-11-11 15:42:50.254 CST [10534] alia_test@alia_api_contract ERROR:  column "password_hash" of relation "users" does not exist at character 33
+2026-11-11 15:42:50.254 CST [10534] alia_test@alia_api_contract STATEMENT:  INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Delivery test','not-a-login','user','active')
+2026-11-11 15:42:54.170 CST [10575] alia_test@alia_api_contract ERROR:  relation "motion_deliveries" does not exist at character 25
+2026-11-11 15:42:54.170 CST [10575] alia_test@alia_api_contract STATEMENT:  WITH expired AS (UPDATE motion_deliveries SET status='unknown',unknown_reason='motion observation owner expired',updated_at=clock_timestamp() WHERE status IN ('sending','observing') AND (lease_expires_at<=clock_timestamp() OR observation_deadline_at<=clock_timestamp()) RETURNING delivery_id,response_id) INSERT INTO delivery_events(response_id,kind,payload) SELECT response_id,'motion_unknown',jsonb_build_object('motion_delivery_id',delivery_id,'reason','motion observation owner expired') FROM expired
+2026-11-11 15:43:26.063 CST [10731] alia_test@alia_api_contract LOG:  process 10731 still waiting for ExclusiveLock on advisory lock [16384,407606838,2330922351,1] after 202.088 ms
+2026-11-11 15:43:26.063 CST [10731] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10730. Wait queue: 10731.
+2026-11-11 15:43:26.063 CST [10731] alia_test@alia_api_contract STATEMENT:  SELECT pg_advisory_lock(hashtextextended($1, 179783))
+2026-11-11 15:43:32.810 CST [10731] alia_test@alia_api_contract LOG:  process 10731 acquired ExclusiveLock on advisory lock [16384,407606838,2330922351,1] after 6949.392 ms
+2026-11-11 15:43:32.810 CST [10731] alia_test@alia_api_contract STATEMENT:  SELECT pg_advisory_lock(hashtextextended($1, 179783))
+2026-11-11 15:43:39.398 CST [10858] alia_test@alia_api_contract ERROR:  injected outbox insert failure
+2026-11-11 15:43:39.398 CST [10858] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_outbox_insert() line 1 at RAISE
+2026-11-11 15:43:39.398 CST [10858] alia_test@alia_api_contract STATEMENT:  INSERT INTO execution_outbox(effect_id) VALUES($1)
+2026-11-11 15:43:39.953 CST [10869] alia_test@alia_api_contract ERROR:  injected execution event failure
+2026-11-11 15:43:39.953 CST [10869] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_event_insert() line 1 at RAISE
+2026-11-11 15:43:39.953 CST [10869] alia_test@alia_api_contract STATEMENT:  INSERT INTO execution_events(event_id,effect_id,event_type,actor_id,evidence) VALUES($1,$2,$3,$4,$5)
+2026-11-11 15:43:39.970 CST [10872] alia_test@alia_api_contract ERROR:  injected completion update failure
+2026-11-11 15:43:39.970 CST [10872] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_completion_update() line 1 at RAISE
+2026-11-11 15:43:39.970 CST [10872] alia_test@alia_api_contract STATEMENT:  UPDATE execution_effects SET status=$2,completion=$3,updated_at=clock_timestamp() WHERE effect_id=$1
+2026-11-11 15:43:41.199 CST [10901] alia_test@alia_api_contract ERROR:  injected outbox delete failure
+2026-11-11 15:43:41.199 CST [10901] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_outbox_delete() line 1 at RAISE
+2026-11-11 15:43:41.199 CST [10901] alia_test@alia_api_contract STATEMENT:  DELETE FROM execution_outbox WHERE effect_id=$1
+2026-11-11 15:43:45.123 CST [10956] alia_test@alia_api_contract LOG:  process 10956 still waiting for RowShareLock on relation 594594 of database 16384 after 200.586 ms
+2026-11-11 15:43:45.123 CST [10956] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10957. Wait queue: 10956.
+2026-11-11 15:43:45.123 CST [10956] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.status='dispatched' AND e.deadline_at < clock_timestamp()-($1::bigint*interval '1 second') ORDER BY e.deadline_at LIMIT $2 FOR UPDATE OF e SKIP LOCKED
+2026-11-11 15:43:45.141 CST [10956] alia_test@alia_api_contract LOG:  process 10956 still waiting for RowShareLock on relation 594594 of database 16384 after 218.496 ms
+2026-11-11 15:43:45.141 CST [10956] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10957. Wait queue: 10956.
+2026-11-11 15:43:45.141 CST [10956] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.status='dispatched' AND e.deadline_at < clock_timestamp()-($1::bigint*interval '1 second') ORDER BY e.deadline_at LIMIT $2 FOR UPDATE OF e SKIP LOCKED
+2026-11-11 15:43:46.197 CST [10970] alia_test@alia_api_contract LOG:  process 10970 still waiting for RowShareLock on relation 596904 of database 16384 after 202.094 ms at character 170
+2026-11-11 15:43:46.197 CST [10970] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10968. Wait queue: 10970.
+2026-11-11 15:43:46.197 CST [10970] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.user_id=$1 AND e.request_id=$2 AND e.invocation_key=$3 FOR UPDATE OF e
+2026-11-11 15:43:46.947 CST [10956] alia_test@alia_api_contract LOG:  process 10956 acquired RowShareLock on relation 594594 of database 16384 after 2024.612 ms
+2026-11-11 15:43:46.947 CST [10956] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.status='dispatched' AND e.deadline_at < clock_timestamp()-($1::bigint*interval '1 second') ORDER BY e.deadline_at LIMIT $2 FOR UPDATE OF e SKIP LOCKED
+2026-11-11 15:43:47.110 CST [10970] alia_test@alia_api_contract LOG:  process 10970 still waiting for RowShareLock on relation 596904 of database 16384 after 1115.401 ms at character 170
+2026-11-11 15:43:47.110 CST [10970] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10968. Wait queue: 10970.
+2026-11-11 15:43:47.110 CST [10970] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.user_id=$1 AND e.request_id=$2 AND e.invocation_key=$3 FOR UPDATE OF e
+2026-11-11 15:43:47.612 CST [10982] alia_test@alia_api_contract LOG:  process 10982 still waiting for RowShareLock on relation 598938 of database 16384 after 200.401 ms at character 170
+2026-11-11 15:43:47.612 CST [10982] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10980. Wait queue: 10982.
+2026-11-11 15:43:47.612 CST [10982] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.effect_id=$1 AND e.user_id=$2 FOR UPDATE OF e
+2026-11-11 15:43:48.063 CST [10981] alia_test@alia_api_contract LOG:  process 10981 still waiting for RowShareLock on relation 598938 of database 16384 after 202.123 ms at character 170
+2026-11-11 15:43:48.063 CST [10981] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10980. Wait queue: 10982, 10981.
+2026-11-11 15:43:48.063 CST [10981] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.status='dispatched' AND e.deadline_at < clock_timestamp()-($1::bigint*interval '1 second') ORDER BY e.deadline_at LIMIT $2 FOR UPDATE OF e SKIP LOCKED
+2026-11-11 15:43:48.626 CST [10941] alia_test@alia_api_contract WARNING:  there is no transaction in progress
+2026-11-11 15:43:48.626 CST [10941] alia_test@alia_api_contract LOG:  could not send data to client: Broken pipe
+2026-11-11 15:43:48.626 CST [10941] alia_test@alia_api_contract STATEMENT:  ROLLBACK
+2026-11-11 15:43:48.626 CST [10941] alia_test@alia_api_contract FATAL:  connection to client lost
+2026-11-11 15:43:48.626 CST [10941] alia_test@alia_api_contract STATEMENT:  ROLLBACK
+2026-11-11 15:43:48.707 CST [10982] alia_test@alia_api_contract LOG:  process 10982 still waiting for RowShareLock on relation 598938 of database 16384 after 1295.568 ms at character 170
+2026-11-11 15:43:48.707 CST [10982] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10980. Wait queue: 10982, 10981.
+2026-11-11 15:43:48.707 CST [10982] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.effect_id=$1 AND e.user_id=$2 FOR UPDATE OF e
+2026-11-11 15:43:48.707 CST [10981] alia_test@alia_api_contract LOG:  process 10981 still waiting for RowShareLock on relation 598938 of database 16384 after 846.645 ms at character 170
+2026-11-11 15:43:48.707 CST [10981] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10980. Wait queue: 10982, 10981.
+2026-11-11 15:43:48.707 CST [10981] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.status='dispatched' AND e.deadline_at < clock_timestamp()-($1::bigint*interval '1 second') ORDER BY e.deadline_at LIMIT $2 FOR UPDATE OF e SKIP LOCKED
+2026-11-11 15:43:48.970 CST [10988] alia_test@alia_api_contract LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 15:43:50.068 CST [11007] alia_test@alia_api_contract LOG:  process 11007 still waiting for RowShareLock on relation 598938 of database 16384 after 200.858 ms at character 170
+2026-11-11 15:43:50.068 CST [11007] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10980. Wait queue: 10982, 10981, 11007.
+2026-11-11 15:43:50.068 CST [11007] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.status='dispatched' AND e.deadline_at < clock_timestamp()-($1::bigint*interval '1 second') ORDER BY e.deadline_at LIMIT $2 FOR UPDATE OF e SKIP LOCKED
+2026-11-11 15:43:50.092 CST [11007] alia_test@alia_api_contract LOG:  process 11007 still waiting for RowShareLock on relation 598938 of database 16384 after 225.186 ms at character 170
+2026-11-11 15:43:50.092 CST [11007] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10980. Wait queue: 10982, 10981, 11007.
+2026-11-11 15:43:50.092 CST [11007] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.status='dispatched' AND e.deadline_at < clock_timestamp()-($1::bigint*interval '1 second') ORDER BY e.deadline_at LIMIT $2 FOR UPDATE OF e SKIP LOCKED
+2026-11-11 15:43:51.197 CST [10969] alia_test@alia_api_contract LOG:  process 10969 still waiting for RowShareLock on relation 596904 of database 16384 after 202.058 ms at character 170
+2026-11-11 15:43:51.197 CST [10969] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10968. Wait queue: 10970, 10969, 11021, 11022, 11023.
+2026-11-11 15:43:51.197 CST [10969] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.effect_id=$1 AND e.user_id=$2 FOR UPDATE OF e
+2026-11-11 15:43:51.199 CST [11022] alia_test@alia_api_contract LOG:  process 11022 still waiting for RowShareLock on relation 596904 of database 16384 after 200.995 ms at character 170
+2026-11-11 15:43:51.199 CST [11022] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10968. Wait queue: 10970, 10969, 11021, 11022, 11023.
+2026-11-11 15:43:51.199 CST [11022] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.effect_id=$1 AND e.user_id=$2 FOR UPDATE OF e
+2026-11-11 15:43:51.199 CST [11021] alia_test@alia_api_contract LOG:  process 11021 still waiting for RowShareLock on relation 596904 of database 16384 after 201.223 ms at character 170
+2026-11-11 15:43:51.199 CST [11021] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10968. Wait queue: 10970, 10969, 11021, 11022, 11023.
+2026-11-11 15:43:51.199 CST [11021] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.effect_id=$1 AND e.user_id=$2 FOR UPDATE OF e
+2026-11-11 15:43:51.199 CST [11023] alia_test@alia_api_contract LOG:  process 11023 still waiting for RowShareLock on relation 596904 of database 16384 after 200.591 ms at character 170
+2026-11-11 15:43:51.199 CST [11023] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10968. Wait queue: 10970, 10969, 11021, 11022, 11023.
+2026-11-11 15:43:51.199 CST [11023] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.effect_id=$1 AND e.user_id=$2 FOR UPDATE OF e
+2026-11-11 15:43:52.071 CST [11039] alia_test@alia_api_contract LOG:  process 11039 still waiting for RowShareLock on relation 598938 of database 16384 after 201.066 ms at character 170
+2026-11-11 15:43:52.071 CST [11039] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10980. Wait queue: 10982, 10981, 11007, 11039.
+2026-11-11 15:43:52.071 CST [11039] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.status='dispatched' AND e.deadline_at < clock_timestamp()-($1::bigint*interval '1 second') ORDER BY e.deadline_at LIMIT $2 FOR UPDATE OF e SKIP LOCKED
+2026-11-11 15:43:52.174 CST [11043] alia_test@alia_api_contract ERROR:  injected receipt write failure
+2026-11-11 15:43:52.174 CST [11043] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_receipt() line 1 at RAISE
+2026-11-11 15:43:52.174 CST [11043] alia_test@alia_api_contract STATEMENT:  UPDATE execution_effects SET status=$2,completion=$3,updated_at=clock_timestamp() WHERE effect_id=$1
+2026-11-11 15:43:52.277 CST [11041] alia_test@alia_api_contract ERROR:  injected receipt write failure
+2026-11-11 15:43:52.277 CST [11041] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_receipt() line 1 at RAISE
+2026-11-11 15:43:52.277 CST [11041] alia_test@alia_api_contract STATEMENT:  UPDATE execution_effects SET status=$2,completion=$3,updated_at=clock_timestamp() WHERE effect_id=$1
+2026-11-11 15:43:52.381 CST [11042] alia_test@alia_api_contract ERROR:  injected receipt write failure
+2026-11-11 15:43:52.381 CST [11042] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_receipt() line 1 at RAISE
+2026-11-11 15:43:52.381 CST [11042] alia_test@alia_api_contract STATEMENT:  UPDATE execution_effects SET status=$2,completion=$3,updated_at=clock_timestamp() WHERE effect_id=$1
+2026-11-11 15:43:53.600 CST [11064] alia_test@alia_api_contract ERROR:  injected cancellation write failure
+2026-11-11 15:43:53.600 CST [11064] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_cancel() line 1 at RAISE
+2026-11-11 15:43:53.600 CST [11064] alia_test@alia_api_contract STATEMENT:  UPDATE execution_effects SET status='cancelled',updated_at=clock_timestamp() WHERE effect_id=$1
+2026-11-11 15:43:53.601 CST [11064] alia_test@alia_api_contract ERROR:  injected cancellation write failure
+2026-11-11 15:43:53.601 CST [11064] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_cancel() line 1 at RAISE
+2026-11-11 15:43:53.601 CST [11064] alia_test@alia_api_contract STATEMENT:  UPDATE execution_effects SET status='cancelled',updated_at=clock_timestamp() WHERE effect_id=$1
+2026-11-11 15:43:54.072 CST [11069] alia_test@alia_api_contract LOG:  process 11069 still waiting for RowShareLock on relation 598938 of database 16384 after 201.580 ms at character 170
+2026-11-11 15:43:54.072 CST [11069] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10980. Wait queue: 10982, 10981, 11007, 11039, 11069.
+2026-11-11 15:43:54.072 CST [11069] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.status='dispatched' AND e.deadline_at < clock_timestamp()-($1::bigint*interval '1 second') ORDER BY e.deadline_at LIMIT $2 FOR UPDATE OF e SKIP LOCKED
+2026-11-11 15:43:55.978 CST [10970] alia_test@alia_api_contract LOG:  process 10970 still waiting for RowShareLock on relation 596904 of database 16384 after 9983.546 ms at character 170
+2026-11-11 15:43:55.978 CST [10970] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10968. Wait queue: 10970, 10969, 11021, 11022, 11023.
+2026-11-11 15:43:55.978 CST [10970] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.user_id=$1 AND e.request_id=$2 AND e.invocation_key=$3 FOR UPDATE OF e
+2026-11-11 15:43:56.007 CST [10969] alia_test@alia_api_contract LOG:  process 10969 acquired RowShareLock on relation 596904 of database 16384 after 5012.647 ms at character 170
+2026-11-11 15:43:56.007 CST [10969] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.effect_id=$1 AND e.user_id=$2 FOR UPDATE OF e
+2026-11-11 15:43:56.007 CST [11023] alia_test@alia_api_contract LOG:  process 11023 acquired RowShareLock on relation 596904 of database 16384 after 5009.338 ms at character 170
+2026-11-11 15:43:56.007 CST [11023] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.effect_id=$1 AND e.user_id=$2 FOR UPDATE OF e
+2026-11-11 15:43:56.007 CST [10970] alia_test@alia_api_contract LOG:  process 10970 acquired RowShareLock on relation 596904 of database 16384 after 10012.616 ms at character 170
+2026-11-11 15:43:56.007 CST [10970] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.user_id=$1 AND e.request_id=$2 AND e.invocation_key=$3 FOR UPDATE OF e
+2026-11-11 15:43:56.007 CST [11022] alia_test@alia_api_contract LOG:  process 11022 acquired RowShareLock on relation 596904 of database 16384 after 5009.762 ms at character 170
+2026-11-11 15:43:56.007 CST [11022] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.effect_id=$1 AND e.user_id=$2 FOR UPDATE OF e
+2026-11-11 15:43:56.007 CST [11021] alia_test@alia_api_contract LOG:  process 11021 acquired RowShareLock on relation 596904 of database 16384 after 5009.971 ms at character 170
+2026-11-11 15:43:56.007 CST [11021] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.effect_id=$1 AND e.user_id=$2 FOR UPDATE OF e
+2026-11-11 15:43:57.157 CST [10981] alia_test@alia_api_contract LOG:  process 10981 still waiting for RowShareLock on relation 598938 of database 16384 after 9296.282 ms at character 170
+2026-11-11 15:43:57.157 CST [10981] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10980. Wait queue: 10982, 10981, 11007, 11039, 11069.
+2026-11-11 15:43:57.157 CST [10981] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.status='dispatched' AND e.deadline_at < clock_timestamp()-($1::bigint*interval '1 second') ORDER BY e.deadline_at LIMIT $2 FOR UPDATE OF e SKIP LOCKED
+2026-11-11 15:43:57.367 CST [10982] alia_test@alia_api_contract LOG:  process 10982 still waiting for RowShareLock on relation 598938 of database 16384 after 9954.994 ms at character 170
+2026-11-11 15:43:57.367 CST [10982] alia_test@alia_api_contract DETAIL:  Process holding the lock: 10980. Wait queue: 10982, 10981, 11007, 11039, 11069.
+2026-11-11 15:43:57.367 CST [10982] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.effect_id=$1 AND e.user_id=$2 FOR UPDATE OF e
+2026-11-11 15:43:57.396 CST [10981] alia_test@alia_api_contract LOG:  process 10981 acquired RowShareLock on relation 598938 of database 16384 after 9535.330 ms at character 170
+2026-11-11 15:43:57.396 CST [10981] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.status='dispatched' AND e.deadline_at < clock_timestamp()-($1::bigint*interval '1 second') ORDER BY e.deadline_at LIMIT $2 FOR UPDATE OF e SKIP LOCKED
+2026-11-11 15:43:57.396 CST [11007] alia_test@alia_api_contract LOG:  process 11007 acquired RowShareLock on relation 598938 of database 16384 after 7529.075 ms at character 170
+2026-11-11 15:43:57.396 CST [11007] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.status='dispatched' AND e.deadline_at < clock_timestamp()-($1::bigint*interval '1 second') ORDER BY e.deadline_at LIMIT $2 FOR UPDATE OF e SKIP LOCKED
+2026-11-11 15:43:57.396 CST [10982] alia_test@alia_api_contract LOG:  process 10982 acquired RowShareLock on relation 598938 of database 16384 after 9984.266 ms at character 170
+2026-11-11 15:43:57.396 CST [10982] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.effect_id=$1 AND e.user_id=$2 FOR UPDATE OF e
+2026-11-11 15:43:57.396 CST [11039] alia_test@alia_api_contract LOG:  process 11039 acquired RowShareLock on relation 598938 of database 16384 after 5526.358 ms at character 170
+2026-11-11 15:43:57.396 CST [11039] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.status='dispatched' AND e.deadline_at < clock_timestamp()-($1::bigint*interval '1 second') ORDER BY e.deadline_at LIMIT $2 FOR UPDATE OF e SKIP LOCKED
+2026-11-11 15:43:57.396 CST [11069] alia_test@alia_api_contract LOG:  process 11069 acquired RowShareLock on relation 598938 of database 16384 after 3525.304 ms at character 170
+2026-11-11 15:43:57.396 CST [11069] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e WHERE e.status='dispatched' AND e.deadline_at < clock_timestamp()-($1::bigint*interval '1 second') ORDER BY e.deadline_at LIMIT $2 FOR UPDATE OF e SKIP LOCKED
+2026-11-11 15:44:10.291 CST [11208] alia_test@alia_api_contract ERROR:  injected vector failure
+2026-11-11 15:44:10.291 CST [11208] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_vector_insert() line 1 at RAISE
+2026-11-11 15:44:10.291 CST [11208] alia_test@alia_api_contract STATEMENT:  INSERT INTO memory_embeddings(memory_id,profile_id,source_revision,input_digest,policy_version,privacy_epoch,dimensions,embedding) VALUES($1,$2,$3,$4,$5,$6,$7,$8::vector) ON CONFLICT(memory_id,profile_id) DO NOTHING
+2026-11-11 15:44:10.496 CST [11208] alia_test@alia_api_contract LOG:  process 11208 still waiting for ShareLock on transaction 22197 after 200.535 ms
+2026-11-11 15:44:10.496 CST [11208] alia_test@alia_api_contract DETAIL:  Process holding the lock: 11207. Wait queue: 11208.
+2026-11-11 15:44:10.496 CST [11208] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,2) in relation "context_policy"
+2026-11-11 15:44:10.496 CST [11208] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR UPDATE
+2026-11-11 15:44:10.501 CST [11212] alia_test@alia_api_contract LOG:  process 11212 still waiting for AccessExclusiveLock on tuple (0,2) of relation 668392 of database 16384 after 202.057 ms
+2026-11-11 15:44:10.501 CST [11212] alia_test@alia_api_contract DETAIL:  Process holding the lock: 11208. Wait queue: 11212.
+2026-11-11 15:44:10.501 CST [11212] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR UPDATE
+2026-11-11 15:44:12.521 CST [11233] alia_test@alia_api_contract LOG:  process 11233 still waiting for AccessExclusiveLock on tuple (0,2) of relation 668392 of database 16384 after 201.526 ms
+2026-11-11 15:44:12.521 CST [11233] alia_test@alia_api_contract DETAIL:  Process holding the lock: 11208. Wait queue: 11212, 11233.
+2026-11-11 15:44:12.521 CST [11233] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR UPDATE
+2026-11-11 15:44:14.318 CST [11208] alia_test@alia_api_contract LOG:  process 11208 acquired ShareLock on transaction 22197 after 4021.990 ms
+2026-11-11 15:44:14.318 CST [11208] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,2) in relation "context_policy"
+2026-11-11 15:44:14.318 CST [11208] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR UPDATE
+2026-11-11 15:44:14.318 CST [11212] alia_test@alia_api_contract LOG:  process 11212 acquired AccessExclusiveLock on tuple (0,2) of relation 668392 of database 16384 after 4019.369 ms
+2026-11-11 15:44:14.318 CST [11212] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR UPDATE
+2026-11-11 15:44:14.321 CST [11233] alia_test@alia_api_contract LOG:  process 11233 acquired AccessExclusiveLock on tuple (0,2) of relation 668392 of database 16384 after 2001.030 ms
+2026-11-11 15:44:14.321 CST [11233] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR UPDATE
+2026-11-11 15:44:17.633 CST [11268] alia_test@alia_api_contract LOG:  unexpected EOF on client connection with an open transaction
+2026-11-11 15:44:17.966 CST [11270] alia_test@alia_api_contract LOG:  process 11270 still waiting for ShareLock on transaction 22723 after 202.115 ms
+2026-11-11 15:44:17.966 CST [11270] alia_test@alia_api_contract DETAIL:  Process holding the lock: 11271. Wait queue: 11270.
+2026-11-11 15:44:17.966 CST [11270] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,1) in relation "context_policy"
+2026-11-11 15:44:17.966 CST [11270] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR UPDATE
+2026-11-11 15:44:21.991 CST [11270] alia_test@alia_api_contract LOG:  process 11270 acquired ShareLock on transaction 22723 after 4227.674 ms
+2026-11-11 15:44:21.991 CST [11270] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,1) in relation "context_policy"
+2026-11-11 15:44:21.991 CST [11270] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR UPDATE
+2026-11-11 15:44:46.926 CST [11380] alia_test@alia_api_contract LOG:  process 11380 still waiting for ShareLock on transaction 22796 after 202.108 ms
+2026-11-11 15:44:46.926 CST [11380] alia_test@alia_api_contract DETAIL:  Process holding the lock: 11381. Wait queue: 11380.
+2026-11-11 15:44:46.926 CST [11380] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,1) in relation "context_policy"
+2026-11-11 15:44:46.926 CST [11380] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR UPDATE
+2026-11-11 15:44:48.743 CST [11380] alia_test@alia_api_contract LOG:  process 11380 acquired ShareLock on transaction 22796 after 2019.011 ms
+2026-11-11 15:44:48.743 CST [11380] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,1) in relation "context_policy"
+2026-11-11 15:44:48.743 CST [11380] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR UPDATE
+2026-11-11 15:44:48.953 CST [11392] alia_test@alia_api_contract ERROR:  injected vector failure
+2026-11-11 15:44:48.953 CST [11392] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_vector_insert() line 1 at RAISE
+2026-11-11 15:44:48.953 CST [11392] alia_test@alia_api_contract STATEMENT:  INSERT INTO memory_embeddings(memory_id,profile_id,source_revision,input_digest,policy_version,privacy_epoch,dimensions,embedding) VALUES($1,$2,$3,$4,$5,$6,$7,$8::vector) ON CONFLICT(memory_id,profile_id) DO NOTHING
+2026-11-11 15:44:55.520 CST [7652] @ LOG:  checkpoint complete: wrote 7481 buffers (45.7%), wrote 5 SLRU buffers; 0 WAL file(s) added, 2 removed, 31 recycled; write=139.294 s, sync=0.835 s, total=142.017 s; sync files=46147, longest=0.022 s, average=0.001 s; distance=540503 kB, estimate=540503 kB; lsn=0/61DF27F8, redo lsn=0/43004200
+2026-11-11 15:44:57.902 CST [7652] @ LOG:  checkpoint starting: wal
+2026-11-11 15:45:01.406 CST [11528] alia_test@alia_api_contract ERROR:  injected forget failure
+2026-11-11 15:45:01.406 CST [11528] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_forget() line 1 at RAISE
+	SQL statement "UPDATE memory_items
+	        SET status='deleted',revision=revision+1,content='',summary=NULL,
+	            evidence='{}',metadata='{}',topic_tags='{}',affect_tags='{}',
+	            source_event_ids='{}',superseded_by=NULL,
+	            expires_at=clock_timestamp(),updated_at=clock_timestamp()
+	        WHERE user_id=p_owner AND tenant_id=p_tenant AND id=ANY(erased_ids)
+	          AND status<>'deleted'"
+	PL/pgSQL function erase_memory_closure(uuid,uuid,uuid[]) line 50 at SQL statement
+2026-11-11 15:45:01.406 CST [11528] alia_test@alia_api_contract STATEMENT:  SELECT erase_memory_closure($1,$2,ARRAY(SELECT jsonb_array_elements_text($3::jsonb)::uuid UNION SELECT a.memory_id FROM memory_appraisal_sources a JOIN memory_items m ON m.id=a.memory_id WHERE a.owner_id=$1 AND m.user_id=$1 AND m.tenant_id=$2)) AS erased
+2026-11-11 15:45:01.419 CST [11530] alia_test@alia_api_contract ERROR:  injected forget failure
+2026-11-11 15:45:01.419 CST [11530] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_forget() line 1 at RAISE
+	SQL statement "UPDATE memory_items
+	        SET status='deleted',revision=revision+1,content='',summary=NULL,
+	            evidence='{}',metadata='{}',topic_tags='{}',affect_tags='{}',
+	            source_event_ids='{}',superseded_by=NULL,
+	            expires_at=clock_timestamp(),updated_at=clock_timestamp()
+	        WHERE user_id=p_owner AND tenant_id=p_tenant AND id=ANY(erased_ids)
+	          AND status<>'deleted'"
+	PL/pgSQL function erase_memory_closure(uuid,uuid,uuid[]) line 50 at SQL statement
+2026-11-11 15:45:01.419 CST [11530] alia_test@alia_api_contract STATEMENT:  SELECT erase_memory_closure($1,$2,ARRAY(SELECT jsonb_array_elements_text($3::jsonb)::uuid UNION SELECT a.memory_id FROM memory_appraisal_sources a JOIN memory_items m ON m.id=a.memory_id WHERE a.owner_id=$1 AND m.user_id=$1 AND m.tenant_id=$2)) AS erased
+2026-11-11 15:45:01.426 CST [11528] alia_test@alia_api_contract ERROR:  injected forget failure
+2026-11-11 15:45:01.426 CST [11528] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_forget() line 1 at RAISE
+	SQL statement "UPDATE memory_items
+	        SET status='deleted',revision=revision+1,content='',summary=NULL,
+	            evidence='{}',metadata='{}',topic_tags='{}',affect_tags='{}',
+	            source_event_ids='{}',superseded_by=NULL,
+	            expires_at=clock_timestamp(),updated_at=clock_timestamp()
+	        WHERE user_id=p_owner AND tenant_id=p_tenant AND id=ANY(erased_ids)
+	          AND status<>'deleted'"
+	PL/pgSQL function erase_memory_closure(uuid,uuid,uuid[]) line 50 at SQL statement
+2026-11-11 15:45:01.426 CST [11528] alia_test@alia_api_contract STATEMENT:  SELECT erase_memory_closure($1,$2,ARRAY(SELECT jsonb_array_elements_text($3::jsonb)::uuid UNION SELECT a.memory_id FROM memory_appraisal_sources a JOIN memory_items m ON m.id=a.memory_id WHERE a.owner_id=$1 AND m.user_id=$1 AND m.tenant_id=$2)) AS erased
+2026-11-11 15:45:05.029 CST [11567] alia_test@alia_api_contract LOG:  process 11567 still waiting for ExclusiveLock on advisory lock [16384,1095518529,1296648018,1] after 202.139 ms
+2026-11-11 15:45:05.029 CST [11567] alia_test@alia_api_contract DETAIL:  Process holding the lock: 11574. Wait queue: 11567, 11572.
+2026-11-11 15:45:05.029 CST [11567] alia_test@alia_api_contract STATEMENT:  SELECT pg_advisory_xact_lock($1)
+2026-11-11 15:45:05.041 CST [11567] alia_test@alia_api_contract LOG:  process 11567 acquired ExclusiveLock on advisory lock [16384,1095518529,1296648018,1] after 214.223 ms
+2026-11-11 15:45:05.041 CST [11567] alia_test@alia_api_contract STATEMENT:  SELECT pg_advisory_xact_lock($1)
+2026-11-11 15:45:05.651 CST [11572] alia_test@alia_api_contract ERROR:  duplicate key value violates unique constraint "memory_items_pkey"
+2026-11-11 15:45:05.651 CST [11572] alia_test@alia_api_contract DETAIL:  Key (id)=(36bda7eb-814f-4164-b9c0-2700b46d9f5f) already exists.
+2026-11-11 15:45:05.651 CST [11572] alia_test@alia_api_contract STATEMENT:  
+	            INSERT INTO memory_items (
+	                id, tenant_id, user_id, conversation_id, kind, scope, memory_layer,
+	                node_type, content, summary, confidence, salience, importance,
+	                affect_tags, topic_tags, source_event_ids, evidence, metadata,
+	                status, superseded_by, visibility, sensitive, expires_at, updated_at
+	            )
+	            VALUES (
+	                $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7,
+	                $8, $9, $10, $11, $12, $13,
+	                ARRAY(SELECT jsonb_array_elements_text($14::jsonb)),
+	                ARRAY(SELECT jsonb_array_elements_text($15::jsonb)),
+	                ARRAY(SELECT jsonb_array_elements_text($16::jsonb)::uuid),
+	                $17::jsonb, $18::jsonb, $19, $20::uuid, $21, $22, $23, NOW()
+	            )
+	            
+2026-11-11 15:45:06.642 CST [11585] alia_test@alia_api_contract LOG:  process 11585 still waiting for ShareLock on transaction 25328 after 202.071 ms
+2026-11-11 15:45:06.642 CST [11585] alia_test@alia_api_contract DETAIL:  Process holding the lock: 11586. Wait queue: 11585.
+2026-11-11 15:45:06.642 CST [11585] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,1) in relation "memory_privacy_state"
+2026-11-11 15:45:06.642 CST [11585] alia_test@alia_api_contract STATEMENT:  SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE
+2026-11-11 15:45:07.121 CST [11595] alia_test@alia_api_contract ERROR:  injected batch rejection
+2026-11-11 15:45:07.121 CST [11595] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_batch_update() line 1 at RAISE
+2026-11-11 15:45:07.121 CST [11595] alia_test@alia_api_contract STATEMENT:  UPDATE memory_items SET content=COALESCE($4,content),summary=CASE WHEN $4::text IS NULL THEN summary ELSE NULL END,metadata=COALESCE($5::jsonb,metadata),importance=COALESCE($6,importance),confidence=COALESCE($7,confidence),salience=COALESCE($8,salience),visibility=COALESCE($9,visibility),status=COALESCE($10,status),superseded_by=COALESCE($11::uuid,superseded_by),source_event_ids=ARRAY(SELECT DISTINCT v FROM unnest(source_event_ids || ARRAY(SELECT jsonb_array_elements_text($13::jsonb)::uuid)) AS ids(v)),revision=revision+1,updated_at=clock_timestamp() WHERE id=$1::uuid AND user_id=$2 AND tenant_id=$3 AND revision=$12 AND status<>'deleted'
+2026-11-11 15:45:07.145 CST [11595] alia_test@alia_api_contract ERROR:  injected batch rejection
+2026-11-11 15:45:07.145 CST [11595] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_batch_update() line 1 at RAISE
+	SQL statement "UPDATE memory_items
+	        SET status='deleted',revision=revision+1,content='',summary=NULL,
+	            evidence='{}',metadata='{}',topic_tags='{}',affect_tags='{}',
+	            source_event_ids='{}',superseded_by=NULL,
+	            expires_at=clock_timestamp(),updated_at=clock_timestamp()
+	        WHERE user_id=p_owner AND tenant_id=p_tenant AND id=ANY(erased_ids)
+	          AND status<>'deleted'"
+	PL/pgSQL function erase_memory_closure(uuid,uuid,uuid[]) line 50 at SQL statement
+2026-11-11 15:45:07.145 CST [11595] alia_test@alia_api_contract STATEMENT:  SELECT erase_memory_closure($1,$2,ARRAY(SELECT jsonb_array_elements_text($3::jsonb)::uuid UNION SELECT a.memory_id FROM memory_appraisal_sources a JOIN memory_items m ON m.id=a.memory_id WHERE a.owner_id=$1 AND m.user_id=$1 AND m.tenant_id=$2)) AS erased
+2026-11-11 15:45:07.160 CST [11595] alia_test@alia_api_contract ERROR:  injected provenance rejection
+2026-11-11 15:45:07.160 CST [11595] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_batch_source() line 1 at RAISE
+2026-11-11 15:45:07.160 CST [11595] alia_test@alia_api_contract STATEMENT:  INSERT INTO memory_sources(memory_id,source_id,source_revision) VALUES($1::uuid,$2::uuid,$3) ON CONFLICT(memory_id,source_id) DO UPDATE SET source_revision=EXCLUDED.source_revision
+2026-11-11 15:45:07.294 CST [11605] alia_test@alia_api_contract ERROR:  duplicate key value violates unique constraint "memory_items_pkey"
+2026-11-11 15:45:07.294 CST [11605] alia_test@alia_api_contract DETAIL:  Key (id)=(69bf4902-964b-4608-b03e-e9481952beaf) already exists.
+2026-11-11 15:45:07.294 CST [11605] alia_test@alia_api_contract STATEMENT:  
+	            INSERT INTO memory_items (
+	                id, tenant_id, user_id, conversation_id, kind, scope, memory_layer,
+	                node_type, content, summary, confidence, salience, importance,
+	                affect_tags, topic_tags, source_event_ids, evidence, metadata,
+	                status, superseded_by, visibility, sensitive, expires_at, updated_at
+	            )
+	            VALUES (
+	                $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7,
+	                $8, $9, $10, $11, $12, $13,
+	                ARRAY(SELECT jsonb_array_elements_text($14::jsonb)),
+	                ARRAY(SELECT jsonb_array_elements_text($15::jsonb)),
+	                ARRAY(SELECT jsonb_array_elements_text($16::jsonb)::uuid),
+	                $17::jsonb, $18::jsonb, $19, $20::uuid, $21, $22, $23, NOW()
+	            )
+	            
+2026-11-11 15:45:07.306 CST [11605] alia_test@alia_api_contract ERROR:  duplicate key value violates unique constraint "memory_items_pkey"
+2026-11-11 15:45:07.306 CST [11605] alia_test@alia_api_contract DETAIL:  Key (id)=(69bf4902-964b-4608-b03e-e9481952beaf) already exists.
+2026-11-11 15:45:07.306 CST [11605] alia_test@alia_api_contract STATEMENT:  
+	            INSERT INTO memory_items (
+	                id, tenant_id, user_id, conversation_id, kind, scope, memory_layer,
+	                node_type, content, summary, confidence, salience, importance,
+	                affect_tags, topic_tags, source_event_ids, evidence, metadata,
+	                status, superseded_by, visibility, sensitive, expires_at, updated_at
+	            )
+	            VALUES (
+	                $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7,
+	                $8, $9, $10, $11, $12, $13,
+	                ARRAY(SELECT jsonb_array_elements_text($14::jsonb)),
+	                ARRAY(SELECT jsonb_array_elements_text($15::jsonb)),
+	                ARRAY(SELECT jsonb_array_elements_text($16::jsonb)::uuid),
+	                $17::jsonb, $18::jsonb, $19, $20::uuid, $21, $22, $23, NOW()
+	            )
+	            
+2026-11-11 15:45:08.441 CST [11585] alia_test@alia_api_contract LOG:  process 11585 acquired ShareLock on transaction 25328 after 2000.761 ms
+2026-11-11 15:45:08.441 CST [11585] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,1) in relation "memory_privacy_state"
+2026-11-11 15:45:08.441 CST [11585] alia_test@alia_api_contract STATEMENT:  SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE
+2026-11-11 15:45:12.208 CST [11629] alia_test@alia_api_contract ERROR:  division by zero
+2026-11-11 15:45:12.208 CST [11629] alia_test@alia_api_contract STATEMENT:  CREATE TABLE partial_write (value TEXT); INSERT INTO retained VALUES (2); SELECT 1 / 0;
+2026-11-11 15:45:12.216 CST [11632] alia_test@alia_api_contract ERROR:  division by zero
+2026-11-11 15:45:12.216 CST [11632] alia_test@alia_api_contract STATEMENT:  CREATE TABLE partial_write (id INTEGER); SELECT 1 / 0;
+2026-11-11 15:45:13.487 CST [11652] alia_test@alia_api_contract ERROR:  injected motion audit failure
+2026-11-11 15:45:13.487 CST [11652] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function deny_motion_dispatch() line 1 at RAISE
+2026-11-11 15:45:13.487 CST [11652] alia_test@alia_api_contract STATEMENT:  INSERT INTO delivery_events(response_id,kind,payload) VALUES($1,$2,$3)
+2026-11-11 15:45:14.727 CST [11681] alia_test@alia_api_contract ERROR:  injected control audit failure
+2026-11-11 15:45:14.727 CST [11681] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_control_audit() line 1 at RAISE
+2026-11-11 15:45:14.727 CST [11681] alia_test@alia_api_contract STATEMENT:  INSERT INTO delivery_events(response_id,delivery_id,kind,payload) VALUES($1,$2,$3,$4)
+2026-11-11 15:45:14.734 CST [11677] alia_test@alia_api_contract ERROR:  injected control audit failure
+2026-11-11 15:45:14.734 CST [11677] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_control_audit() line 1 at RAISE
+2026-11-11 15:45:14.734 CST [11677] alia_test@alia_api_contract STATEMENT:  INSERT INTO delivery_events(response_id,delivery_id,kind,payload) VALUES($1,$2,$3,$4)
+2026-11-11 15:45:34.323 CST [11911] alia_test@alia_api_contract LOG:  process 11911 still waiting for AccessShareLock on relation 871515 of database 16384 after 200.304 ms at character 187
+2026-11-11 15:45:34.323 CST [11911] alia_test@alia_api_contract DETAIL:  Process holding the lock: 11902. Wait queue: 11911.
+2026-11-11 15:45:34.323 CST [11911] alia_test@alia_api_contract STATEMENT:  SELECT "users"."id", "users"."email", "users"."name", "users"."password_hash", "users"."role", "users"."status", "users"."last_login_at", "users"."created_at", "users"."updated_at" FROM "users" WHERE "users"."id" = $1 LIMIT $2
+2026-11-11 15:45:36.127 CST [11911] alia_test@alia_api_contract LOG:  process 11911 acquired AccessShareLock on relation 871515 of database 16384 after 2003.718 ms at character 187
+2026-11-11 15:45:36.127 CST [11911] alia_test@alia_api_contract STATEMENT:  SELECT "users"."id", "users"."email", "users"."name", "users"."password_hash", "users"."role", "users"."status", "users"."last_login_at", "users"."created_at", "users"."updated_at" FROM "users" WHERE "users"."id" = $1 LIMIT $2
+2026-11-11 15:45:40.281 CST [11970] alia_test@alia_api_contract ERROR:  injected refresh insert failure
+2026-11-11 15:45:40.281 CST [11970] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_refresh_insert() line 1 at RAISE
+2026-11-11 15:45:40.281 CST [11970] alia_test@alia_api_contract STATEMENT:  INSERT INTO "refresh_tokens" ("id", "user_id", "token_hash", "user_agent", "ip_address", "issued_at", "expires_at", "revoked_at") VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING "id", "user_id", "token_hash", "user_agent", "ip_address", "issued_at", "expires_at", "revoked_at"
+2026-11-11 15:45:41.065 CST [11972] alia_test@alia_api_contract ERROR:  injected auth insert failure
+2026-11-11 15:45:41.065 CST [11972] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_auth_insert() line 1 at RAISE
+2026-11-11 15:45:41.065 CST [11972] alia_test@alia_api_contract STATEMENT:  INSERT INTO "user_identity_links" ("id", "user_id", "provider", "subject", "label", "confidence_threshold", "metadata", "verified_at", "created_at", "updated_at") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING "id", "user_id", "provider", "subject", "label", "confidence_threshold", "metadata", "verified_at", "created_at", "updated_at"
+2026-11-11 15:45:41.470 CST [11972] alia_test@alia_api_contract ERROR:  injected auth insert failure
+2026-11-11 15:45:41.470 CST [11972] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_auth_insert() line 1 at RAISE
+2026-11-11 15:45:41.470 CST [11972] alia_test@alia_api_contract STATEMENT:  INSERT INTO "refresh_tokens" ("id", "user_id", "token_hash", "user_agent", "ip_address", "issued_at", "expires_at", "revoked_at") VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING "id", "user_id", "token_hash", "user_agent", "ip_address", "issued_at", "expires_at", "revoked_at"
+2026-11-11 15:45:42.048 CST [11986] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:42.048 CST [11986] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:42.048 CST [11986] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:42.233 CST [11986] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:42.233 CST [11986] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:42.233 CST [11986] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:42.362 CST [11998] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:42.362 CST [11998] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:42.362 CST [11998] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:42.476 CST [11995] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:42.476 CST [11995] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:42.476 CST [11995] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:42.582 CST [12000] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:42.582 CST [12000] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:42.582 CST [12000] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:42.915 CST [11998] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:42.915 CST [11998] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:42.915 CST [11998] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:42.986 CST [11994] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:42.986 CST [11994] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:42.986 CST [11994] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:43.431 CST [11998] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:43.431 CST [11998] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:43.431 CST [11998] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:43.693 CST [11985] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:43.693 CST [11985] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:43.693 CST [11985] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:44.057 CST [11999] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:44.057 CST [11999] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:44.057 CST [11999] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:44.544 CST [11986] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:44.544 CST [11986] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:44.544 CST [11986] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:44.776 CST [12010] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:44.776 CST [12010] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:44.776 CST [12010] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:45.028 CST [12012] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:45.028 CST [12012] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:45.028 CST [12012] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:45.321 CST [12017] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:45.321 CST [12017] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:45.321 CST [12017] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:45.391 CST [12009] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:45.391 CST [12009] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:45.391 CST [12009] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:45.568 CST [12018] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:45.568 CST [12018] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:45.568 CST [12018] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:45.934 CST [12018] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:45.934 CST [12018] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:45.934 CST [12018] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:46.492 CST [12015] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:46.492 CST [12015] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:46.492 CST [12015] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:46.938 CST [12018] alia_test@alia_api_contract ERROR:  column "updated_at" does not exist at character 22
+2026-11-11 15:45:46.938 CST [12018] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "delivery_responses.created_at".
+2026-11-11 15:45:46.938 CST [12018] alia_test@alia_api_contract STATEMENT:  SELECT final_content,updated_at FROM delivery_responses WHERE response_id=$1 AND context_id=$2 AND user_id=$3 AND request_id=$4 AND status='committed' FOR SHARE
+2026-11-11 15:45:46.975 CST [12035] alia_test@alia_api_contract LOG:  process 12035 still waiting for ShareLock on transaction 31026 after 202.089 ms
+2026-11-11 15:45:46.975 CST [12035] alia_test@alia_api_contract DETAIL:  Process holding the lock: 12033. Wait queue: 12035.
+2026-11-11 15:45:46.975 CST [12035] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,1) in relation "context_policy"
+2026-11-11 15:45:46.975 CST [12035] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR SHARE
+2026-11-11 15:45:47.025 CST [12035] alia_test@alia_api_contract LOG:  process 12035 still waiting for ShareLock on transaction 31026 after 251.915 ms
+2026-11-11 15:45:47.025 CST [12035] alia_test@alia_api_contract DETAIL:  Process holding the lock: 12033. Wait queue: 12035.
+2026-11-11 15:45:47.025 CST [12035] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,1) in relation "context_policy"
+2026-11-11 15:45:47.025 CST [12035] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR SHARE
+2026-11-11 15:45:48.164 CST [12042] alia_test@alia_api_contract LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 15:45:48.165 CST [12043] alia_test@alia_api_contract LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 15:45:48.773 CST [12035] alia_test@alia_api_contract ERROR:  canceling statement due to statement timeout
+2026-11-11 15:45:48.773 CST [12035] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,1) in relation "context_policy"
+2026-11-11 15:45:48.773 CST [12035] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR SHARE
+2026-11-11 15:45:52.251 CST [12092] alia_test@alia_api_contract ERROR:  injected policy write failure
+2026-11-11 15:45:52.251 CST [12092] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_context_policy() line 1 at RAISE
+2026-11-11 15:45:52.251 CST [12092] alia_test@alia_api_contract STATEMENT:  UPDATE context_policy SET version=version+1,policy=$2,policy_digest=$3,updated_at=clock_timestamp() WHERE singleton AND version=$1 RETURNING version
+2026-11-11 15:45:52.760 CST [12108] alia_test@alia_api_contract ERROR:  injected response commit failure
+2026-11-11 15:45:52.760 CST [12108] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_response_commit() line 1 at RAISE
+2026-11-11 15:45:52.760 CST [12108] alia_test@alia_api_contract STATEMENT:  INSERT INTO chat_messages(id,session_id,user_id,role,content,created_at,source_received_at,source_privacy_epoch) VALUES($1,$2,NULL,'assistant',$3,clock_timestamp(),$4,$5) ON CONFLICT(id) DO NOTHING
+2026-11-11 15:45:52.768 CST [12107] alia_test@alia_api_contract ERROR:  injected response commit failure
+2026-11-11 15:45:52.768 CST [12107] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_response_commit() line 1 at RAISE
+2026-11-11 15:45:52.768 CST [12107] alia_test@alia_api_contract STATEMENT:  UPDATE chat_sessions SET updated_at=clock_timestamp() WHERE id=$1 AND creator_id=$2
+2026-11-11 15:46:09.308 CST [12204] alia_test@alia_api_contract LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 15:46:09.841 CST [12214] alia_test@alia_api_contract ERROR:  injected embedding policy failure
+2026-11-11 15:46:09.841 CST [12214] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_profile_policy_update() line 1 at RAISE
+2026-11-11 15:46:09.841 CST [12214] alia_test@alia_api_contract STATEMENT:  UPDATE context_policy SET version=version+1,policy=$2,policy_digest=$3,updated_at=clock_timestamp() WHERE singleton AND version=$1 RETURNING version
+2026-11-11 15:46:16.845 CST [12259] alia_test@alia_api_contract LOG:  process 12259 still waiting for ExclusiveLock on advisory lock [16384,0,1484197738,1] after 200.171 ms
+2026-11-11 15:46:16.845 CST [12259] alia_test@alia_api_contract DETAIL:  Process holding the lock: 12256. Wait queue: 12259.
+2026-11-11 15:46:16.845 CST [12259] alia_test@alia_api_contract CONTEXT:  SQL statement "SELECT pg_advisory_xact_lock(1484197738)"
+	PL/pgSQL function hold_appraisal_mutation() line 1 at PERFORM
+2026-11-11 15:46:16.845 CST [12259] alia_test@alia_api_contract STATEMENT:  INSERT INTO appraisal_records(appraisal_id,owner_id,request_id,context_id,occurrence_key,interpreter_id,interpreter_version,policy_version,interpretation_policy_digest,source_event_id,source_privacy_epoch,source_relationship_epoch,source_received_at,input_digest,result_digest,source_fact,events,roots,roots_digest,effective_at,valid_until) VALUES($1,$2,$3,$4,$5,'alia.appraisal',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+2026-11-11 15:46:18.645 CST [12259] alia_test@alia_api_contract ERROR:  canceling statement due to statement timeout
+2026-11-11 15:46:18.645 CST [12259] alia_test@alia_api_contract CONTEXT:  SQL statement "SELECT pg_advisory_xact_lock(1484197738)"
+	PL/pgSQL function hold_appraisal_mutation() line 1 at PERFORM
+2026-11-11 15:46:18.645 CST [12259] alia_test@alia_api_contract STATEMENT:  INSERT INTO appraisal_records(appraisal_id,owner_id,request_id,context_id,occurrence_key,interpreter_id,interpreter_version,policy_version,interpretation_policy_digest,source_event_id,source_privacy_epoch,source_relationship_epoch,source_received_at,input_digest,result_digest,source_fact,events,roots,roots_digest,effective_at,valid_until) VALUES($1,$2,$3,$4,$5,'alia.appraisal',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+2026-11-11 15:46:19.511 CST [12291] alia_test@alia_api_contract ERROR:  injected appraisal failure
+2026-11-11 15:46:19.511 CST [12291] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_appraisal_write() line 1 at RAISE
+2026-11-11 15:46:19.511 CST [12291] alia_test@alia_api_contract STATEMENT:  INSERT INTO appraisal_records(appraisal_id,owner_id,request_id,context_id,occurrence_key,interpreter_id,interpreter_version,policy_version,interpretation_policy_digest,source_event_id,source_privacy_epoch,source_relationship_epoch,source_received_at,input_digest,result_digest,source_fact,events,roots,roots_digest,effective_at,valid_until) VALUES($1,$2,$3,$4,$5,'alia.appraisal',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+2026-11-11 15:46:19.567 CST [12298] alia_test@alia_api_contract ERROR:  injected relationship delete failure
+2026-11-11 15:46:19.567 CST [12298] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_relationship_delete() line 1 at RAISE
+2026-11-11 15:46:19.567 CST [12298] alia_test@alia_api_contract STATEMENT:  DELETE FROM appraisal_records WHERE owner_id=$1
+2026-11-11 15:46:21.751 CST [12339] alia_test@alia_api_contract LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 15:46:24.674 CST [7652] @ LOG:  checkpoint complete: wrote 8387 buffers (51.2%), wrote 4 SLRU buffers; 0 WAL file(s) added, 1 removed, 32 recycled; write=81.520 s, sync=1.201 s, total=86.773 s; sync files=49910, longest=0.017 s, average=0.001 s; distance=540659 kB, estimate=540659 kB; lsn=0/82FBA9F0, redo lsn=0/64000EC0
+2026-11-11 15:46:28.452 CST [7652] @ LOG:  checkpoint starting: wal
+2026-11-11 15:46:28.484 CST [12392] alia_test@alia_api_contract ERROR:  injected insights log failure
+2026-11-11 15:46:28.484 CST [12392] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_insights_log() line 1 at RAISE
+2026-11-11 15:46:28.484 CST [12392] alia_test@alia_api_contract STATEMENT:  INSERT INTO "insight_logs" ("id", "user_id", "phase", "trigger_type", "summary", "nodes_created", "nodes_updated", "nodes_merged", "edges_created", "model_used", "duration_ms", "created_at") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING "id", "user_id", "phase", "trigger_type", "summary", "nodes_created", "nodes_updated", "nodes_merged", "edges_created", "model_used", "duration_ms", "created_at"
+2026-11-11 15:46:29.207 CST [12421] alia_test@alia_api_contract ERROR:  column b.delivery_id does not exist at character 141
+2026-11-11 15:46:29.207 CST [12421] alia_test@alia_api_contract HINT:  Perhaps you meant to reference the column "c.delivery_id".
+2026-11-11 15:46:29.207 CST [12421] alia_test@alia_api_contract STATEMENT:  SELECT to_jsonb(b) || jsonb_build_object('latest_checkpoint',(SELECT c.progress FROM motion_delivery_late_checkpoints c WHERE c.delivery_id=b.delivery_id ORDER BY c.receipt_sequence DESC LIMIT 1)) AS record FROM motion_deliveries b JOIN delivery_responses r USING(response_id) WHERE b.delivery_id=$1 AND r.user_id=$2
+2026-11-11 15:46:33.087 CST [12479] alia_test@alia_api_contract ERROR:  fixture-only policy failure
+2026-11-11 15:46:33.087 CST [12479] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_appraisal_policy() line 1 at RAISE
+2026-11-11 15:46:33.087 CST [12479] alia_test@alia_api_contract STATEMENT:  UPDATE context_policy SET version=version+1,policy=$2,policy_digest=$3,updated_at=clock_timestamp() WHERE singleton AND version=$1 RETURNING version
+2026-11-11 15:46:33.529 CST [12484] alia_test@alia_api_contract ERROR:  injected relationship clear transaction failure
+2026-11-11 15:46:33.529 CST [12484] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_relationship_clear_api() line 1 at RAISE
+2026-11-11 15:46:33.529 CST [12484] alia_test@alia_api_contract STATEMENT:  UPDATE relationship_authority SET relationship_epoch=$2,updated_at=clock_timestamp() WHERE owner_id=$1
+2026-11-11 15:46:34.573 CST [12500] alia_test@alia_api_contract LOG:  process 12500 still waiting for ShareLock on transaction 39404 after 200.282 ms
+2026-11-11 15:46:34.573 CST [12500] alia_test@alia_api_contract DETAIL:  Process holding the lock: 12501. Wait queue: 12500.
+2026-11-11 15:46:34.573 CST [12500] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,1) in relation "context_policy"
+2026-11-11 15:46:34.573 CST [12500] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR SHARE
+2026-11-11 15:46:35.539 CST [12520] alia_test@alia_api_contract ERROR:  injected tool catalog failure
+2026-11-11 15:46:35.539 CST [12520] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function reject_tool_catalog() line 2 at RAISE
+2026-11-11 15:46:35.539 CST [12520] alia_test@alia_api_contract STATEMENT:  INSERT INTO "tools" ("id", "name", "description", "parameters", "source", "require_confirmation", "required_role", "routing_keywords", "routing_examples", "routing_text", "routing_embedding", "enabled", "created_at", "updated_at") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING "id", "name", "description", "parameters", "source", "require_confirmation", "required_role", "routing_keywords", "routing_examples", "routing_text", "routing_embedding", "enabled", "created_at", "updated_at"
+2026-11-11 15:46:36.176 CST [12531] alia_test@alia_api_contract WARNING:  there is no transaction in progress
+2026-11-11 15:46:36.373 CST [12500] alia_test@alia_api_contract ERROR:  canceling statement due to statement timeout
+2026-11-11 15:46:36.373 CST [12500] alia_test@alia_api_contract CONTEXT:  while locking tuple (0,1) in relation "context_policy"
+2026-11-11 15:46:36.373 CST [12500] alia_test@alia_api_contract STATEMENT:  SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR SHARE
+2026-11-11 15:46:37.300 CST [12536] alia_test@alia_api_contract ERROR:  private settings fixture SQL failure
+2026-11-11 15:46:37.300 CST [12536] alia_test@alia_api_contract CONTEXT:  PL/pgSQL function fail_settings_privacy() line 2 at RAISE
+2026-11-11 15:46:37.300 CST [12536] alia_test@alia_api_contract STATEMENT:  UPDATE context_policy SET version=version+1,policy=$2,policy_digest=$3,updated_at=clock_timestamp() WHERE singleton AND version=$1 RETURNING version
+2026-11-11 15:46:37.429 CST [12537] alia_test@alia_api_contract LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 15:46:39.259 CST [12575] alia_test@alia_api_contract ERROR:  relation "users" does not exist at character 26
+2026-11-11 15:46:39.259 CST [12575] alia_test@alia_api_contract STATEMENT:  SELECT "users"."id" FROM "users" WHERE "users"."id" = $1 AND "users"."status" = $2 AND "users"."role" = $3 LIMIT $4
+2026-11-11 15:46:39.526 CST [12583] alia_test@alia_api_contract LOG:  process 12583 still waiting for AccessShareLock on relation 1045185 of database 16384 after 201.431 ms at character 26
+2026-11-11 15:46:39.526 CST [12583] alia_test@alia_api_contract DETAIL:  Process holding the lock: 12582. Wait queue: 12583, 12579.
+2026-11-11 15:46:39.526 CST [12583] alia_test@alia_api_contract STATEMENT:  SELECT "users"."id" FROM "users" WHERE "users"."id" = $1 AND "users"."status" = $2 AND "users"."role" = $3 LIMIT $4
+2026-11-11 15:46:39.529 CST [12579] alia_test@alia_api_contract LOG:  process 12579 still waiting for AccessShareLock on relation 1045185 of database 16384 after 202.052 ms at character 115
+2026-11-11 15:46:39.529 CST [12579] alia_test@alia_api_contract DETAIL:  Process holding the lock: 12582. Wait queue: 12583, 12579.
+2026-11-11 15:46:39.529 CST [12579] alia_test@alia_api_contract STATEMENT:  SELECT a.owner_id,a.appraisal_id FROM appraisal_records a JOIN companion_policies p ON p.owner_id=a.owner_id JOIN users u ON u.id=a.owner_id AND u.status='active' JOIN memory_privacy_state privacy ON privacy.user_id=a.owner_id AND privacy.privacy_epoch=a.source_privacy_epoch JOIN relationship_authority relationship ON relationship.owner_id=a.owner_id AND relationship.relationship_epoch=a.source_relationship_epoch JOIN context_policy g ON g.singleton AND g.version=a.policy_version WHERE (g.policy->'appraisal'->'affect'->>'enabled')::boolean AND (g.policy->'appraisal'->'affect'->>'relationship_profile_user_visible')::boolean AND g.policy->>'paused_until' IS NULL AND a.status='active' AND a.source_fact->>'kind'='user_message' AND p.policy->>'mode'='enabled' AND NOT (p.policy->>'quiet')::boolean AND NOT (p.policy->>'paused')::boolean AND p.enabled_since IS NOT NULL AND a.effective_at>=p.enabled_since AND a.effective_at<=clock_timestamp() AND a.valid_until>clock_timestamp() AND a.effective_at+((p.policy->>'candidate_ttl_seconds')::integer*interval '1 second')>clock_timestamp() AND NOT EXISTS(SELECT 1 FROM companion_source_claims c WHERE c.owner_id=a.owner_id AND c.source_event_id=a.source_event_id) AND NOT EXISTS(SELECT 1 FROM companion_rejected_sources r WHERE r.owner_id=a.owner_id AND r.appraisal_id=a.appraisal_id) AND (SELECT count(*) FROM companion_live_pending l WHERE l.owner_id=a.owner_id AND l.private_candidate IS NOT NULL)<4 ORDER BY a.effective_at,a.appraisal_id LIMIT $1
+2026-11-11 15:46:40.211 CST [12600] alia_test@alia_api_contract ERROR:  relation "users" does not exist at character 26
+2026-11-11 15:46:40.211 CST [12600] alia_test@alia_api_contract STATEMENT:  SELECT "users"."id" FROM "users" WHERE "users"."id" = $1 AND "users"."status" = $2 AND "users"."role" = $3 LIMIT $4
+2026-11-11 15:46:40.896 CST [12602] alia_test@alia_api_contract LOG:  process 12602 still waiting for AccessShareLock on relation 1052446 of database 16384 after 201.846 ms at character 26
+2026-11-11 15:46:40.896 CST [12602] alia_test@alia_api_contract DETAIL:  Process holding the lock: 12604. Wait queue: 12602, 12603.
+2026-11-11 15:46:40.896 CST [12602] alia_test@alia_api_contract STATEMENT:  SELECT "users"."id" FROM "users" WHERE "users"."id" = $1 AND "users"."status" = $2 AND "users"."role" = $3 LIMIT $4
+2026-11-11 15:46:40.896 CST [12603] alia_test@alia_api_contract LOG:  process 12603 still waiting for AccessShareLock on relation 1052446 of database 16384 after 200.178 ms at character 115
+2026-11-11 15:46:40.896 CST [12603] alia_test@alia_api_contract DETAIL:  Process holding the lock: 12604. Wait queue: 12602, 12603.
+2026-11-11 15:46:40.896 CST [12603] alia_test@alia_api_contract STATEMENT:  SELECT a.owner_id,a.appraisal_id FROM appraisal_records a JOIN companion_policies p ON p.owner_id=a.owner_id JOIN users u ON u.id=a.owner_id AND u.status='active' JOIN memory_privacy_state privacy ON privacy.user_id=a.owner_id AND privacy.privacy_epoch=a.source_privacy_epoch JOIN relationship_authority relationship ON relationship.owner_id=a.owner_id AND relationship.relationship_epoch=a.source_relationship_epoch JOIN context_policy g ON g.singleton AND g.version=a.policy_version WHERE (g.policy->'appraisal'->'affect'->>'enabled')::boolean AND (g.policy->'appraisal'->'affect'->>'relationship_profile_user_visible')::boolean AND g.policy->>'paused_until' IS NULL AND a.status='active' AND a.source_fact->>'kind'='user_message' AND p.policy->>'mode'='enabled' AND NOT (p.policy->>'quiet')::boolean AND NOT (p.policy->>'paused')::boolean AND p.enabled_since IS NOT NULL AND a.effective_at>=p.enabled_since AND a.effective_at<=clock_timestamp() AND a.valid_until>clock_timestamp() AND a.effective_at+((p.policy->>'candidate_ttl_seconds')::integer*interval '1 second')>clock_timestamp() AND NOT EXISTS(SELECT 1 FROM companion_source_claims c WHERE c.owner_id=a.owner_id AND c.source_event_id=a.source_event_id) AND NOT EXISTS(SELECT 1 FROM companion_rejected_sources r WHERE r.owner_id=a.owner_id AND r.appraisal_id=a.appraisal_id) AND (SELECT count(*) FROM companion_live_pending l WHERE l.owner_id=a.owner_id AND l.private_candidate IS NOT NULL)<4 ORDER BY a.effective_at,a.appraisal_id LIMIT $1
+2026-11-11 15:46:41.327 CST [12583] alia_test@alia_api_contract LOG:  process 12583 acquired AccessShareLock on relation 1045185 of database 16384 after 2002.780 ms at character 26
+2026-11-11 15:46:41.327 CST [12583] alia_test@alia_api_contract STATEMENT:  SELECT "users"."id" FROM "users" WHERE "users"."id" = $1 AND "users"."status" = $2 AND "users"."role" = $3 LIMIT $4
+2026-11-11 15:46:41.327 CST [12579] alia_test@alia_api_contract LOG:  process 12579 acquired AccessShareLock on relation 1045185 of database 16384 after 1999.965 ms at character 115
+2026-11-11 15:46:41.327 CST [12579] alia_test@alia_api_contract STATEMENT:  SELECT a.owner_id,a.appraisal_id FROM appraisal_records a JOIN companion_policies p ON p.owner_id=a.owner_id JOIN users u ON u.id=a.owner_id AND u.status='active' JOIN memory_privacy_state privacy ON privacy.user_id=a.owner_id AND privacy.privacy_epoch=a.source_privacy_epoch JOIN relationship_authority relationship ON relationship.owner_id=a.owner_id AND relationship.relationship_epoch=a.source_relationship_epoch JOIN context_policy g ON g.singleton AND g.version=a.policy_version WHERE (g.policy->'appraisal'->'affect'->>'enabled')::boolean AND (g.policy->'appraisal'->'affect'->>'relationship_profile_user_visible')::boolean AND g.policy->>'paused_until' IS NULL AND a.status='active' AND a.source_fact->>'kind'='user_message' AND p.policy->>'mode'='enabled' AND NOT (p.policy->>'quiet')::boolean AND NOT (p.policy->>'paused')::boolean AND p.enabled_since IS NOT NULL AND a.effective_at>=p.enabled_since AND a.effective_at<=clock_timestamp() AND a.valid_until>clock_timestamp() AND a.effective_at+((p.policy->>'candidate_ttl_seconds')::integer*interval '1 second')>clock_timestamp() AND NOT EXISTS(SELECT 1 FROM companion_source_claims c WHERE c.owner_id=a.owner_id AND c.source_event_id=a.source_event_id) AND NOT EXISTS(SELECT 1 FROM companion_rejected_sources r WHERE r.owner_id=a.owner_id AND r.appraisal_id=a.appraisal_id) AND (SELECT count(*) FROM companion_live_pending l WHERE l.owner_id=a.owner_id AND l.private_candidate IS NOT NULL)<4 ORDER BY a.effective_at,a.appraisal_id LIMIT $1
+2026-11-11 15:46:41.329 CST [12579] alia_test@alia_api_contract ERROR:  canceling statement due to statement timeout
+2026-11-11 15:46:41.329 CST [12579] alia_test@alia_api_contract STATEMENT:  SELECT a.owner_id,a.appraisal_id FROM appraisal_records a JOIN companion_policies p ON p.owner_id=a.owner_id JOIN users u ON u.id=a.owner_id AND u.status='active' JOIN memory_privacy_state privacy ON privacy.user_id=a.owner_id AND privacy.privacy_epoch=a.source_privacy_epoch JOIN relationship_authority relationship ON relationship.owner_id=a.owner_id AND relationship.relationship_epoch=a.source_relationship_epoch JOIN context_policy g ON g.singleton AND g.version=a.policy_version WHERE (g.policy->'appraisal'->'affect'->>'enabled')::boolean AND (g.policy->'appraisal'->'affect'->>'relationship_profile_user_visible')::boolean AND g.policy->>'paused_until' IS NULL AND a.status='active' AND a.source_fact->>'kind'='user_message' AND p.policy->>'mode'='enabled' AND NOT (p.policy->>'quiet')::boolean AND NOT (p.policy->>'paused')::boolean AND p.enabled_since IS NOT NULL AND a.effective_at>=p.enabled_since AND a.effective_at<=clock_timestamp() AND a.valid_until>clock_timestamp() AND a.effective_at+((p.policy->>'candidate_ttl_seconds')::integer*interval '1 second')>clock_timestamp() AND NOT EXISTS(SELECT 1 FROM companion_source_claims c WHERE c.owner_id=a.owner_id AND c.source_event_id=a.source_event_id) AND NOT EXISTS(SELECT 1 FROM companion_rejected_sources r WHERE r.owner_id=a.owner_id AND r.appraisal_id=a.appraisal_id) AND (SELECT count(*) FROM companion_live_pending l WHERE l.owner_id=a.owner_id AND l.private_candidate IS NOT NULL)<4 ORDER BY a.effective_at,a.appraisal_id LIMIT $1
+2026-11-11 15:46:41.398 CST [12603] alia_test@alia_api_contract LOG:  process 12603 still waiting for AccessShareLock on relation 1052446 of database 16384 after 701.564 ms at character 115
+2026-11-11 15:46:41.398 CST [12603] alia_test@alia_api_contract DETAIL:  Process holding the lock: 12604. Wait queue: 12602, 12603.
+2026-11-11 15:46:41.398 CST [12603] alia_test@alia_api_contract STATEMENT:  SELECT a.owner_id,a.appraisal_id FROM appraisal_records a JOIN companion_policies p ON p.owner_id=a.owner_id JOIN users u ON u.id=a.owner_id AND u.status='active' JOIN memory_privacy_state privacy ON privacy.user_id=a.owner_id AND privacy.privacy_epoch=a.source_privacy_epoch JOIN relationship_authority relationship ON relationship.owner_id=a.owner_id AND relationship.relationship_epoch=a.source_relationship_epoch JOIN context_policy g ON g.singleton AND g.version=a.policy_version WHERE (g.policy->'appraisal'->'affect'->>'enabled')::boolean AND (g.policy->'appraisal'->'affect'->>'relationship_profile_user_visible')::boolean AND g.policy->>'paused_until' IS NULL AND a.status='active' AND a.source_fact->>'kind'='user_message' AND p.policy->>'mode'='enabled' AND NOT (p.policy->>'quiet')::boolean AND NOT (p.policy->>'paused')::boolean AND p.enabled_since IS NOT NULL AND a.effective_at>=p.enabled_since AND a.effective_at<=clock_timestamp() AND a.valid_until>clock_timestamp() AND a.effective_at+((p.policy->>'candidate_ttl_seconds')::integer*interval '1 second')>clock_timestamp() AND NOT EXISTS(SELECT 1 FROM companion_source_claims c WHERE c.owner_id=a.owner_id AND c.source_event_id=a.source_event_id) AND NOT EXISTS(SELECT 1 FROM companion_rejected_sources r WHERE r.owner_id=a.owner_id AND r.appraisal_id=a.appraisal_id) AND (SELECT count(*) FROM companion_live_pending l WHERE l.owner_id=a.owner_id AND l.private_candidate IS NOT NULL)<4 ORDER BY a.effective_at,a.appraisal_id LIMIT $1
+2026-11-11 15:46:41.398 CST [12602] alia_test@alia_api_contract LOG:  process 12602 still waiting for AccessShareLock on relation 1052446 of database 16384 after 703.262 ms at character 26
+2026-11-11 15:46:41.398 CST [12602] alia_test@alia_api_contract DETAIL:  Process holding the lock: 12604. Wait queue: 12602, 12603.
+2026-11-11 15:46:41.398 CST [12602] alia_test@alia_api_contract STATEMENT:  SELECT "users"."id" FROM "users" WHERE "users"."id" = $1 AND "users"."status" = $2 AND "users"."role" = $3 LIMIT $4
+2026-11-11 15:46:42.696 CST [12602] alia_test@alia_api_contract LOG:  process 12602 acquired AccessShareLock on relation 1052446 of database 16384 after 2001.839 ms at character 26
+2026-11-11 15:46:42.696 CST [12602] alia_test@alia_api_contract STATEMENT:  SELECT "users"."id" FROM "users" WHERE "users"."id" = $1 AND "users"."status" = $2 AND "users"."role" = $3 LIMIT $4
+2026-11-11 15:46:42.696 CST [12603] alia_test@alia_api_contract LOG:  process 12603 acquired AccessShareLock on relation 1052446 of database 16384 after 2000.173 ms at character 115
+2026-11-11 15:46:42.696 CST [12603] alia_test@alia_api_contract STATEMENT:  SELECT a.owner_id,a.appraisal_id FROM appraisal_records a JOIN companion_policies p ON p.owner_id=a.owner_id JOIN users u ON u.id=a.owner_id AND u.status='active' JOIN memory_privacy_state privacy ON privacy.user_id=a.owner_id AND privacy.privacy_epoch=a.source_privacy_epoch JOIN relationship_authority relationship ON relationship.owner_id=a.owner_id AND relationship.relationship_epoch=a.source_relationship_epoch JOIN context_policy g ON g.singleton AND g.version=a.policy_version WHERE (g.policy->'appraisal'->'affect'->>'enabled')::boolean AND (g.policy->'appraisal'->'affect'->>'relationship_profile_user_visible')::boolean AND g.policy->>'paused_until' IS NULL AND a.status='active' AND a.source_fact->>'kind'='user_message' AND p.policy->>'mode'='enabled' AND NOT (p.policy->>'quiet')::boolean AND NOT (p.policy->>'paused')::boolean AND p.enabled_since IS NOT NULL AND a.effective_at>=p.enabled_since AND a.effective_at<=clock_timestamp() AND a.valid_until>clock_timestamp() AND a.effective_at+((p.policy->>'candidate_ttl_seconds')::integer*interval '1 second')>clock_timestamp() AND NOT EXISTS(SELECT 1 FROM companion_source_claims c WHERE c.owner_id=a.owner_id AND c.source_event_id=a.source_event_id) AND NOT EXISTS(SELECT 1 FROM companion_rejected_sources r WHERE r.owner_id=a.owner_id AND r.appraisal_id=a.appraisal_id) AND (SELECT count(*) FROM companion_live_pending l WHERE l.owner_id=a.owner_id AND l.private_candidate IS NOT NULL)<4 ORDER BY a.effective_at,a.appraisal_id LIMIT $1
+2026-11-11 15:46:42.698 CST [12603] alia_test@alia_api_contract ERROR:  canceling statement due to statement timeout
+2026-11-11 15:46:42.698 CST [12603] alia_test@alia_api_contract STATEMENT:  SELECT a.owner_id,a.appraisal_id FROM appraisal_records a JOIN companion_policies p ON p.owner_id=a.owner_id JOIN users u ON u.id=a.owner_id AND u.status='active' JOIN memory_privacy_state privacy ON privacy.user_id=a.owner_id AND privacy.privacy_epoch=a.source_privacy_epoch JOIN relationship_authority relationship ON relationship.owner_id=a.owner_id AND relationship.relationship_epoch=a.source_relationship_epoch JOIN context_policy g ON g.singleton AND g.version=a.policy_version WHERE (g.policy->'appraisal'->'affect'->>'enabled')::boolean AND (g.policy->'appraisal'->'affect'->>'relationship_profile_user_visible')::boolean AND g.policy->>'paused_until' IS NULL AND a.status='active' AND a.source_fact->>'kind'='user_message' AND p.policy->>'mode'='enabled' AND NOT (p.policy->>'quiet')::boolean AND NOT (p.policy->>'paused')::boolean AND p.enabled_since IS NOT NULL AND a.effective_at>=p.enabled_since AND a.effective_at<=clock_timestamp() AND a.valid_until>clock_timestamp() AND a.effective_at+((p.policy->>'candidate_ttl_seconds')::integer*interval '1 second')>clock_timestamp() AND NOT EXISTS(SELECT 1 FROM companion_source_claims c WHERE c.owner_id=a.owner_id AND c.source_event_id=a.source_event_id) AND NOT EXISTS(SELECT 1 FROM companion_rejected_sources r WHERE r.owner_id=a.owner_id AND r.appraisal_id=a.appraisal_id) AND (SELECT count(*) FROM companion_live_pending l WHERE l.owner_id=a.owner_id AND l.private_candidate IS NOT NULL)<4 ORDER BY a.effective_at,a.appraisal_id LIMIT $1
+2026-11-11 15:46:44.090 CST [12658] alia_test@alia_api_contract WARNING:  there is no transaction in progress
+2026-11-11 15:46:44.579 CST [12662] alia_test@alia_api_contract ERROR:  relation "skill_preferred_tools" does not exist at character 121
+2026-11-11 15:46:44.579 CST [12662] alia_test@alia_api_contract STATEMENT:  SELECT "skill_preferred_tools"."skill_id", "skill_preferred_tools"."tool_id", "skill_preferred_tools"."created_at" FROM "skill_preferred_tools"
+2026-11-11 15:46:44.581 CST [12662] alia_test@alia_api_contract ERROR:  relation "skill_preferred_tools" does not exist at character 121
+2026-11-11 15:46:44.581 CST [12662] alia_test@alia_api_contract STATEMENT:  SELECT "skill_preferred_tools"."skill_id", "skill_preferred_tools"."tool_id", "skill_preferred_tools"."created_at" FROM "skill_preferred_tools" WHERE "skill_preferred_tools"."skill_id" = $1
+2026-11-11 15:46:44.591 CST [12662] alia_test@alia_api_contract ERROR:  relation "tools" does not exist at character 334
+2026-11-11 15:46:44.591 CST [12662] alia_test@alia_api_contract STATEMENT:  SELECT "tools"."id", "tools"."name", "tools"."description", "tools"."parameters", "tools"."source", "tools"."require_confirmation", "tools"."required_role", "tools"."routing_keywords", "tools"."routing_examples", "tools"."routing_text", "tools"."routing_embedding", "tools"."enabled", "tools"."created_at", "tools"."updated_at" FROM "tools" WHERE "tools"."enabled" = $1
+2026-11-11 15:46:48.411 CST [12725] alia_test@alia_api_contract LOG:  could not receive data from client: Connection reset by peer
+2026-11-11 15:46:48.824 CST [12736] alia_test@alia_api_contract WARNING:  there is no transaction in progress
+2026-11-11 15:51:00.605 CST [7652] @ LOG:  checkpoint complete: wrote 5969 buffers (36.4%), wrote 6 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.538 s, sync=0.392 s, total=272.154 s; sync files=25823, longest=0.001 s, average=0.001 s; distance=540723 kB, estimate=540723 kB; lsn=0/95E961C0, redo lsn=0/8500DBB8
+2026-11-11 16:32:43.377 CST [7647] @ LOG:  received fast shutdown request
+2026-11-11 16:32:43.377 CST [7647] @ LOG:  aborting any active transactions
+2026-11-11 16:32:43.378 CST [7647] @ LOG:  background worker "logical replication launcher" (PID 7657) exited with exit code 1
+2026-11-11 16:32:43.379 CST [7652] @ LOG:  shutting down
+2026-11-11 16:32:43.379 CST [7652] @ LOG:  checkpoint starting: shutdown immediate
+2026-11-11 16:32:44.322 CST [7652] @ LOG:  checkpoint complete: wrote 9736 buffers (59.4%), wrote 4 SLRU buffers; 0 WAL file(s) added, 0 removed, 16 recycled; write=0.075 s, sync=0.014 s, total=0.943 s; sync files=78, longest=0.003 s, average=0.001 s; distance=277025 kB, estimate=514353 kB; lsn=0/95E96340, redo lsn=0/95E96340
+2026-11-11 16:32:44.328 CST [7647] @ LOG:  database system is shut down

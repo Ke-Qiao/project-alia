@@ -1,0 +1,6 @@
+COMMAND: cargo check -p alia-server --no-default-features --all-targets --offline --locked
+START_UTC: 20261111T083501992752Z
+    Checking alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 25.38s
+
+EXIT_CODE: 0

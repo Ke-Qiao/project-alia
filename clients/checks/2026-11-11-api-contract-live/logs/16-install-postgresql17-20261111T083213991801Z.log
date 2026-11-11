@@ -1,0 +1,129 @@
+COMMAND: /opt/homebrew/bin/brew install postgresql@17
+START_UTC: 20261111T083213991801Z
+Warning: The following taps are not trusted:
+  jandedobbeleer/oh-my-posh
+
+Homebrew is currently ignoring formulae, casks and commands
+from these taps because tap trust is required.
+Prefer trusting only the specific formulae, casks or commands you need.
+Trust installed formulae from these taps with:
+  brew trust --formula jandedobbeleer/oh-my-posh/oh-my-posh
+Trust other specific casks and commands with:
+  brew trust --cask <user>/<tap>/<cask>
+  brew trust --command <user>/<tap>/<command>
+Whole-tap trust is broader and includes all current and future formulae,
+casks and commands from the listed taps. Trust whole taps with:
+  brew trust jandedobbeleer/oh-my-posh
+Untap them with:
+  brew untap jandedobbeleer/oh-my-posh
+For more information, see:
+  https://docs.brew.sh/Tap-Trust
+==> Downloading bottle manifests
+✔︎ Bottle Manifest postgresql@17 (17.11)
+==> Would install 1 formula:
+postgresql@17 17.11
+==> Would upgrade 2 dependencies for postgresql@17:
+ca-certificates
+openssl@3
+==> Fetching downloads for: postgresql@17
+✔︎ Bottle ca-certificates (2026-09-25)
+✔︎ Bottle openssl@3 (3.6.5)
+✔︎ Bottle postgresql@17 (17.11)
+Warning: postgresql@17 was installed but not linked because postgresql@18 is already linked.
+To link this version, run:
+  brew link postgresql@17
+==> Pouring postgresql@17--17.11.arm64_tahoe.bottle.tar.gz
+The files belonging to this database system will be owned by user "ke-qiao".
+This user must also own the server process.
+
+The database cluster will be initialized with locale "en_US.UTF-8".
+The default text search configuration will be set to "english".
+
+Data page checksums are disabled.
+
+fixing permissions on existing directory /opt/homebrew/var/postgresql@17 ... ok
+creating subdirectories ... ok
+selecting dynamic shared memory implementation ... posix
+selecting default "max_connections" ... 100
+selecting default "shared_buffers" ... 128MB
+selecting default time zone ... Asia/Shanghai
+creating configuration files ... ok
+running bootstrap script ... ok
+performing post-bootstrap initialization ... ok
+syncing data to disk ... ok
+
+
+Success. You can now start the database server using:
+
+    '/opt/homebrew/Cellar/postgresql@17/17.11/bin/pg_ctl' -D '/opt/homebrew/var/postgresql@17' -l logfile start
+
+initdb: warning: enabling "trust" authentication for local connections
+initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+🍺  /opt/homebrew/Cellar/postgresql@17/17.11: 3,828 files, 75.2MB
+==> Caveats
+==> postgresql@17
+This formula has created a default database cluster with:
+  initdb --locale=en_US.UTF-8 -E UTF-8 /opt/homebrew/var/postgresql@17
+
+When uninstalling, some dead symlinks are left behind so you may want to run:
+  brew cleanup --prune-prefix
+
+postgresql@17 is keg-only, which means it was not symlinked into /opt/homebrew,
+because this is an alternate version of another formula.
+
+If you need to have postgresql@17 first in your PATH, run:
+  echo 'export PATH=/opt/homebrew/opt/postgresql@17/bin:$PATH' >> ~/.zshrc
+
+For compilers to find postgresql@17 you may need to set:
+  export LDFLAGS=-L/opt/homebrew/opt/postgresql@17/lib
+  export CPPFLAGS=-I/opt/homebrew/opt/postgresql@17/include
+
+The following postgresql@17 executables are shadowed by other linked Homebrew commands:
+  clusterdb (shadowed by /opt/homebrew/bin/clusterdb from postgresql@18)
+  createdb (shadowed by /opt/homebrew/bin/createdb from postgresql@18)
+  createuser (shadowed by /opt/homebrew/bin/createuser from postgresql@18)
+  dropdb (shadowed by /opt/homebrew/bin/dropdb from postgresql@18)
+  dropuser (shadowed by /opt/homebrew/bin/dropuser from postgresql@18)
+  ecpg (shadowed by /opt/homebrew/bin/ecpg from postgresql@18)
+  initdb (shadowed by /opt/homebrew/bin/initdb from postgresql@18)
+  oid2name (shadowed by /opt/homebrew/bin/oid2name from postgresql@18)
+  pg_amcheck (shadowed by /opt/homebrew/bin/pg_amcheck from postgresql@18)
+  pg_archivecleanup (shadowed by /opt/homebrew/bin/pg_archivecleanup from postgresql@18)
+  pg_basebackup (shadowed by /opt/homebrew/bin/pg_basebackup from postgresql@18)
+  pg_checksums (shadowed by /opt/homebrew/bin/pg_checksums from postgresql@18)
+  pg_combinebackup (shadowed by /opt/homebrew/bin/pg_combinebackup from postgresql@18)
+  pg_config (shadowed by /opt/homebrew/bin/pg_config from postgresql@18)
+  pg_controldata (shadowed by /opt/homebrew/bin/pg_controldata from postgresql@18)
+  pg_createsubscriber (shadowed by /opt/homebrew/bin/pg_createsubscriber from postgresql@18)
+  pg_ctl (shadowed by /opt/homebrew/bin/pg_ctl from postgresql@18)
+  pg_dump (shadowed by /opt/homebrew/bin/pg_dump from postgresql@18)
+  pg_dumpall (shadowed by /opt/homebrew/bin/pg_dumpall from postgresql@18)
+  pg_isready (shadowed by /opt/homebrew/bin/pg_isready from postgresql@18)
+  pg_receivewal (shadowed by /opt/homebrew/bin/pg_receivewal from postgresql@18)
+  pg_recvlogical (shadowed by /opt/homebrew/bin/pg_recvlogical from postgresql@18)
+  pg_resetwal (shadowed by /opt/homebrew/bin/pg_resetwal from postgresql@18)
+  pg_restore (shadowed by /opt/homebrew/bin/pg_restore from postgresql@18)
+  pg_rewind (shadowed by /opt/homebrew/bin/pg_rewind from postgresql@18)
+  pg_test_fsync (shadowed by /opt/homebrew/bin/pg_test_fsync from postgresql@18)
+  pg_test_timing (shadowed by /opt/homebrew/bin/pg_test_timing from postgresql@18)
+  pg_upgrade (shadowed by /opt/homebrew/bin/pg_upgrade from postgresql@18)
+  pg_verifybackup (shadowed by /opt/homebrew/bin/pg_verifybackup from postgresql@18)
+  pg_waldump (shadowed by /opt/homebrew/bin/pg_waldump from postgresql@18)
+  pg_walsummary (shadowed by /opt/homebrew/bin/pg_walsummary from postgresql@18)
+  pgbench (shadowed by /opt/homebrew/bin/pgbench from postgresql@18)
+  postgres (shadowed by /opt/homebrew/bin/postgres from postgresql@18)
+  psql (shadowed by /opt/homebrew/bin/psql from postgresql@18)
+  reindexdb (shadowed by /opt/homebrew/bin/reindexdb from postgresql@18)
+  vacuumdb (shadowed by /opt/homebrew/bin/vacuumdb from postgresql@18)
+  vacuumlo (shadowed by /opt/homebrew/bin/vacuumlo from postgresql@18)
+Running these by name will not invoke the version provided by this formula.
+Run `brew link postgresql@17` to switch the active version to this keg.
+Disable this behaviour by setting `HOMEBREW_NO_PATH_SHADOW_CHECK=1`.
+Hide these hints with `HOMEBREW_NO_ENV_HINTS=1` (see `man brew`).
+
+To start postgresql@17 now and restart at login:
+  brew services start postgresql@17
+Or, if you don't want/need a background service you can just run:
+  LC_ALL="en_US.UTF-8" /opt/homebrew/opt/postgresql@17/bin/postgres -D /opt/homebrew/var/postgresql@17
+
+EXIT_CODE: 0

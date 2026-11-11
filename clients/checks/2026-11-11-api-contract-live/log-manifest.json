@@ -1,0 +1,163 @@
+{
+  "status": "complete",
+  "source_directory": "run/api-contract-live-2026-11-11",
+  "file_count": 31,
+  "total_bytes": 728606,
+  "files": [
+    {
+      "file": "logs/00-preflight.log",
+      "bytes": 359,
+      "sha256": "0b0a34896c9d2e28bb0fe7dcb4d4b670f6c234154ebe651bc5dc619ed9435329"
+    },
+    {
+      "file": "logs/01-postgres-package-info-20261111T073615254871Z.log",
+      "bytes": 9240,
+      "sha256": "26639a95d1ff8167e0754d3706e7d8f1f9faaf93293a3a564c5a476018d5640f"
+    },
+    {
+      "file": "logs/02-install-isolated-db-tools-20261111T073647452381Z.log",
+      "bytes": 5956,
+      "sha256": "21e4620b1b793eff75f6032ae09fa65708c8b4f92d08f5cfa9b43d52e5c05fbc"
+    },
+    {
+      "file": "logs/03-compile-http-contract-20261111T073726848741Z.log",
+      "bytes": 403,
+      "sha256": "2a9d8549cab3fbd6aef0f9d6fcaa82ba0e6b976e5c9be4eb19ff1e6e1bf664ca"
+    },
+    {
+      "file": "logs/04-wasm-fixtures-20261111T073727981604Z.log",
+      "bytes": 1796,
+      "sha256": "7a7045c0c4e2c05aa2cd660f9cbaf90f32a84926a4271fa3fa156febb4b897a0"
+    },
+    {
+      "file": "logs/05-init-test-cluster-20261111T073810026705Z.log",
+      "bytes": 1217,
+      "sha256": "cd5e27c69acad61f5240c06583679bee5061fbe4b63c97344918c8da129b5afc"
+    },
+    {
+      "file": "logs/05-init-test-cluster-permitted-20261111T073836205358Z.log",
+      "bytes": 1140,
+      "sha256": "b1596517f211551fb155fcec7eb5cd0d9be233394b550df75a7315add786b169"
+    },
+    {
+      "file": "logs/06-start-test-cluster-20261111T073924224163Z.log",
+      "bytes": 313,
+      "sha256": "ec7fd2f1778e87bce286ad33d1565c1918c02d900ca192bee6a80413f76071f9"
+    },
+    {
+      "file": "logs/07-create-test-database-20261111T074002969938Z.log",
+      "bytes": 155,
+      "sha256": "c4731ccc1a27241a5d0d86b4abad5292a478ad3ef0fd20ebde5aa1d7af833b2e"
+    },
+    {
+      "file": "logs/08-verify-test-database-20261111T074007255764Z.log",
+      "bytes": 1346,
+      "sha256": "6310a614c73c275d66d51500dbd02dba63017cde1498b6ed116bc81c224707ec"
+    },
+    {
+      "file": "logs/09-real-http-contract-20261111T074012759777Z.log",
+      "bytes": 34511,
+      "sha256": "7f41240061f898beac49993025d4155e5e3d3b29220aabd430364b99b66b4cf3"
+    },
+    {
+      "file": "logs/10-server-suite-20261111T074054436502Z.log",
+      "bytes": 148932,
+      "sha256": "a51452c8f1fa1045f7c13e01d5d46f75071e159a0e3a0f9c7de126ef2c20bcd3"
+    },
+    {
+      "file": "logs/11-server-boundaries-20261111T074055638152Z.log",
+      "bytes": 135,
+      "sha256": "73525325a2587239ad5fa784be09ff6fcca51370cba914c684ec3318b9ce4448"
+    },
+    {
+      "file": "logs/12-format-20261111T074056783432Z.log",
+      "bytes": 84,
+      "sha256": "0eb40728fb8536159d16e5063aeb84a65f231f1c9eb11d4acaad1b221ef86544"
+    },
+    {
+      "file": "logs/13-wasm-fixtures-correct-cwd-20261111T082734979428Z.log",
+      "bytes": 891,
+      "sha256": "2b126a9e50233781beacef66369fa9d25e59742760a38450d363041552926bf3"
+    },
+    {
+      "file": "logs/14-clippy-20261111T082736110420Z.log",
+      "bytes": 175032,
+      "sha256": "6f49357dd8974ba1ff9ca5f72f96e0eda7c3387fe90cef8ef0a90b191ef23ec7"
+    },
+    {
+      "file": "logs/15-pg18-constraint-evidence-20261111T083208794620Z.log",
+      "bytes": 3961,
+      "sha256": "972eb450947a0f4c734af81e180ad8726e8acd02f4921b90e27d06845e967a34"
+    },
+    {
+      "file": "logs/16-install-postgresql17-20261111T083213991801Z.log",
+      "bytes": 6797,
+      "sha256": "b0e70f67ed62be90ce215ad1a38695599bda676a6b548c068803515be93ff0fc"
+    },
+    {
+      "file": "logs/17-stop-pg18-20261111T083243370893Z.log",
+      "bytes": 235,
+      "sha256": "3e70eddb4043c4c5e62d97ba0284f4dafb1f4056e67564b991986c7e1e70ba92"
+    },
+    {
+      "file": "logs/18-init-pg17-20261111T083326518371Z.log",
+      "bytes": 871,
+      "sha256": "071771c0eda4a453526e0b9b4f3c3b36338080e62d8d442cde130353dfcd0463"
+    },
+    {
+      "file": "logs/18-init-pg17-new-20261111T083351691801Z.log",
+      "bytes": 1157,
+      "sha256": "ef1b7f6501ccc32699ca480d15e9f56f0a0cef2265b746e7b5e6cb9c529d3e83"
+    },
+    {
+      "file": "logs/19-start-pg17-20261111T083406235087Z.log",
+      "bytes": 320,
+      "sha256": "b04071640912d15215382bac137483a660a07df92439a2851c8796bc38425ebb"
+    },
+    {
+      "file": "logs/20-create-pg17-database-20261111T083420742608Z.log",
+      "bytes": 155,
+      "sha256": "dafedacc65d77b53953c905d1edb276a1cdf9f2b6ed48d275e0ee2ca5e4901e0"
+    },
+    {
+      "file": "logs/21-verify-pg17-20261111T083435478780Z.log",
+      "bytes": 1393,
+      "sha256": "67dd62ffc0b137fffffd8e29b9aacc2b32d8f655e9437fe6d8ea303e8adb7d87"
+    },
+    {
+      "file": "logs/22-server-suite-pg17-20261111T083500837090Z.log",
+      "bytes": 147121,
+      "sha256": "dec6e8dbc446873eced0e9262ae6621e3b4f38e6daab0fea5bc309ad34f6f943"
+    },
+    {
+      "file": "logs/23-no-default-features-20261111T083501992752Z.log",
+      "bytes": 305,
+      "sha256": "a8e0986e42f05127961b2b927a1f47755f7ba42a0530ace0a4fad095d5f45e6c"
+    },
+    {
+      "file": "logs/24-pg17-final-database-state-20261111T084010394091Z.log",
+      "bytes": 1089,
+      "sha256": "a7c97e7904004ea3917a0421e01114f467b930c87a84ced52a565c71507c021c"
+    },
+    {
+      "file": "logs/25-stop-pg17-20261111T084020223826Z.log",
+      "bytes": 242,
+      "sha256": "13768ada779abb79c4f6fb942fc803358c45a61defda4b77770a5056bc9ec030"
+    },
+    {
+      "file": "logs/26-verify-stopped-20261111T084056776290Z.log",
+      "bytes": 449,
+      "sha256": "646bb7661e1d775894f0a1f9b7e02bee1114be5202cb99ad66ea25dab03cbcbc"
+    },
+    {
+      "file": "logs/postgresql.log",
+      "bytes": 119443,
+      "sha256": "239056eb8004cda7742caeafd31765cbe1de2996d1b1c7bf15800b8a0b6b69f8"
+    },
+    {
+      "file": "logs/postgresql17.log",
+      "bytes": 63558,
+      "sha256": "45c8e8b4a4387ddc939fa10bec21586d59d10db5f8fb9554b4e8ebfadd069884"
+    }
+  ]
+}

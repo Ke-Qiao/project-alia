@@ -1,0 +1,4 @@
+Starting branch codex/api-contract-errors, clean worktree, HEAD 0bf23731bc407cb6259be8a5f0a857642159dcb5.
+Docker context orbstack socket absent; orbctl status: Stopped. No VM or old service restarted.
+Native PostgreSQL server binary absent; libpq 18.6 client tools installed.
+User authorizes independent test DB and real backend integration, no real devices.

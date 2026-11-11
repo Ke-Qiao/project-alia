@@ -47,6 +47,12 @@ mod websocket;
 #[path = "server_runtime/auth.rs"]
 mod auth;
 
+#[path = "server_runtime/api_contract_auth.rs"]
+mod api_contract_auth;
+
+#[path = "server_runtime/api_contract_conversations.rs"]
+mod api_contract_conversations;
+
 #[path = "server_runtime/insights.rs"]
 mod insights;
 

@@ -1,0 +1,6 @@
+COMMAND: /opt/homebrew/opt/postgresql@18/bin/pg_ctl -D /private/tmp/alia-api-contract-20261111-ks58v_1w/data -m fast -w -t 15 stop
+START_UTC: 20261111T083243370893Z
+waiting for server to shut down.... done
+server stopped
+
+EXIT_CODE: 0

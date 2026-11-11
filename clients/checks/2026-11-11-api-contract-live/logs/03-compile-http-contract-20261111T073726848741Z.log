@@ -1,0 +1,7 @@
+COMMAND: cargo test -p alia-server --test server_runtime api_contract_ --offline --locked --no-run
+START_UTC: 20261111T073726848741Z
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 52.56s
+  Executable tests/server_runtime.rs (target/debug/deps/server_runtime-b69125e8bfbca854)
+
+EXIT_CODE: 0

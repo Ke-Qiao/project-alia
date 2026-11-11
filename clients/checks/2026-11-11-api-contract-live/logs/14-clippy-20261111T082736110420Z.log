@@ -1,0 +1,4049 @@
+COMMAND: cargo clippy -p alia-server --all-targets --offline --locked
+START_UTC: 20261111T082736110420Z
+warning: manual implementation of `.is_multiple_of()`
+  --> crates/alia-core/src/capture.rs:53:30
+   |
+53 |         if pcm.is_empty() || pcm.len() % 2 != 0 || pcm.len() > MAX_FRAME_SAMPLES * 2 {
+   |                              ^^^^^^^^^^^^^^^^^^ help: replace with: `!pcm.len().is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#manual_is_multiple_of
+   = note: `#[warn(clippy::manual_is_multiple_of)]` on by default
+
+warning: manual implementation of `.is_multiple_of()`
+  --> crates/alia-core/src/voice.rs:41:32
+   |
+41 |         if bytes.is_empty() || bytes.len() % 2 != 0 {
+   |                                ^^^^^^^^^^^^^^^^^^^^ help: replace with: `!bytes.len().is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+  --> crates/alia-core/src/voice.rs:74:32
+   |
+74 |         if bytes.is_empty() || bytes.len() % 2 != 0 {
+   |                                ^^^^^^^^^^^^^^^^^^^^ help: replace with: `!bytes.len().is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#manual_is_multiple_of
+
+warning: `alia-core` (lib) generated 3 warnings (run `cargo clippy --fix --lib -p alia-core -- ` to apply 3 suggestions)
+warning: empty line after doc comment
+   --> packages/alia-server/src/channels/embedded/channel.rs:672:5
+    |
+672 | /     /// Connect the single scoped playback transport lazily.
+673 | |
+    | |_^
+674 |       async fn playback_client(&self) -> anyhow::Result<PlaybackClient<Channel>> {
+    |       ------------------------ the comment documents this function
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#empty_line_after_doc_comments
+    = note: `#[warn(clippy::empty_line_after_doc_comments)]` on by default
+    = help: if the empty line is unintentional, remove it
+
+warning: unneeded unit expression
+   --> packages/alia-server/src/modules/companion/repository.rs:490:17
+    |
+490 |                 ()
+    |                 ^^ help: remove the final `()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#unused_unit
+    = note: `#[warn(clippy::unused_unit)]` on by default
+
+warning: unneeded unit expression
+   --> packages/alia-server/src/modules/memory/service.rs:477:25
+    |
+477 |                         ()
+    |                         ^^ help: remove the final `()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#unused_unit
+
+warning: the `Err`-variant returned from this function is very large
+  --> packages/alia-server/src/api/auth.rs:65:36
+   |
+65 | fn normalize_email(email: &str) -> Result<String> {
+   |                                    ^^^^^^^^^^^^^^
+   |
+  ::: packages/alia-server/src/error.rs:68:5
+   |
+68 |     Grpc(#[source] tonic::Status),
+   |     ----------------------------- the largest variant contains at least 176 bytes
+   |
+   = help: try reducing the size of `error::AppError`, for example by boxing large elements or replacing it with `Box<error::AppError>`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+   = note: `#[warn(clippy::result_large_err)]` on by default
+
+warning: the `Err`-variant returned from this function is very large
+  --> packages/alia-server/src/api/auth.rs:73:33
+   |
+73 | fn validate_name(name: &str) -> Result<String> {
+   |                                 ^^^^^^^^^^^^^^
+   |
+  ::: packages/alia-server/src/error.rs:68:5
+   |
+68 |     Grpc(#[source] tonic::Status),
+   |     ----------------------------- the largest variant contains at least 176 bytes
+   |
+   = help: try reducing the size of `error::AppError`, for example by boxing large elements or replacing it with `Box<error::AppError>`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: the `Err`-variant returned from this function is very large
+  --> packages/alia-server/src/api/auth.rs:83:41
+   |
+83 | fn validate_password(password: &str) -> Result<()> {
+   |                                         ^^^^^^^^^^
+   |
+  ::: packages/alia-server/src/error.rs:68:5
+   |
+68 |     Grpc(#[source] tonic::Status),
+   |     ----------------------------- the largest variant contains at least 176 bytes
+   |
+   = help: try reducing the size of `error::AppError`, for example by boxing large elements or replacing it with `Box<error::AppError>`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/api/auth.rs:393:5
+    |
+393 | /     if let Some(stored) = refresh_token::Entity::find()
+394 | |         .filter(refresh_token::Column::TokenHash.eq(token_hash))
+395 | |         .one(&state.db)
+396 | |         .await?
+...   |
+403 | |     }
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+    = note: `#[warn(clippy::collapsible_if)]` on by default
+help: collapse nested if block
+    |
+396 ~         .await?
+397 ~         && stored.revoked_at.is_none() {
+398 |             let mut revoke: refresh_token::ActiveModel = stored.into();
+399 |             revoke.revoked_at = Set(Some(Utc::now().into()));
+400 |             revoke.update(&state.db).await?;
+401 ~         }
+    |
+
+warning: this boolean expression can be simplified
+   --> packages/alia-server/src/api/channels.rs:154:12
+    |
+154 |         if !user.is_some_and(|user| user.status == "active") {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `user.is_none_or(|user| user.status != "active")`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#nonminimal_bool
+    = note: `#[warn(clippy::nonminimal_bool)]` on by default
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/api/personas.rs:417:5
+    |
+417 | /     if let Some(active) = user_active_persona::Entity::find_by_id(user_id)
+418 | |         .one(&state.db)
+419 | |         .await
+420 | |         .map_err(AppError::Database)?
+...   |
+430 | |     }
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+420 ~         .map_err(AppError::Database)?
+421 ~         && let Some(p) = persona::Entity::find_by_id(active.persona_id)
+422 |             .filter(persona::Column::Enabled.eq(true))
+...
+427 |             return Ok(p);
+428 ~         }
+    |
+
+warning: the `Err`-variant returned from this function is very large
+   --> packages/alia-server/src/api/plugins.rs:222:49
+    |
+222 | pub(super) fn require_admin(auth: &AuthUser) -> Result<()> {
+    |                                                 ^^^^^^^^^^
+    |
+   ::: packages/alia-server/src/error.rs:68:5
+    |
+ 68 |     Grpc(#[source] tonic::Status),
+    |     ----------------------------- the largest variant contains at least 176 bytes
+    |
+    = help: try reducing the size of `error::AppError`, for example by boxing large elements or replacing it with `Box<error::AppError>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/api/settings.rs:225:5
+    |
+225 | /     if !changed.is_empty() || !requested_keys.is_empty() {
+226 | |         if let Err(e) = state.settings.save().await {
+227 | |             tracing::warn!(error = %e, "failed to persist settings");
+228 | |             let error = if e
+...   |
+238 | |     }
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+225 ~     if (!changed.is_empty() || !requested_keys.is_empty()) {
+226 ~         && let Err(e) = state.settings.save().await {
+227 |             tracing::warn!(error = %e, "failed to persist settings");
+...
+236 |             errors.push(error.into());
+237 ~         }
+    |
+
+warning: the `Err`-variant returned from this function is very large
+  --> packages/alia-server/src/api/users.rs:53:33
+   |
+53 | fn validate_name(name: &str) -> Result<String> {
+   |                                 ^^^^^^^^^^^^^^
+   |
+  ::: packages/alia-server/src/error.rs:68:5
+   |
+68 |     Grpc(#[source] tonic::Status),
+   |     ----------------------------- the largest variant contains at least 176 bytes
+   |
+   = help: try reducing the size of `error::AppError`, for example by boxing large elements or replacing it with `Box<error::AppError>`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: the `Err`-variant returned from this function is very large
+  --> packages/alia-server/src/api/users.rs:63:33
+   |
+63 | fn validate_role(role: &str) -> Result<String> {
+   |                                 ^^^^^^^^^^^^^^
+   |
+  ::: packages/alia-server/src/error.rs:68:5
+   |
+68 |     Grpc(#[source] tonic::Status),
+   |     ----------------------------- the largest variant contains at least 176 bytes
+   |
+   = help: try reducing the size of `error::AppError`, for example by boxing large elements or replacing it with `Box<error::AppError>`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: the `Err`-variant returned from this function is very large
+  --> packages/alia-server/src/api/users.rs:71:37
+   |
+71 | fn validate_status(status: &str) -> Result<String> {
+   |                                     ^^^^^^^^^^^^^^
+   |
+  ::: packages/alia-server/src/error.rs:68:5
+   |
+68 |     Grpc(#[source] tonic::Status),
+   |     ----------------------------- the largest variant contains at least 176 bytes
+   |
+   = help: try reducing the size of `error::AppError`, for example by boxing large elements or replacing it with `Box<error::AppError>`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/api/voice.rs:218:9
+    |
+218 | /         if let Some(ref caps) = capabilities {
+219 | |             if !caps.voice_input {
+220 | |                 return Err(AppError::Validation(
+221 | |                     "target channel does not support voice input".into(),
+...   |
+224 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+218 ~         if let Some(ref caps) = capabilities
+219 ~             && !caps.voice_input {
+220 |                 return Err(AppError::Validation(
+221 |                     "target channel does not support voice input".into(),
+222 |                 ));
+223 ~             }
+    |
+
+warning: struct update has no effect, all the fields in the struct have already been specified
+   --> packages/alia-server/src/api/voice.rs:254:11
+    |
+254 |         ..crate::providers::adapter::ChatMessage::default()
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_update
+    = note: `#[warn(clippy::needless_update)]` on by default
+
+warning: the `Err`-variant returned from this function is very large
+   --> packages/alia-server/src/api/voice.rs:396:34
+    |
+396 | fn base64_decode(input: &str) -> Result<Vec<u8>> {
+    |                                  ^^^^^^^^^^^^^^^
+    |
+   ::: packages/alia-server/src/error.rs:68:5
+    |
+ 68 |     Grpc(#[source] tonic::Status),
+    |     ----------------------------- the largest variant contains at least 176 bytes
+    |
+    = help: try reducing the size of `error::AppError`, for example by boxing large elements or replacing it with `Box<error::AppError>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: this `if` statement can be collapsed
+  --> packages/alia-server/src/auth/user_identity.rs:61:5
+   |
+61 | /     if let (Some(confidence), Some(threshold)) = (assertion.confidence, link.confidence_threshold) {
+62 | |         if confidence < threshold {
+63 | |             return Ok(None);
+64 | |         }
+65 | |     }
+   | |_____^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+   |
+61 ~     if let (Some(confidence), Some(threshold)) = (assertion.confidence, link.confidence_threshold)
+62 ~         && confidence < threshold {
+63 |             return Ok(None);
+64 ~         }
+   |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/bootstrap/builder.rs:381:13
+    |
+381 | /             if custom.is_none()
+382 | |                 && let Some(profile) = profile
+383 | |             {
+384 | |                 if let std::collections::hash_map::Entry::Vacant(entry) =
+...   |
+389 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+382 ~                 && let Some(profile) = profile
+383 ~                 && let std::collections::hash_map::Entry::Vacant(entry) =
+384 |                     pending_llms.entry(profile.to_string())
+385 |                 {
+386 |                     entry.insert(factory::create_llm(&self.config, profile)?);
+387 ~                 }
+    |
+
+warning: this block may be rewritten with the `?` operator
+   --> packages/alia-server/src/channels/cli/text.rs:400:9
+    |
+400 | /         if let Err(error) = result {
+401 | |             return Err(error);
+402 | |         }
+    | |_________^ help: replace it with: `result?;`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#question_mark
+    = note: `#[warn(clippy::question_mark)]` on by default
+
+warning: this function has too many arguments (10/7)
+   --> packages/alia-server/src/channels/cli.rs:358:1
+    |
+358 | / fn run_console(
+359 | |     mut output: mpsc::Receiver<ConsoleOutput>,
+360 | |     bus: &EventBus,
+361 | |     channel_id: &str,
+...   |
+368 | |     text_writers: &text::TextWriters,
+369 | | ) -> anyhow::Result<()> {
+    | |_______________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+    = note: `#[warn(clippy::too_many_arguments)]` on by default
+
+warning: called `expect` on `owner_user_id` after checking its variant with `is_none`
+   --> packages/alia-server/src/channels/cli.rs:531:42
+    |
+486 |                     } else if owner_user_id.is_none() {
+    |                            -------------------------- help: try: `if let Some(<item>) = owner_user_id`
+...
+531 |                                 user_id: owner_user_id.expect("checked above").to_owned(),
+    |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#unnecessary_unwrap
+    = note: `#[warn(clippy::unnecessary_unwrap)]` on by default
+
+warning: manual implementation of `.is_multiple_of()`
+   --> packages/alia-server/src/channels/embedded/audio.rs:111:8
+    |
+111 |     if bytes.len() % 2 != 0 {
+    |        ^^^^^^^^^^^^^^^^^^^^ help: replace with: `!bytes.len().is_multiple_of(2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#manual_is_multiple_of
+    = note: `#[warn(clippy::manual_is_multiple_of)]` on by default
+
+warning: this `if` has identical blocks
+   --> packages/alia-server/src/channels/embedded/channel.rs:518:46
+    |
+518 |                           delay = if connected {
+    |  ______________________________________________^
+519 | |                             base_delay
+520 | |                         } else if delay.is_zero() {
+    | |_________________________^
+    |
+note: same as this
+   --> packages/alia-server/src/channels/embedded/channel.rs:520:51
+    |
+520 |                           } else if delay.is_zero() {
+    |  ___________________________________________________^
+521 | |                             base_delay
+522 | |                         } else {
+    | |_________________________^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#if_same_then_else
+    = note: `#[warn(clippy::if_same_then_else)]` on by default
+
+warning: this `if` statement can be collapsed
+    --> packages/alia-server/src/channels/embedded/motion.rs:1085:9
+     |
+1085 | /         if let (Some(client), Some(lease)) = (
+1086 | |             self.0.transport.read().await.clone(),
+1087 | |             self.0.cursor.lock().await.lease,
+1088 | |         ) {
+...    |
+1098 | |         }
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+     |
+1088 ~         )
+1089 ~             && let Err(error) = client
+1090 |                 .exchange(MotionOperation::Close {
+ ...
+1096 |                 failures.push(format!("close original motion lease: {error:#}"));
+1097 ~             }
+     |
+
+warning: this function has too many arguments (8/7)
+   --> packages/alia-server/src/channels/embedded/playback.rs:99:1
+    |
+ 99 | / pub(super) async fn push(
+100 | |     mut client: PlaybackClient<Channel>,
+101 | |     identity: PlaybackIdentity,
+102 | |     binding: alia_core::output_control::OutputBinding,
+...   |
+107 | |     idle: Duration,
+108 | | ) -> Result<AudioDeliveryReport> {
+    | |________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (10/7)
+   --> packages/alia-server/src/channels/embedded/playback.rs:341:1
+    |
+341 | / async fn produce(
+342 | |     mut audio: AudioPayloadStream,
+343 | |     tx: mpsc::Sender<proto::PlaybackFrame>,
+344 | |     identity: PlaybackIdentity,
+...   |
+351 | |     end_offered: Arc<AtomicBool>,
+352 | | ) -> Result<u64> {
+    | |________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+   --> packages/alia-server/src/channels/embedded/playback.rs:531:32
+    |
+531 | fn wav_header(bytes: &[u8]) -> Result<Option<(usize, (u32, usize), Option<u64>)>> {
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#type_complexity
+    = note: `#[warn(clippy::type_complexity)]` on by default
+
+warning: this `impl` can be derived
+   --> packages/alia-server/src/config.rs:198:1
+    |
+198 | / impl Default for LlmSection {
+199 | |     fn default() -> Self {
+200 | |         Self {
+201 | |             roles: LlmRolesSection::default(),
+...   |
+204 | | }
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#derivable_impls
+    = note: `#[warn(clippy::derivable_impls)]` on by default
+help: replace the manual implementation with a derive attribute
+    |
+193 + #[derive(Default)]
+194 | pub struct LlmSection {
+    |
+
+warning: this `impl` can be derived
+   --> packages/alia-server/src/config.rs:476:1
+    |
+476 | / impl Default for OpenAiApiFamily {
+477 | |     fn default() -> Self {
+478 | |         Self::ChatCompletions
+479 | |     }
+480 | | }
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#derivable_impls
+help: replace the manual implementation with a derive attribute and mark the default variant
+    |
+471 + #[derive(Default)]
+472 | pub enum OpenAiApiFamily {
+473 ~     #[default]
+474 ~     ChatCompletions,
+    |
+
+warning: this `impl` can be derived
+    --> packages/alia-server/src/config.rs:1148:1
+     |
+1148 | / impl Default for LlmProfileKind {
+1149 | |     fn default() -> Self {
+1150 | |         Self::Chat
+1151 | |     }
+1152 | | }
+     | |_^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#derivable_impls
+help: replace the manual implementation with a derive attribute and mark the default variant
+     |
+1142 + #[derive(Default)]
+1143 | pub enum LlmProfileKind {
+1144 ~     #[default]
+1145 ~     Chat,
+     |
+
+warning: this `impl` can be derived
+    --> packages/alia-server/src/config.rs:1461:1
+     |
+1461 | / impl Default for CachePolicyResourceSection {
+1462 | |     fn default() -> Self {
+1463 | |         Self {
+1464 | |             dynamic_query_keywords: Vec::new(),
+...    |
+1469 | | }
+     | |_^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#derivable_impls
+help: replace the manual implementation with a derive attribute
+     |
+1452 + #[derive(Default)]
+1453 | pub struct CachePolicyResourceSection {
+     |
+
+warning: this `impl` can be derived
+    --> packages/alia-server/src/config.rs:1890:1
+     |
+1890 | / impl Default for MemoryCaptureMode {
+1891 | |     fn default() -> Self {
+1892 | |         Self::LlmSelected
+1893 | |     }
+1894 | | }
+     | |_^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#derivable_impls
+help: replace the manual implementation with a derive attribute and mark the default variant
+     |
+1884 + #[derive(Default)]
+1885 | pub enum MemoryCaptureMode {
+1886 |     None,
+1887 |     ExplicitToolOnly,
+1888 ~     #[default]
+1889 ~     LlmSelected,
+     |
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+    --> packages/alia-server/src/config.rs:2171:55
+     |
+2171 |         let mut config: ServerConfig = toml::from_str(&content)?;
+     |                                                       ^^^^^^^^ help: change this to: `content`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_borrow
+     = note: `#[warn(clippy::needless_borrow)]` on by default
+
+warning: this `if` statement can be collapsed
+    --> packages/alia-server/src/config.rs:2191:9
+     |
+2191 | /         if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+2192 | |             if let Some(LlmProviderProfileSection::OpenAi(provider)) =
+2193 | |                 config.providers.llm.get_mut("openai")
+2194 | |                 && provider.api_key.trim().is_empty()
+...    |
+2198 | |         }
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+     |
+2191 ~         if let Ok(key) = std::env::var("OPENAI_API_KEY")
+2192 ~             && let Some(LlmProviderProfileSection::OpenAi(provider)) =
+2193 |                 config.providers.llm.get_mut("openai")
+ ...
+2196 |                 provider.api_key = key;
+2197 ~             }
+     |
+
+warning: this `if` statement can be collapsed
+    --> packages/alia-server/src/config.rs:2199:9
+     |
+2199 | /         if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+2200 | |             if let Some(LlmProviderProfileSection::Anthropic(provider)) =
+2201 | |                 config.providers.llm.get_mut("anthropic")
+2202 | |                 && provider.api_key.trim().is_empty()
+...    |
+2206 | |         }
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+     |
+2199 ~         if let Ok(key) = std::env::var("ANTHROPIC_API_KEY")
+2200 ~             && let Some(LlmProviderProfileSection::Anthropic(provider)) =
+2201 |                 config.providers.llm.get_mut("anthropic")
+ ...
+2204 |                 provider.api_key = key;
+2205 ~             }
+     |
+
+warning: this `if` statement can be collapsed
+    --> packages/alia-server/src/config.rs:2207:9
+     |
+2207 | /         if let Ok(key) = std::env::var("GEMINI_API_KEY") {
+2208 | |             if let Some(LlmProviderProfileSection::Gemini(provider)) =
+2209 | |                 config.providers.llm.get_mut("gemini")
+2210 | |                 && provider.api_key.trim().is_empty()
+...    |
+2214 | |         }
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+     |
+2207 ~         if let Ok(key) = std::env::var("GEMINI_API_KEY")
+2208 ~             && let Some(LlmProviderProfileSection::Gemini(provider)) =
+2209 |                 config.providers.llm.get_mut("gemini")
+ ...
+2212 |                 provider.api_key = key;
+2213 ~             }
+     |
+
+warning: this `.filter_map(..)` can be written more simply using `.map(..)`
+   --> packages/alia-server/src/discovery.rs:287:10
+    |
+287 |           .filter_map(|addr| match addr {
+    |  __________^
+288 | |             Addr::V4(v4) => Some(IpAddr::V4(v4.ip)),
+289 | |             Addr::V6(v6) => Some(IpAddr::V6(v6.ip)),
+290 | |         })
+    | |__________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#unnecessary_filter_map
+    = note: `#[warn(clippy::unnecessary_filter_map)]` on by default
+
+warning: this function has too many arguments (9/7)
+  --> packages/alia-server/src/expression/affect.rs:43:5
+   |
+43 | /     pub(crate) fn new(
+44 | |         kind: impl Into<String>,
+45 | |         source: AppraisalSource,
+46 | |         target: AppraisalTarget,
+...  |
+52 | |         summary: impl Into<String>,
+53 | |     ) -> Self {
+   | |_____________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (9/7)
+   --> packages/alia-server/src/expression/affect.rs:468:1
+    |
+468 | / fn appraisal(
+469 | |     kind: &str,
+470 | |     source: AppraisalSource,
+471 | |     target: AppraisalTarget,
+...   |
+477 | |     summary: &str,
+478 | | ) -> AppraisalEvent {
+    | |___________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this boolean expression can be simplified
+   --> packages/alia-server/src/expression/appraisal.rs:278:8
+    |
+278 |       if (has_positive_phrase && has_correction_or_failure)
+    |  ________^
+279 | |         || (sarcasm_marker && has_correction_or_failure)
+    | |________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#nonminimal_bool
+help: try
+    |
+278 -     if (has_positive_phrase && has_correction_or_failure)
+279 -         || (sarcasm_marker && has_correction_or_failure)
+278 +     if !(!has_correction_or_failure || !has_positive_phrase && !sarcasm_marker)
+    |
+278 -     if (has_positive_phrase && has_correction_or_failure)
+279 -         || (sarcasm_marker && has_correction_or_failure)
+278 +     if (sarcasm_marker || has_positive_phrase) && has_correction_or_failure
+    |
+
+warning: this function has too many arguments (9/7)
+   --> packages/alia-server/src/expression/appraisal.rs:375:1
+    |
+375 | / fn appraisal(
+376 | |     kind: &str,
+377 | |     source: AppraisalSource,
+378 | |     target: AppraisalTarget,
+...   |
+384 | |     summary: &str,
+385 | | ) -> AppraisalEvent {
+    | |___________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/expression/orchestrator.rs:165:5
+    |
+165 | /     if original.command_id.is_none() || result.writer_retired() {
+166 | |         if let Some(active) = state
+167 | |             .active
+168 | |             .lock()
+...   |
+177 | |     }
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+165 ~     if (original.command_id.is_none() || result.writer_retired()) {
+166 ~         && let Some(active) = state
+167 |             .active
+...
+175 |             active.results.clear();
+176 ~         }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/expression/orchestrator.rs:339:9
+    |
+339 | /         if phase.closes_plan() {
+340 | |             if let Some(active) = state
+341 | |                 .active
+342 | |                 .lock()
+...   |
+351 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+339 ~         if phase.closes_plan()
+340 ~             && let Some(active) = state
+341 |                 .active
+...
+349 |                 active.closed = true;
+350 ~             }
+    |
+
+warning: this `if` can be collapsed into the outer `match`
+   --> packages/alia-server/src/expression/runtime.rs:483:17
+    |
+483 | /                 if input.user_state.frustration < 0.35 && !input.safety_context.active_task_serious
+484 | |                 {
+485 | |                     intent.style = "cheerful".to_string();
+486 | |                     intent.intensity = (intent.intensity + 0.06).min(0.55);
+487 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_match
+    = note: `#[warn(clippy::collapsible_match)]` on by default
+help: collapse nested if block
+    |
+482 ~             "playful"
+483 |                 if input.user_state.frustration < 0.35 && !input.safety_context.active_task_serious
+484 ~                 => {
+485 |                     intent.style = "cheerful".to_string();
+486 |                     intent.intensity = (intent.intensity + 0.06).min(0.55);
+487 ~                 }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/expression/runtime.rs:499:9
+    |
+499 | /         if input.conversation_context.used_tools || input.constraints.require_clarity {
+500 | |             if !matches!(
+501 | |                 intent.social_function.as_str(),
+502 | |                 "warn" | "apologize" | "decline"
+...   |
+509 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+499 ~         if (input.conversation_context.used_tools || input.constraints.require_clarity) {
+500 ~             && !matches!(
+501 |                 intent.social_function.as_str(),
+...
+507 |                 intent.intensity = intent.intensity.min(0.3);
+508 ~             }
+    |
+
+warning: use of `unwrap_or_else` to construct default value
+   --> packages/alia-server/src/expression/runtime.rs:603:18
+    |
+603 |                 .unwrap_or_else(ProsodyControls::default),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `unwrap_or_default()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#unwrap_or_default
+    = note: `#[warn(clippy::unwrap_or_default)]` on by default
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+   --> packages/alia-server/src/expression/runtime.rs:604:13
+    |
+604 |             &stance,
+    |             ^^^^^^^ help: change this to: `stance`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_borrow
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+   --> packages/alia-server/src/expression/runtime.rs:608:64
+    |
+608 |         let intensity = expression_intensity(intent.intensity, &stance, &self.policy);
+    |                                                                ^^^^^^^ help: change this to: `stance`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_borrow
+
+warning: this `if` statement can be collapsed
+    --> packages/alia-server/src/expression/runtime.rs:1226:13
+     |
+1226 | /             if let Some(max_frequency_per_min) = capability.max_frequency_per_min {
+1227 | |                 if !safety_state.reserve_action_slot(input, &action, max_frequency_per_min) {
+1228 | |                     modifications.push(safety_modification(
+1229 | |                         "builtin_expression_safety",
+...    |
+1240 | |             }
+     | |_____________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+     |
+1226 ~             if let Some(max_frequency_per_min) = capability.max_frequency_per_min
+1227 ~                 && !safety_state.reserve_action_slot(input, &action, max_frequency_per_min) {
+1228 |                     modifications.push(safety_modification(
+ ...
+1238 |                     continue;
+1239 ~                 }
+     |
+
+warning: this `if` statement can be collapsed
+    --> packages/alia-server/src/expression/runtime.rs:1330:5
+     |
+1330 | /     if let Some(content_tone) = cue.content_tone {
+1331 | |         if content_tone != "playful"
+1332 | |             || (!input.safety_context.active_task_serious
+1333 | |                 && !input.safety_context.night_mode
+...    |
+1338 | |     }
+     | |_____^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+     |
+1330 ~     if let Some(content_tone) = cue.content_tone
+1331 ~         && (content_tone != "playful"
+1332 |             || (!input.safety_context.active_task_serious
+1333 |                 && !input.safety_context.night_mode
+1334 ~                 && input.constraints.allow_playful))
+1335 |         {
+1336 |             input.content_tone = content_tone.to_string();
+1337 ~         }
+     |
+
+warning: this `impl` can be derived
+   --> packages/alia-server/src/expression/types.rs:248:1
+    |
+248 | / impl Default for ExpressionDeviceContext {
+249 | |     fn default() -> Self {
+250 | |         Self {
+251 | |             supports_motion: false,
+...   |
+260 | | }
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#derivable_impls
+help: replace the manual implementation with a derive attribute
+    |
+231 + #[derive(Default)]
+232 | pub struct ExpressionDeviceContext {
+    |
+
+warning: the `Err`-variant returned from this function is very large
+   --> packages/alia-server/src/grpc/voice_auth.rs:203:45
+    |
+203 | fn bearer_token<T>(request: &Request<T>) -> Result<String, Status> {
+    |                                             ^^^^^^^^^^^^^^^^^^^^^^ the `Err`-variant is at least 176 bytes
+    |
+    = help: try reducing the size of `tonic::Status`, for example by boxing large elements or replacing it with `Box<tonic::Status>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: this `if let` can be collapsed into the outer `if let`
+   --> packages/alia-server/src/grpc/voice_session/initiative.rs:240:21
+    |
+240 | /                     if let Ok(admitted) = result {
+241 | |                         admitted.cancel.cancel();
+242 | |                     }
+    | |_____________________^
+    |
+help: the outer pattern can be modified to include the inner pattern
+   --> packages/alia-server/src/grpc/voice_session/initiative.rs:239:28
+    |
+239 |                 if let Err(result) = reply.send(result) {
+    |                            ^^^^^^ replace this binding
+240 |                     if let Ok(admitted) = result {
+    |                            ^^^^^^^^^^^^ with this pattern
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_match
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/grpc/voice_session/initiative.rs:239:17
+    |
+239 | /                 if let Err(result) = reply.send(result) {
+240 | |                     if let Ok(admitted) = result {
+241 | |                         admitted.cancel.cancel();
+242 | |                     }
+243 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+239 ~                 if let Err(result) = reply.send(result)
+240 ~                     && let Ok(admitted) = result {
+241 |                         admitted.cancel.cancel();
+242 ~                     }
+    |
+
+warning: the `Err`-variant returned from this function is very large
+   --> packages/alia-server/src/grpc/voice_session.rs:138:56
+    |
+138 | fn negotiated_hold_limit(open: &voice::OpenSession) -> Result<u64, Status> {
+    |                                                        ^^^^^^^^^^^^^^^^^^^ the `Err`-variant is at least 176 bytes
+    |
+    = help: try reducing the size of `tonic::Status`, for example by boxing large elements or replacing it with `Box<tonic::Status>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: this function has too many arguments (9/7)
+   --> packages/alia-server/src/grpc/voice_session.rs:506:1
+    |
+506 | / async fn run_session<S>(
+507 | |     stream: S,
+508 | |     tx: &mpsc::Sender<Result<SessionEvent, Status>>,
+509 | |     lease: &SessionLease,
+...   |
+517 | | where
+518 | |     S: Stream<Item = Result<DeviceFrame, Status>> + Unpin,
+    | |__________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (9/7)
+   --> packages/alia-server/src/grpc/voice_session.rs:557:1
+    |
+557 | / async fn run_session_inner<S>(
+558 | |     mut stream: S,
+559 | |     tx: &mpsc::Sender<Result<SessionEvent, Status>>,
+560 | |     lease: &SessionLease,
+...   |
+568 | | where
+569 | |     S: Stream<Item = Result<DeviceFrame, Status>> + Unpin,
+    | |__________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this boolean expression can be simplified
+   --> packages/alia-server/src/grpc/voice_session.rs:585:12
+    |
+585 |           || !initial_owner
+    |  ____________^
+586 | |             .as_ref()
+587 | |             .is_some_and(|(id, _)| *id == lease.id)
+    | |___________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#nonminimal_bool
+help: try
+    |
+585 ~         || initial_owner
+586 +             .as_ref().is_none_or(|(id, _)| *id != lease.id)
+    |
+
+warning: this boolean expression can be simplified
+   --> packages/alia-server/src/grpc/voice_session.rs:707:51
+    |
+707 |                 if lease.cancel.is_cancelled() || !owner.as_ref().is_some_and(|(id, _)| *id == lease.id) {
+    |                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `owner.as_ref().is_none_or(|(id, _)| *id != lease.id)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#nonminimal_bool
+
+warning: large size difference between variants
+  --> packages/alia-server/src/modules/companion/live/repository.rs:43:1
+   |
+43 | /  enum PreparedAdmission {
+44 | |/     Fresh {
+45 | ||         context: crate::modules::memory::context::ContextBinding,
+46 | ||         response: crate::modules::delivery::types::ResponseRecord,
+47 | ||     },
+   | ||_____- the second-largest variant contains at least 480 bytes
+48 | |      Observed(AdmissionResult),
+   | |      ------------------------- the largest variant contains at least 840 bytes
+49 | |  }
+   | |__^ the entire enum is at least 840 bytes
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#large_enum_variant
+   = note: `#[warn(clippy::large_enum_variant)]` on by default
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+   |
+48 -     Observed(AdmissionResult),
+48 +     Observed(Box<AdmissionResult>),
+   |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/companion/live/repository.rs:310:9
+    |
+310 | /         if let Err(e) = &source {
+311 | |             if !matches!(
+312 | |                 e.downcast_ref::<ContextError>(),
+313 | |                 Some(
+...   |
+321 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+310 ~         if let Err(e) = &source
+311 ~             && !matches!(
+312 |                 e.downcast_ref::<ContextError>(),
+...
+319 |                 return Err(LiveError::Unavailable(e.to_string()));
+320 ~             }
+    |
+
+warning: large size difference between variants
+   --> packages/alia-server/src/modules/companion/live/types.rs:281:1
+    |
+281 | /  pub(crate) enum AdmissionResult {
+282 | |/     Fresh {
+283 | ||         permit: LiveAdmissionPermit,
+284 | ||         context: ContextBinding,
+285 | ||         response: ResponseRecord,
+286 | ||     },
+    | ||_____- the largest variant contains at least 840 bytes
+287 | |      Existing(AdmissionReceipt),
+    | |      -------------------------- the second-largest variant contains at least 68 bytes
+288 | |      Deferred(Vec<DecisionReason>),
+289 | |      Retired,
+290 | |  }
+    | |__^ the entire enum is at least 840 bytes
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+    |
+283 ~         permit: Box<LiveAdmissionPermit>,
+284 |         context: ContextBinding,
+285 ~         response: Box<ResponseRecord>,
+    |
+
+warning: large size difference between variants
+  --> packages/alia-server/src/modules/delivery/repository/control.rs:90:1
+   |
+90 | / pub enum ControlAdmission {
+91 | |     Fresh(ControlPermit),
+   | |     -------------------- the second-largest variant contains at least 296 bytes
+92 | |     Existing(ControlCommandRecord),
+   | |     ------------------------------ the largest variant contains at least 1376 bytes
+93 | | }
+   | |_^ the entire enum is at least 1376 bytes
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+   |
+92 -     Existing(ControlCommandRecord),
+92 +     Existing(Box<ControlCommandRecord>),
+   |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/delivery/repository/control.rs:275:13
+    |
+275 | /             if let Some(first) = &old.first_receipt {
+276 | |                 if first.receipt.outcome != receipt.receipt.outcome { return Err(ControlLedgerError::Conflict); }
+277 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+275 ~             if let Some(first) = &old.first_receipt
+276 ~                 && first.receipt.outcome != receipt.receipt.outcome { return Err(ControlLedgerError::Conflict); }
+    |
+
+warning: the `Err`-variant returned from this function is very large
+   --> packages/alia-server/src/modules/delivery/repository/control.rs:406:37
+    |
+ 36 | /     CommitUnknown {
+ 37 | |         binding: Option<OutputBinding>,
+ 38 | |         command_id: Option<Uuid>,
+ 39 | |     },
+    | |_____- the largest variant contains at least 153 bytes
+...
+406 |   fn validate_reason(reason: &str) -> ControlLedgerResult<()> {
+    |                                       ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: try reducing the size of `modules::delivery::repository::control::ControlLedgerError`, for example by boxing large elements or replacing it with `Box<modules::delivery::repository::control::ControlLedgerError>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: the `Err`-variant returned from this function is very large
+   --> packages/alia-server/src/modules/delivery/repository/control.rs:412:62
+    |
+ 36 | /     CommitUnknown {
+ 37 | |         binding: Option<OutputBinding>,
+ 38 | |         command_id: Option<Uuid>,
+ 39 | |     },
+    | |_____- the largest variant contains at least 153 bytes
+...
+412 |   fn registration_digest(registration: &OutputRegistration) -> ControlLedgerResult<String> {
+    |                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: try reducing the size of `modules::delivery::repository::control::ControlLedgerError`, for example by boxing large elements or replacing it with `Box<modules::delivery::repository::control::ControlLedgerError>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: the `Err`-variant returned from this function is very large
+   --> packages/alia-server/src/modules/delivery/repository/control.rs:421:6
+    |
+ 36 | /     CommitUnknown {
+ 37 | |         binding: Option<OutputBinding>,
+ 38 | |         command_id: Option<Uuid>,
+ 39 | |     },
+    | |_____- the largest variant contains at least 153 bytes
+...
+421 |   ) -> ControlLedgerResult<()> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: try reducing the size of `modules::delivery::repository::control::ControlLedgerError`, for example by boxing large elements or replacing it with `Box<modules::delivery::repository::control::ControlLedgerError>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: the `Err`-variant returned from this function is very large
+   --> packages/alia-server/src/modules/delivery/repository/control.rs:431:6
+    |
+ 36 | /     CommitUnknown {
+ 37 | |         binding: Option<OutputBinding>,
+ 38 | |         command_id: Option<Uuid>,
+ 39 | |     },
+    | |_____- the largest variant contains at least 153 bytes
+...
+431 |   ) -> ControlLedgerResult<()> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: try reducing the size of `modules::delivery::repository::control::ControlLedgerError`, for example by boxing large elements or replacing it with `Box<modules::delivery::repository::control::ControlLedgerError>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: the `Err`-variant returned from this function is very large
+   --> packages/alia-server/src/modules/delivery/repository/control.rs:441:6
+    |
+ 36 | /     CommitUnknown {
+ 37 | |         binding: Option<OutputBinding>,
+ 38 | |         command_id: Option<Uuid>,
+ 39 | |     },
+    | |_____- the largest variant contains at least 153 bytes
+...
+441 |   ) -> ControlLedgerResult<()> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: try reducing the size of `modules::delivery::repository::control::ControlLedgerError`, for example by boxing large elements or replacing it with `Box<modules::delivery::repository::control::ControlLedgerError>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: the `Err`-variant returned from this function is very large
+   --> packages/alia-server/src/modules/delivery/repository/control.rs:584:6
+    |
+ 36 | /     CommitUnknown {
+ 37 | |         binding: Option<OutputBinding>,
+ 38 | |         command_id: Option<Uuid>,
+ 39 | |     },
+    | |_____- the largest variant contains at least 153 bytes
+...
+584 |   ) -> ControlLedgerResult<()> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: try reducing the size of `modules::delivery::repository::control::ControlLedgerError`, for example by boxing large elements or replacing it with `Box<modules::delivery::repository::control::ControlLedgerError>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: the `Err`-variant returned from this function is very large
+   --> packages/alia-server/src/modules/delivery/repository/control.rs:722:6
+    |
+ 36 | /     CommitUnknown {
+ 37 | |         binding: Option<OutputBinding>,
+ 38 | |         command_id: Option<Uuid>,
+ 39 | |     },
+    | |_____- the largest variant contains at least 153 bytes
+...
+722 |   ) -> ControlLedgerResult<()> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: try reducing the size of `modules::delivery::repository::control::ControlLedgerError`, for example by boxing large elements or replacing it with `Box<modules::delivery::repository::control::ControlLedgerError>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: large size difference between variants
+  --> packages/alia-server/src/modules/delivery/service/output.rs:49:1
+   |
+49 | /  enum Work {
+50 | |      Bind(ResponseRecord, oneshot::Sender<anyhow::Result<()>>),
+   | |      --------------------------------------------------------- the largest variant contains at least 408 bytes
+51 | |/     Action {
+52 | ||         hold_id: Uuid,
+53 | ||         action: ControlAction,
+54 | ||     },
+   | ||_____- the second-largest variant contains at least 48 bytes
+55 | |  }
+   | |__^ the entire enum is at least 408 bytes
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+   |
+50 -     Bind(ResponseRecord, oneshot::Sender<anyhow::Result<()>>),
+50 +     Bind(Box<ResponseRecord>, oneshot::Sender<anyhow::Result<()>>),
+   |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/delivery/service/output.rs:514:13
+    |
+514 | /             if !finished {
+515 | |                 if let Some(candidate) = output.0.response.get() {
+516 | |                     let cancellation = async {
+...   |
+540 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+514 ~             if !finished
+515 ~                 && let Some(candidate) = output.0.response.get() {
+516 |                     let cancellation = async {
+...
+538 |                     }
+539 ~                 }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/delivery/service/output.rs:541:13
+    |
+541 | /             if let Some(registration) = output.0.registration.get() {
+542 | |                 if let Err(error) = self
+543 | |                     .repository
+544 | |                     .retire_control(
+...   |
+554 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+541 ~             if let Some(registration) = output.0.registration.get()
+542 ~                 && let Err(error) = self
+543 |                     .repository
+...
+552 |                     self.record_failure(format!("output control retirement: {error}"));
+553 ~                 }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/delivery/service.rs:582:17
+    |
+582 | /                 if let Some(progress) = report.progress {
+583 | |                  if let Err(error) = bounded(observer.record(progress,false)).await {
+584 | |                   self.record_failure(format!("last delivery observation: {error}"));
+585 | |                  }
+586 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+582 ~                 if let Some(progress) = report.progress
+583 ~                  && let Err(error) = bounded(observer.record(progress,false)).await {
+584 |                   self.record_failure(format!("last delivery observation: {error}"));
+585 ~                  }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/delivery/service.rs:698:13
+    |
+698 | /             if let Some(Ok(Ok(report))) = late_delivery {
+699 | |                 if let Err(error) = self.finish_report(&observer, report).await {
+700 | |                     self.record_failure(format!("late delivery checkpoint: {error}"));
+701 | |                 }
+702 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+698 ~             if let Some(Ok(Ok(report))) = late_delivery
+699 ~                 && let Err(error) = self.finish_report(&observer, report).await {
+700 |                     self.record_failure(format!("late delivery checkpoint: {error}"));
+701 ~                 }
+    |
+
+warning: large size difference between variants
+  --> packages/alia-server/src/modules/embodiment/motion_delivery.rs:43:1
+   |
+43 | /  pub enum MotionDispatch {
+44 | |/     Fresh {
+45 | ||         delivery_id: Uuid,
+46 | ||         dispatch_id: Uuid,
+47 | ||     },
+   | ||_____- the second-largest variant contains at least 32 bytes
+48 | |      Existing(MotionDeliveryRecord),
+   | |      ------------------------------ the largest variant contains at least 720 bytes
+49 | |  }
+   | |__^ the entire enum is at least 720 bytes
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+   |
+48 -     Existing(MotionDeliveryRecord),
+48 +     Existing(Box<MotionDeliveryRecord>),
+   |
+
+warning: method `from_str` can be confused for the standard trait method `std::str::FromStr::from_str`
+  --> packages/alia-server/src/modules/embodiment/sensors/types.rs:78:5
+   |
+78 | /     pub fn from_str(value: &str) -> Option<Self> {
+79 | |         match value.trim().to_ascii_lowercase().as_str() {
+80 | |             "cache_only" | "cache-only" | "cache" | "latest" => Some(Self::CacheOnly),
+81 | |             "best_effort" | "best-effort" | "best" | "auto" => Some(Self::BestEffort),
+...  |
+85 | |     }
+   | |_____^
+   |
+   = help: consider implementing the trait `std::str::FromStr` or choosing a less ambiguous method name
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#should_implement_trait
+   = note: `#[warn(clippy::should_implement_trait)]` on by default
+
+warning: method `from_str` can be confused for the standard trait method `std::str::FromStr::from_str`
+   --> packages/alia-server/src/modules/embodiment/sensors/types.rs:95:5
+    |
+ 95 | /     pub fn from_str(value: &str) -> Option<Self> {
+ 96 | |         match value.trim().to_ascii_lowercase().as_str() {
+ 97 | |             "allow_stale" | "allow-stale" | "allow" | "stale_ok" | "stale-ok" => {
+ 98 | |                 Some(Self::AllowStale)
+...   |
+105 | |     }
+    | |_____^
+    |
+    = help: consider implementing the trait `std::str::FromStr` or choosing a less ambiguous method name
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#should_implement_trait
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/execution/service.rs:326:9
+    |
+326 | /         if !effect.requires_confirmation
+327 | |             && matches!(
+328 | |                 effect.status,
+329 | |                 EffectStatus::Proposed | EffectStatus::Approved
+...   |
+343 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+330 ~             )
+331 ~             && let Some(token) = &ctx.cancel {
+332 |                 let token = self
+...
+340 |                 admission_guard = Some(token.drop_guard());
+341 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+  --> packages/alia-server/src/modules/execution/worker.rs:30:17
+   |
+30 | /                 if let Some(result) = result {
+31 | |                     if let Err(error) = result.map_err(anyhow::Error::from).and_then(|r| r) {
+32 | |                         *service.fault.lock().unwrap() = Some(error.to_string());
+33 | |                         failure = Some(error);
+...  |
+36 | |                 }
+   | |_________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+   |
+30 ~                 if let Some(result) = result
+31 ~                     && let Err(error) = result.map_err(anyhow::Error::from).and_then(|r| r) {
+32 |                         *service.fault.lock().unwrap() = Some(error.to_string());
+33 |                         failure = Some(error);
+34 |                         service.stop.cancel();
+35 ~                     }
+   |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/interaction/cache/store.rs:398:17
+    |
+398 | /                 if let Some(cached)=current_version(&tx,&old,ContextUse::CacheReuse,"FOR SHARE").await? {
+399 | |                     if cached.status==CacheStatus::Active {
+400 | |                         results.push(SemanticCacheCandidate{cached,similarity});
+401 | |                     }
+402 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+398 ~                 if let Some(cached)=current_version(&tx,&old,ContextUse::CacheReuse,"FOR SHARE").await?
+399 ~                     && cached.status==CacheStatus::Active {
+400 |                         results.push(SemanticCacheCandidate{cached,similarity});
+401 ~                     }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/interaction/cache/store.rs:430:17
+    |
+430 | /                 if let Some(current)=current_version(&tx,&old,ContextUse::CacheReview,"FOR SHARE").await? {
+431 | |                     if current.status==CacheStatus::PendingInsightsReview {result.push(current);}
+432 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+430 ~                 if let Some(current)=current_version(&tx,&old,ContextUse::CacheReview,"FOR SHARE").await?
+431 ~                     && current.status==CacheStatus::PendingInsightsReview {result.push(current);}
+    |
+
+warning: this call to `clone` can be replaced with `std::slice::from_ref`
+   --> packages/alia-server/src/modules/interaction/cache/review.rs:136:45
+    |
+136 | ...                   .embed_profiled(&[approved.query_text.clone()])
+    |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `std::slice::from_ref(&approved.query_text)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#cloned_ref_to_slice_refs
+    = note: `#[warn(clippy::cloned_ref_to_slice_refs)]` on by default
+
+warning: this function has too many arguments (11/7)
+  --> packages/alia-server/src/modules/interaction/error_notice.rs:76:1
+   |
+76 | / pub(super) async fn notify_interaction_error(
+77 | |     modules: &InteractionServices,
+78 | |     channel: &dyn ChannelAdapter,
+79 | |     target: &DeliveryTarget,
+...  |
+87 | |     turn: Option<&VoiceTurn>,
+88 | | ) -> InteractionErrorNotification {
+   | |_________________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (8/7)
+   --> packages/alia-server/src/modules/interaction/error_notice.rs:322:1
+    |
+322 | / async fn deliver_text_error_notice(
+323 | |     modules: &InteractionServices,
+324 | |     channel: &dyn ChannelAdapter,
+325 | |     target: &DeliveryTarget,
+...   |
+330 | |     turn: Option<&VoiceTurn>,
+331 | | ) -> InteractionErrorDelivery {
+    | |_____________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (8/7)
+   --> packages/alia-server/src/modules/interaction/error_notice.rs:375:1
+    |
+375 | / async fn deliver_voice_error_notice(
+376 | |     modules: &InteractionServices,
+377 | |     channel: &dyn ChannelAdapter,
+378 | |     target: &DeliveryTarget,
+...   |
+383 | |     turn: Option<&VoiceTurn>,
+384 | | ) -> InteractionErrorDelivery {
+    | |_____________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this `if` statement can be collapsed
+  --> packages/alia-server/src/modules/interaction/expression.rs:39:13
+   |
+39 | /             if let Err(error) = Box::pin(
+40 | |                 modules
+41 | |                     .expression
+42 | |                     .observe_context_user(&modules.context, &original),
+...  |
+54 | |             }
+   | |_____________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+   |
+44 ~             .await
+45 ~                 && !error
+46 |                     .downcast_ref::<crate::modules::memory::context::ContextError>()
+...
+51 |                     return Err(error);
+52 ~                 }
+   |
+
+warning: this `if` statement can be collapsed
+  --> packages/alia-server/src/modules/interaction/expression.rs:61:13
+   |
+61 | /             if let Err(error) = Box::pin(
+62 | |                 modules
+63 | |                     .expression
+64 | |                     .observe_context_recall(&modules.context, &original),
+...  |
+76 | |             }
+   | |_____________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+   |
+66 ~             .await
+67 ~                 && !error
+68 |                     .downcast_ref::<crate::modules::memory::context::ContextError>()
+...
+73 |                     return Err(error);
+74 ~                 }
+   |
+
+warning: this function has too many arguments (15/7)
+   --> packages/alia-server/src/modules/interaction/expression.rs:96:1
+    |
+ 96 | / pub(super) async fn plan_expression_for_response(
+ 97 | |     modules: &InteractionServices,
+ 98 | |     trace: &mut AgentTrace,
+ 99 | |     channel: &dyn ChannelAdapter,
+...   |
+111 | |     debug_output: bool,
+112 | | ) -> anyhow::Result<PlannedExpression> {
+    | |______________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+   --> packages/alia-server/src/modules/interaction/expression.rs:141:56
+    |
+141 |     let user_state = expression_user_state_from_affect(&affect);
+    |                                                        ^^^^^^^ help: change this to: `affect`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_borrow
+
+warning: this function has too many arguments (9/7)
+   --> packages/alia-server/src/modules/interaction/expression.rs:248:1
+    |
+248 | / pub(super) async fn execute_expression_and_trace(
+249 | |     orchestrator: &crate::expression::orchestrator::ExpressionOrchestrator,
+250 | |     channel: &dyn ChannelAdapter,
+251 | |     target: &DeliveryTarget,
+...   |
+257 | |     turn: Option<&VoiceTurn>,
+258 | | ) {
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+   --> packages/alia-server/src/modules/interaction/expression.rs:337:55
+    |
+337 |         user_state: expression_user_state_from_affect(&affect),
+    |                                                       ^^^^^^^ help: change this to: `affect`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_borrow
+
+warning: this function has too many arguments (17/7)
+   --> packages/alia-server/src/modules/interaction/generation.rs:83:1
+    |
+ 83 | / pub(super) fn process_text<'a>(
+ 84 | |     text: &'a str,
+ 85 | |     user_id: &'a str,
+ 86 | |     modules: &'a InteractionServices,
+...   |
+100 | |     defer_persistence: bool,
+101 | | ) -> futures::future::BoxFuture<'a, anyhow::Result<TextResult>> {
+    | |_______________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/interaction/generation.rs:412:5
+    |
+412 | /     if cache_config.enabled && cache_config.exact_match_enabled && !memory_context_used {
+413 | |         if let Some(cached) = cancellable_stage(
+414 | |             turn,
+415 | |             "cache_lookup",
+...   |
+486 | |     }
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+412 ~     if cache_config.enabled && cache_config.exact_match_enabled && !memory_context_used
+413 ~         && let Some(cached) = cancellable_stage(
+414 |             turn,
+...
+484 |                 .await;
+485 ~         }
+    |
+
+warning: struct update has no effect, all the fields in the struct have already been specified
+   --> packages/alia-server/src/modules/interaction/generation.rs:768:19
+    |
+768 |                 ..ChatMessage::default()
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_update
+
+warning: this function has too many arguments (8/7)
+   --> packages/alia-server/src/modules/interaction/generation.rs:897:1
+    |
+897 | / async fn run_model(
+898 | |     request: &GenerationRequest<'_>,
+899 | |     prepared: &mut PreparedTurn,
+900 | |     llm: &LlmService,
+...   |
+905 | |     allow_streaming: bool,
+906 | | ) -> anyhow::Result<Option<LlmExecutionOutcome>> {
+    | |________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+    --> packages/alia-server/src/modules/interaction/generation.rs:1092:72
+     |
+1092 |             tts_trace: Some(TtsTraceContext::from_agent_trace(modules, &trace)),
+     |                                                                        ^^^^^^ help: change this to: `trace`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_borrow
+
+warning: enclosing `Ok` and `?` operator are unneeded
+    --> packages/alia-server/src/modules/interaction/generation.rs:1284:9
+     |
+1284 | /         Ok(plan_expression_for_response(
+1285 | |             modules,
+1286 | |             &mut trace,
+1287 | |             channel,
+...    |
+1301 | |         .await?)
+     | |________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_question_mark
+     = note: `#[warn(clippy::needless_question_mark)]` on by default
+help: remove the enclosing `Ok` and `?` operator
+     |
+1284 ~         plan_expression_for_response(
+1285 |             modules,
+ ...
+1300 |         )
+1301 ~         .await
+     |
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+    --> packages/alia-server/src/modules/interaction/generation.rs:1286:13
+     |
+1286 |             &mut trace,
+     |             ^^^^^^^^^^ help: change this to: `trace`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_borrow
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+    --> packages/alia-server/src/modules/interaction/generation.rs:1308:64
+     |
+1308 |     let tts_trace = TtsTraceContext::from_agent_trace(modules, &trace);
+     |                                                                ^^^^^^ help: change this to: `trace`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_borrow
+
+warning: large size difference between variants
+  --> packages/alia-server/src/modules/interaction/initiative.rs:57:1
+   |
+57 | /   pub(crate) enum Request {
+58 | | /     Snapshot {
+59 | | |         owner: Uuid,
+60 | | |         reply: oneshot::Sender<anyhow::Result<VoiceOpportunity>>,
+61 | | |     },
+   | | |_____- the second-largest variant contains at least 24 bytes
+62 | | /     Reserve {
+63 | | |         request: VoiceInitiativeRequest,
+64 | | |         reply: oneshot::Sender<anyhow::Result<ReservedVoiceInitiative>>,
+65 | | |     },
+   | | |_____- the largest variant contains at least 376 bytes
+66 | |   }
+   | |___^ the entire enum is at least 376 bytes
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+   |
+63 -         request: VoiceInitiativeRequest,
+63 +         request: Box<VoiceInitiativeRequest>,
+   |
+
+warning: match can be simplified with `.unwrap_or_default()`
+   --> packages/alia-server/src/modules/interaction/llm.rs:283:16
+    |
+283 |       let full = match cancellable_stage(turn, "llm", llm.text(&messages)).await? {
+    |  ________________^
+284 | |         Some(full) => full,
+285 | |         None => String::new(),
+286 | |     };
+    | |_____^ help: ascribe the type std::string::String and replace your expression with: `cancellable_stage(turn, "llm", llm.text(&messages)).await?.unwrap_or_default()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#manual_unwrap_or_default
+    = note: `#[warn(clippy::manual_unwrap_or_default)]` on by default
+
+warning: struct update has no effect, all the fields in the struct have already been specified
+  --> packages/alia-server/src/modules/interaction/persistence.rs:77:19
+   |
+77 |                 ..ChatMessage::default()
+   |                   ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_update
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/interaction/persistence.rs:97:5
+    |
+ 97 | /     if let Some(entry) = cache_entry_for_pending(&pending) {
+ 98 | |         if let Err(error) = modules.cache.put(entry).await {
+ 99 | |             tracing::debug!(?error, "pending cache write was not admitted");
+100 | |         }
+101 | |     }
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+ 97 ~     if let Some(entry) = cache_entry_for_pending(&pending)
+ 98 ~         && let Err(error) = modules.cache.put(entry).await {
+ 99 |             tracing::debug!(?error, "pending cache write was not admitted");
+100 ~         }
+    |
+
+warning: this function has too many arguments (8/7)
+   --> packages/alia-server/src/modules/interaction/persistence.rs:159:1
+    |
+159 | / pub(super) async fn persist_interrupted_input_context(
+160 | |     modules: &InteractionServices,
+161 | |     session_id: Uuid,
+162 | |     user_id: Uuid,
+...   |
+167 | |     debug_output: bool,
+168 | | ) {
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: struct update has no effect, all the fields in the struct have already been specified
+   --> packages/alia-server/src/modules/interaction/persistence.rs:201:23
+    |
+201 |                     ..ChatMessage::default()
+    |                       ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_update
+
+warning: struct update has no effect, all the fields in the struct have already been specified
+  --> packages/alia-server/src/modules/interaction/prompt.rs:40:15
+   |
+40 |             ..ChatMessage::default()
+   |               ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_update
+
+warning: struct update has no effect, all the fields in the struct have already been specified
+  --> packages/alia-server/src/modules/interaction/prompt.rs:48:11
+   |
+48 |         ..ChatMessage::default()
+   |           ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_update
+
+warning: struct update has no effect, all the fields in the struct have already been specified
+   --> packages/alia-server/src/modules/interaction/prompt.rs:284:11
+    |
+284 |         ..ChatMessage::default()
+    |           ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_update
+
+warning: this function has too many arguments (8/7)
+  --> packages/alia-server/src/modules/interaction/runtime.rs:29:1
+   |
+29 | / pub fn spawn_interaction(
+30 | |     event_bus: &EventBus,
+31 | |     modules: Arc<InteractionServices>,
+32 | |     channels: Arc<ChannelRegistry>,
+...  |
+37 | |     mut voice_rx: tokio::sync::mpsc::Receiver<RecognizedVoiceInput>,
+38 | | ) -> tokio::task::JoinHandle<()> {
+   | |________________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (12/7)
+   --> packages/alia-server/src/modules/interaction/runtime.rs:161:1
+    |
+161 | / pub(super) async fn process_event(
+162 | |     event: ChannelEvent,
+163 | |     modules: &InteractionServices,
+164 | |     channels: &ChannelRegistry,
+...   |
+173 | |     memory_config: &MemorySection,
+174 | | ) -> anyhow::Result<()> {
+    | |_______________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/interaction/runtime.rs:282:13
+    |
+282 | /             if !turn_is_interrupted(Some(&turn)) {
+283 | |                 if let Some(pending) = result.pending_persistence {
+284 | |                     persist_text_interaction(modules, pending, memory_config, event_bus, None)
+285 | |                         .await;
+286 | |                 }
+287 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+282 ~             if !turn_is_interrupted(Some(&turn))
+283 ~                 && let Some(pending) = result.pending_persistence {
+284 |                     persist_text_interaction(modules, pending, memory_config, event_bus, None)
+285 |                         .await;
+286 ~                 }
+    |
+
+warning: this function has too many arguments (12/7)
+   --> packages/alia-server/src/modules/interaction/streaming.rs:127:1
+    |
+127 | / pub(super) async fn deliver_tts_audio(
+128 | |     modules: &InteractionServices,
+129 | |     channel: &dyn ChannelAdapter,
+130 | |     target: &DeliveryTarget,
+...   |
+139 | |     turn: Option<&VoiceTurn>,
+140 | | ) -> TtsDeliveryOutcome {
+    | |_______________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (12/7)
+   --> packages/alia-server/src/modules/interaction/streaming.rs:182:1
+    |
+182 | / pub(super) async fn deliver_tts_audio_inner(
+183 | |     modules: &InteractionServices,
+184 | |     channel: &dyn ChannelAdapter,
+185 | |     target: &DeliveryTarget,
+...   |
+194 | |     turn: Option<&VoiceTurn>,
+195 | | ) -> TtsDeliveryOutcome {
+    | |_______________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (8/7)
+   --> packages/alia-server/src/modules/interaction/streaming.rs:443:1
+    |
+443 | / async fn execute_speech_start_expression(
+444 | |     orchestrator: &crate::expression::orchestrator::ExpressionOrchestrator,
+445 | |     channel: &dyn ChannelAdapter,
+446 | |     target: &DeliveryTarget,
+...   |
+451 | |     turn: Option<&VoiceTurn>,
+452 | | ) {
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (12/7)
+   --> packages/alia-server/src/modules/interaction/streaming.rs:483:1
+    |
+483 | / pub(super) async fn stream_llm_response_with_sentence_tts(
+484 | |     modules: &InteractionServices,
+485 | |     llm: &LlmService,
+486 | |     channel: &dyn ChannelAdapter,
+...   |
+495 | |     turn: Option<&VoiceTurn>,
+496 | | ) -> anyhow::Result<(String, bool)> {
+    | |___________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (10/7)
+   --> packages/alia-server/src/modules/interaction/streaming.rs:624:1
+    |
+624 | / async fn resolve_sentence_speech(
+625 | |     expression: Arc<crate::expression::ExpressionRuntime>,
+626 | |     context: &crate::modules::memory::context::ContextService,
+627 | |     generation: &crate::modules::memory::context::GenerationContext,
+...   |
+634 | |     user_id: &str,
+635 | | ) -> anyhow::Result<SpeechExpression> {
+    | |_____________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (8/7)
+   --> packages/alia-server/src/modules/interaction/streaming.rs:800:1
+    |
+800 | / fn debug_sentence_expression_decision(
+801 | |     debug_output: bool,
+802 | |     channel_id: &str,
+803 | |     user_id: &str,
+...   |
+808 | |     decision: &str,
+809 | | ) {
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (15/7)
+    --> packages/alia-server/src/modules/interaction/streaming.rs:1081:1
+     |
+1081 | / async fn stream_tts_sentences(
+1082 | |     context: Arc<crate::modules::memory::context::ContextService>,
+1083 | |     tts: Arc<dyn TtsAdapter>,
+1084 | |     budget: ResponseAudioBudget,
+...    |
+1096 | |     output: Option<Arc<crate::modules::delivery::OutputProducer>>,
+1097 | | ) -> anyhow::Result<()> {
+     | |_______________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (10/7)
+    --> packages/alia-server/src/modules/interaction/streaming.rs:1371:1
+     |
+1371 | / pub(super) async fn stream_llm_response(
+1372 | |     modules: &InteractionServices,
+1373 | |     llm: &LlmService,
+1374 | |     channel: &dyn ChannelAdapter,
+...    |
+1381 | |     turn: Option<&VoiceTurn>,
+1382 | | ) -> anyhow::Result<String> {
+     | |___________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (11/7)
+    --> packages/alia-server/src/modules/interaction/streaming.rs:1409:1
+     |
+1409 | / async fn stream_generated_text(
+1410 | |     modules: &InteractionServices,
+1411 | |     llm: &LlmService,
+1412 | |     channel: &dyn ChannelAdapter,
+...    |
+1420 | |     sentence_tx: Option<mpsc::Sender<String>>,
+1421 | | ) -> anyhow::Result<String> {
+     | |___________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this `if` statement can be collapsed
+    --> packages/alia-server/src/modules/interaction/streaming.rs:1474:17
+     |
+1474 | /                 if let Some(sender) = &sentence_tx {
+1475 | |                     if sender.send(segment).await.is_err() { sentence_tx = None; }
+1476 | |                 }
+     | |_________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+     |
+1474 ~                 if let Some(sender) = &sentence_tx
+1475 ~                     && sender.send(segment).await.is_err() { sentence_tx = None; }
+     |
+
+warning: this function has too many arguments (13/7)
+  --> packages/alia-server/src/modules/interaction/tools.rs:30:1
+   |
+30 | / pub(super) async fn run_llm_tool_loop(
+31 | |     modules: &InteractionServices,
+32 | |     llm: &LlmService,
+33 | |     base_messages: Vec<ChatMessage>,
+...  |
+43 | |     turn: Option<&VoiceTurn>,
+44 | | ) -> anyhow::Result<ToolLoopOutcome> {
+   | |____________________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+   --> packages/alia-server/src/modules/interaction/tools.rs:609:73
+    |
+609 |                 for ((tool_name, _), vector) in missing.into_iter().zip(vectors.into_iter()) {
+    |                                                                         ^^^^^^^^^^^^^^^^^^^
+    |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+   --> /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library/core/src/iter/traits/iterator.rs:634:11
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#useless_conversion
+    = note: `#[warn(clippy::useless_conversion)]` on by default
+help: consider removing the `.into_iter()`
+    |
+609 -                 for ((tool_name, _), vector) in missing.into_iter().zip(vectors.into_iter()) {
+609 +                 for ((tool_name, _), vector) in missing.into_iter().zip(vectors) {
+    |
+
+warning: this method chain can be written more clearly with `if .. else ..`
+   --> packages/alia-server/src/modules/interaction/tools.rs:791:28
+    |
+791 |           let routing_text = entry
+    |  ____________________________^
+792 | |             .routing_text
+793 | |             .trim()
+794 | |             .is_empty()
+795 | |             .then(|| fallback_tool_routing_text(tool))
+796 | |             .unwrap_or_else(|| entry.routing_text.clone());
+    | |__________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#obfuscated_if_else
+    = note: `#[warn(clippy::obfuscated_if_else)]` on by default
+help: try
+    |
+791 ~         let routing_text = if entry
+792 +             .routing_text
+793 +             .trim()
+794 ~             .is_empty() { fallback_tool_routing_text(tool) } else { entry.routing_text.clone() };
+    |
+
+warning: checking if a string is ascii using iterators
+   --> packages/alia-server/src/modules/interaction/tools.rs:911:24
+    |
+911 |         .filter(|term| term.chars().any(|ch| !ch.is_ascii()))
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `!term.is_ascii()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_character_iteration
+    = note: `#[warn(clippy::needless_character_iteration)]` on by default
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/interaction/tools.rs:925:5
+    |
+925 | /     if query.contains("http://") || query.contains("https://") {
+926 | |         if name == "fetch" {
+927 | |             score += 24;
+928 | |         }
+929 | |     }
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+925 ~     if (query.contains("http://") || query.contains("https://")) {
+926 ~         && name == "fetch" {
+927 |             score += 24;
+928 ~         }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/interaction/voice.rs:278:5
+    |
+278 | /     if !presented_finished && result.expression_plan.is_some() {
+279 | |         if let Some(trace) = &result.tts_trace {
+280 | |             trace
+281 | |                 .record(
+...   |
+289 | |     }
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+278 ~     if !presented_finished && result.expression_plan.is_some()
+279 ~         && let Some(trace) = &result.tts_trace {
+280 |             trace
+...
+287 |                 .await;
+288 ~         }
+    |
+
+warning: the `Err`-variant returned from this function is very large
+  --> packages/alia-server/src/modules/interaction/voice_input.rs:62:10
+   |
+62 |     ) -> Result<(), mpsc::error::TrySendError<RecognizedVoiceInput>> {
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the `Err`-variant is at least 200 bytes
+   |
+   = help: try reducing the size of `tokio::sync::mpsc::error::TrySendError<modules::interaction::voice_input::RecognizedVoiceInput>`, for example by boxing large elements or replacing it with `Box<tokio::sync::mpsc::error::TrySendError<modules::interaction::voice_input::RecognizedVoiceInput>>`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: you should consider adding a `Default` implementation for `ConversationService`
+  --> packages/alia-server/src/modules/interaction/conversation/service.rs:26:5
+   |
+26 | /     pub fn new() -> Self {
+27 | |         Self {
+28 | |             db: None,
+29 | |             active_sessions: Arc::new(RwLock::new(HashMap::new())),
+30 | |         }
+31 | |     }
+   | |_____^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#new_without_default
+   = note: `#[warn(clippy::new_without_default)]` on by default
+help: try adding this
+   |
+25 + impl Default for ConversationService {
+26 +     fn default() -> Self {
+27 +         Self::new()
+28 +     }
+29 + }
+   |
+
+warning: this `if` statement can be collapsed
+  --> packages/alia-server/src/modules/interaction/conversation/service.rs:64:9
+   |
+64 | /         if let Some(db) = &self.db {
+65 | |             if db.ping().await.is_ok() {
+66 | |                 return ModuleHealth::Healthy;
+67 | |             }
+68 | |         }
+   | |_________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+   |
+64 ~         if let Some(db) = &self.db
+65 ~             && db.ping().await.is_ok() {
+66 |                 return ModuleHealth::Healthy;
+67 ~             }
+   |
+
+warning: struct update has no effect, all the fields in the struct have already been specified
+   --> packages/alia-server/src/modules/interaction/conversation/service.rs:205:19
+    |
+205 |                 ..ChatMessage::default()
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_update
+
+warning: this `if` statement can be collapsed
+  --> packages/alia-server/src/modules/interaction/persona/service.rs:72:9
+   |
+72 | /         if let Some(active) = user_active_persona::Entity::find_by_id(user_id)
+73 | |             .one(db)
+74 | |             .await?
+...  |
+83 | |         }
+   | |_________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+   |
+74 ~             .await?
+75 ~             && let Some(p) = persona::Entity::find_by_id(active.persona_id)
+76 |                 .filter(persona::Column::Enabled.eq(true))
+...
+80 |                 return Ok(p);
+81 ~             }
+   |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/interaction/skills/registry.rs:472:9
+    |
+472 | /         if let Some(dir) = &self.skills_dir {
+473 | |             if let Err(e) = self.sync_markdown_skills(dir).await {
+474 | |                 tracing::warn!(error = %e, dir = %dir.display(), "failed to sync markdown skills");
+475 | |             }
+476 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+472 ~         if let Some(dir) = &self.skills_dir
+473 ~             && let Err(e) = self.sync_markdown_skills(dir).await {
+474 |                 tracing::warn!(error = %e, dir = %dir.display(), "failed to sync markdown skills");
+475 ~             }
+    |
+
+warning: this function has too many arguments (8/7)
+   --> packages/alia-server/src/modules/memory/capture.rs:578:1
+    |
+578 | / fn candidate_trace(
+579 | |     action: MemoryCandidateAction,
+580 | |     content: &str,
+581 | |     memory_layer: String,
+...   |
+586 | |     skip_reason: Option<String>,
+587 | | ) -> MemoryCandidateTrace {
+    | |_________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+  --> packages/alia-server/src/modules/memory/context/memory_appraisal.rs:25:34
+   |
+25 |     db: &(impl ConnectionTrait + Sync),
+   |                                  ^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+   = note: `#[warn(clippy::implied_bounds_in_impls)]` on by default
+help: try removing this bound
+   |
+25 -     db: &(impl ConnectionTrait + Sync),
+25 +     db: &(impl ConnectionTrait),
+   |
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+  --> packages/alia-server/src/modules/memory/context/memory_appraisal.rs:36:34
+   |
+36 |     db: &(impl ConnectionTrait + Sync),
+   |                                  ^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+help: try removing this bound
+   |
+36 -     db: &(impl ConnectionTrait + Sync),
+36 +     db: &(impl ConnectionTrait),
+   |
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+  --> packages/alia-server/src/modules/memory/context/memory_appraisal.rs:76:34
+   |
+76 |     db: &(impl ConnectionTrait + Sync),
+   |                                  ^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+help: try removing this bound
+   |
+76 -     db: &(impl ConnectionTrait + Sync),
+76 +     db: &(impl ConnectionTrait),
+   |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/memory/context/policy.rs:275:9
+    |
+275 | / ...   if let Some(actor) = actor {
+276 | | ...       if tx.query_one(stmt("SELECT id FROM users WHERE id=$1 AND status='active' AND role='admin' FOR SHARE",vec![actor.into(...
+277 | | ...   }
+    | |_______^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+275 ~         if let Some(actor) = actor
+276 ~             && tx.query_one(stmt("SELECT id FROM users WHERE id=$1 AND status='active' AND role='admin' FOR SHARE",vec![actor.into()])).await?.is_none() {return Err(ContextError::Forbidden.into());}
+    |
+
+warning: this `if` statement can be collapsed
+  --> packages/alia-server/src/modules/memory/context/repository.rs:85:5
+   |
+85 | /     if let Some(session) = source.conversation_id {
+86 | |         if tx.query_one(stmt("SELECT id FROM chat_sessions WHERE id=$1 AND creator_id=$2 AND channel_id=$3 FOR SHARE",vec![session...
+87 | |             return Err(revoked("source conversation is unavailable for owner/channel"));
+88 | |         }
+89 | |     }
+   | |_____^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+   |
+85 ~     if let Some(session) = source.conversation_id
+86 ~         && tx.query_one(stmt("SELECT id FROM chat_sessions WHERE id=$1 AND creator_id=$2 AND channel_id=$3 FOR SHARE",vec![session.into(),source.owner_id.to_string().into(),source.channel_id.clone().into()])).await?.is_none() {
+87 |             return Err(revoked("source conversation is unavailable for owner/channel"));
+88 ~         }
+   |
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+  --> packages/alia-server/src/modules/memory/service/context_read.rs:36:34
+   |
+36 |     db: &(impl ConnectionTrait + Sync),
+   |                                  ^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+help: try removing this bound
+   |
+36 -     db: &(impl ConnectionTrait + Sync),
+36 +     db: &(impl ConnectionTrait),
+   |
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+  --> packages/alia-server/src/modules/memory/service/context_read.rs:47:34
+   |
+47 |     db: &(impl ConnectionTrait + Sync),
+   |                                  ^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+help: try removing this bound
+   |
+47 -     db: &(impl ConnectionTrait + Sync),
+47 +     db: &(impl ConnectionTrait),
+   |
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+  --> packages/alia-server/src/modules/memory/service/embedding.rs:51:34
+   |
+51 |     db: &(impl ConnectionTrait + Sync),
+   |                                  ^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+help: try removing this bound
+   |
+51 -     db: &(impl ConnectionTrait + Sync),
+51 +     db: &(impl ConnectionTrait),
+   |
+
+warning: this call to `clone` can be replaced with `std::slice::from_ref`
+   --> packages/alia-server/src/modules/memory/service/embedding.rs:281:69
+    |
+281 |     let batch = tokio::time::timeout(budget, adapter.embed_profiled(&[work.text.clone()]))
+    |                                                                     ^^^^^^^^^^^^^^^^^^^^ help: try: `std::slice::from_ref(&work.text)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#cloned_ref_to_slice_refs
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+   --> packages/alia-server/src/modules/memory/service.rs:146:21
+    |
+146 |     memory_sources: RwLock<HashMap<(Uuid, String), Vec<(String, i64)>>>,
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#type_complexity
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+   --> packages/alia-server/src/modules/memory/service.rs:811:38
+    |
+811 |         db: &(impl ConnectionTrait + Sync),
+    |                                      ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+help: try removing this bound
+    |
+811 -         db: &(impl ConnectionTrait + Sync),
+811 +         db: &(impl ConnectionTrait),
+    |
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+   --> packages/alia-server/src/modules/memory/service.rs:908:38
+    |
+908 |         db: &(impl ConnectionTrait + Sync),
+    |                                      ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+help: try removing this bound
+    |
+908 -         db: &(impl ConnectionTrait + Sync),
+908 +         db: &(impl ConnectionTrait),
+    |
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+    --> packages/alia-server/src/modules/memory/service.rs:1011:38
+     |
+1011 |         db: &(impl ConnectionTrait + Sync),
+     |                                      ^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+help: try removing this bound
+     |
+1011 -         db: &(impl ConnectionTrait + Sync),
+1011 +         db: &(impl ConnectionTrait),
+     |
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+    --> packages/alia-server/src/modules/memory/service.rs:1055:38
+     |
+1055 |         db: &(impl ConnectionTrait + Sync),
+     |                                      ^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+help: try removing this bound
+     |
+1055 -         db: &(impl ConnectionTrait + Sync),
+1055 +         db: &(impl ConnectionTrait),
+     |
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+    --> packages/alia-server/src/modules/memory/service.rs:1106:38
+     |
+1106 |         db: &(impl ConnectionTrait + Sync),
+     |                                      ^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+help: try removing this bound
+     |
+1106 -         db: &(impl ConnectionTrait + Sync),
+1106 +         db: &(impl ConnectionTrait),
+     |
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+    --> packages/alia-server/src/modules/memory/service.rs:1249:38
+     |
+1249 |         db: &(impl ConnectionTrait + Sync),
+     |                                      ^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+help: try removing this bound
+     |
+1249 -         db: &(impl ConnectionTrait + Sync),
+1249 +         db: &(impl ConnectionTrait),
+     |
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+    --> packages/alia-server/src/modules/memory/service.rs:1429:38
+     |
+1429 |         db: &(impl ConnectionTrait + Sync),
+     |                                      ^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+help: try removing this bound
+     |
+1429 -         db: &(impl ConnectionTrait + Sync),
+1429 +         db: &(impl ConnectionTrait),
+     |
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+    --> packages/alia-server/src/modules/memory/service.rs:3430:34
+     |
+3430 |     db: &(impl ConnectionTrait + Sync),
+     |                                  ^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+help: try removing this bound
+     |
+3430 -     db: &(impl ConnectionTrait + Sync),
+3430 +     db: &(impl ConnectionTrait),
+     |
+
+warning: this bound is already specified as the supertrait of `ConnectionTrait`
+    --> packages/alia-server/src/modules/memory/service.rs:3469:34
+     |
+3469 |     db: &(impl ConnectionTrait + Sync),
+     |                                  ^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#implied_bounds_in_impls
+help: try removing this bound
+     |
+3469 -     db: &(impl ConnectionTrait + Sync),
+3469 +     db: &(impl ConnectionTrait),
+     |
+
+warning: struct update has no effect, all the fields in the struct have already been specified
+   --> packages/alia-server/src/modules/memory/maintenance/mod.rs:701:15
+    |
+701 |             ..Default::default()
+    |               ^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_update
+
+warning: this function has too many arguments (10/7)
+   --> packages/alia-server/src/modules/platform/insights/service.rs:172:5
+    |
+172 | /     async fn execute_phase(
+173 | |         db: &DatabaseConnection,
+174 | |         event_bus: &EventBus,
+175 | |         llm: Option<Arc<LlmService>>,
+...   |
+182 | |         semaphore: &Semaphore,
+183 | |     ) -> anyhow::Result<InsightLog> {
+    | |___________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (13/7)
+   --> packages/alia-server/src/modules/platform/insights/service.rs:392:5
+    |
+392 | /     async fn event_listener_loop(
+393 | |         db: DatabaseConnection,
+394 | |         event_bus: EventBus,
+395 | |         llm: Option<Arc<LlmService>>,
+...   |
+405 | |         habit_task_id: Option<Uuid>,
+406 | |     ) {
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (13/7)
+   --> packages/alia-server/src/modules/platform/insights/service.rs:442:5
+    |
+442 | /     async fn handle_event(
+443 | |         db: &DatabaseConnection,
+444 | |         event_bus: &EventBus,
+445 | |         llm: Option<Arc<LlmService>>,
+...   |
+455 | |         habit_task_id: Option<Uuid>,
+456 | |     ) {
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (11/7)
+   --> packages/alia-server/src/modules/platform/insights/service.rs:649:5
+    |
+649 | /     async fn idle_check_loop(
+650 | |         db: DatabaseConnection,
+651 | |         event_bus: EventBus,
+652 | |         llm: Option<Arc<LlmService>>,
+...   |
+660 | |         config: Arc<Mutex<Option<InsightsSection>>>,
+661 | |     ) {
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: large size difference between variants
+  --> packages/alia-server/src/oobe/bootstrap.rs:16:1
+   |
+16 | / pub(crate) enum SetupState {
+17 | |     Idle,
+18 | |     Pending(PendingPublication),
+   | |     --------------------------- the largest variant contains at least 352 bytes
+19 | |     Ready(PathBuf),
+   | |     -------------- the second-largest variant contains at least 24 bytes
+20 | |     Cancelled,
+21 | | }
+   | |_^ the entire enum is at least 352 bytes
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+   |
+18 -     Pending(PendingPublication),
+18 +     Pending(Box<PendingPublication>),
+   |
+
+warning: this `map_or` can be simplified
+   --> packages/alia-server/src/oobe/bootstrap.rs:254:8
+    |
+254 |     if local.parent().map_or(false, |p| p.exists()) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#unnecessary_map_or
+    = note: `#[warn(clippy::unnecessary_map_or)]` on by default
+help: use `is_some_and` instead
+    |
+254 -     if local.parent().map_or(false, |p| p.exists()) {
+254 +     if local.parent().is_some_and(|p| p.exists()) {
+    |
+
+warning: this `if` statement can be collapsed
+  --> packages/alia-server/src/oobe/routes.rs:66:5
+   |
+66 | /     if let Some(origin) = origins.next() {
+67 | |         if origins.next().is_some()
+68 | |             || origin.to_str().ok() != Some(format!("http://{host}").as_str())
+...  |
+72 | |     }
+   | |_____^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+   |
+66 ~     if let Some(origin) = origins.next()
+67 ~         && (origins.next().is_some()
+68 ~             || origin.to_str().ok() != Some(format!("http://{host}").as_str()))
+69 |         {
+70 |             return Err(StatusCode::FORBIDDEN);
+71 ~         }
+   |
+
+warning: this `impl` can be derived
+   --> packages/alia-server/src/plugins/manifest.rs:143:1
+    |
+143 | / impl Default for PluginStorageRetention {
+144 | |     fn default() -> Self {
+145 | |         Self::RetainOnUninstall
+146 | |     }
+147 | | }
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#derivable_impls
+help: replace the manual implementation with a derive attribute and mark the default variant
+    |
+137 + #[derive(Default)]
+138 | pub enum PluginStorageRetention {
+139 ~     #[default]
+140 ~     RetainOnUninstall,
+    |
+
+warning: this `impl` can be derived
+   --> packages/alia-server/src/providers/adapter.rs:576:1
+    |
+576 | / impl Default for TtsLatencyClass {
+577 | |     fn default() -> Self {
+578 | |         Self::Unknown
+579 | |     }
+580 | | }
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#derivable_impls
+help: replace the manual implementation with a derive attribute and mark the default variant
+    |
+569 + #[derive(Default)]
+570 | pub enum TtsLatencyClass {
+571 |     Realtime,
+572 |     Interactive,
+573 |     Batch,
+574 ~     #[default]
+575 ~     Unknown,
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/providers/llm/service.rs:659:9
+    |
+659 | /         if let Some(value) = string_setting(updates, &key) {
+660 | |             if matches!(config.api, Api::Chat | Api::Responses) {
+661 | |                 config.api = match value.as_str() {
+662 | |                     "chat_completions" => Api::Chat,
+...   |
+668 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+659 ~         if let Some(value) = string_setting(updates, &key)
+660 ~             && matches!(config.api, Api::Chat | Api::Responses) {
+661 |                 config.api = match value.as_str() {
+...
+666 |                 applied.push(key);
+667 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/providers/llm/service.rs:678:9
+    |
+678 | /         if let Api::Anthropic { version } = &mut config.api {
+679 | |             if let Some(value) = string_setting(updates, &key) {
+680 | |                 *version = value;
+681 | |                 applied.push(key);
+682 | |             }
+683 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+678 ~         if let Api::Anthropic { version } = &mut config.api
+679 ~             && let Some(value) = string_setting(updates, &key) {
+680 |                 *version = value;
+681 |                 applied.push(key);
+682 ~             }
+    |
+
+warning: using `contains()` instead of `iter().any()` is more efficient
+  --> packages/alia-server/src/providers/llm/response.rs:90:17
+   |
+90 |             && !output.iter().any(|existing: &&str| *existing == label)
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `output.contains(&label)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#manual_contains
+   = note: `#[warn(clippy::manual_contains)]` on by default
+
+warning: clamp-like pattern without using clamp function
+   --> packages/alia-server/src/providers/tts/gpt_sovits.rs:266:40
+    |
+266 |             max_pitch_shift_semitones: config.max_pitch_shift_semitones.max(0.0).min(12.0),
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with clamp: `config.max_pitch_shift_semitones.clamp(0.0, 12.0)`
+    |
+    = note: clamp will panic if max < min, min.is_nan(), or max.is_nan()
+    = note: clamp returns NaN if the input is NaN
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#manual_clamp
+    = note: `#[warn(clippy::manual_clamp)]` on by default
+
+warning: this function has too many arguments (8/7)
+   --> packages/alia-server/src/scheduler/cron.rs:337:5
+    |
+337 | /     async fn action_loop(
+338 | |         tasks: Arc<RwLock<HashMap<Uuid, TaskState>>>,
+339 | |         subscriptions: Arc<RwLock<HashMap<Uuid, SubscriptionState>>>,
+340 | |         mut action_rx: mpsc::Receiver<ActionMessage>,
+...   |
+345 | |         task_timeout_sec: u64,
+346 | |     ) {
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (10/7)
+   --> packages/alia-server/src/scheduler/cron.rs:389:5
+    |
+389 | /     async fn execute_task(
+390 | |         tasks: &Arc<RwLock<HashMap<Uuid, TaskState>>>,
+391 | |         event_bus: &EventBus,
+392 | |         actions: &ActionRegistry,
+...   |
+399 | |         source_user_id: Uuid,
+400 | |     ) {
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (10/7)
+   --> packages/alia-server/src/scheduler/cron.rs:499:5
+    |
+499 | /     async fn execute_subscription(
+500 | |         subscriptions: &Arc<RwLock<HashMap<Uuid, SubscriptionState>>>,
+501 | |         actions: &ActionRegistry,
+502 | |         semaphore: Arc<Semaphore>,
+...   |
+509 | |         event_data: serde_json::Value,
+510 | |     ) {
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: you should consider adding a `Default` implementation for `SettingsRegistry`
+  --> packages/alia-server/src/settings/registry.rs:68:5
+   |
+68 | /     pub fn new() -> Self {
+69 | |         Self {
+70 | |             updates: Arc::default(),
+71 | |             persistence: Arc::default(),
+...  |
+77 | |     }
+   | |_____^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#new_without_default
+help: try adding this
+   |
+67 + impl Default for SettingsRegistry {
+68 +     fn default() -> Self {
+69 +         Self::new()
+70 +     }
+71 + }
+   |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/settings/storage.rs:105:13
+    |
+105 | /             if !published && let Err(cleanup) = fs::remove_file(&temporary) {
+106 | |                 if cleanup.kind() != std::io::ErrorKind::NotFound {
+107 | |                     source = source
+108 | |                         .context(format!("settings temporary cleanup also failed: {cleanup}"));
+109 | |                 }
+110 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+105 ~             if !published && let Err(cleanup) = fs::remove_file(&temporary)
+106 ~                 && cleanup.kind() != std::io::ErrorKind::NotFound {
+107 |                     source = source
+108 |                         .context(format!("settings temporary cleanup also failed: {cleanup}"));
+109 ~                 }
+    |
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+   --> packages/alia-server/src/tools/builtin.rs:318:81
+    |
+318 |                     let preserve_catalog = preserve_existing_tool_catalog(&row, &definition);
+    |                                                                                 ^^^^^^^^^^^ help: change this to: `definition`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_borrow
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+   --> packages/alia-server/src/tools/builtin.rs:325:51
+    |
+325 |                     set_tool_catalog(&mut active, &definition, preserve_catalog);
+    |                                                   ^^^^^^^^^^^ help: change this to: `definition`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_borrow
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+   --> packages/alia-server/src/tools/builtin.rs:331:55
+    |
+331 |                     let catalog = tool_catalog_fields(&definition);
+    |                                                       ^^^^^^^^^^^ help: change this to: `definition`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_borrow
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+   --> packages/alia-server/src/tools/entry.rs:252:27
+    |
+252 |     definitive_rejection: Option<Arc<dyn Fn(&ToolResult) -> bool + Send + Sync>>,
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#type_complexity
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/tools/fetch.rs:237:13
+    |
+237 | /             if let Some((key, value)) = part.trim().split_once('=') {
+238 | |                 if key.eq_ignore_ascii_case("charset") {
+239 | |                     ensure!(
+240 | |                         matches!(
+...   |
+247 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+237 ~             if let Some((key, value)) = part.trim().split_once('=')
+238 ~                 && key.eq_ignore_ascii_case("charset") {
+239 |                     ensure!(
+...
+245 |                     );
+246 ~                 }
+    |
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+  --> packages/alia-server/src/tools/mcp/stdio.rs:22:12
+   |
+22 |     write: Arc<Mutex<Option<FramedWrite<ChildStdin, JsonRpcMessageCodec<ClientJsonRpcMessage>>>>>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#type_complexity
+
+warning: `alia-server` (lib) generated 181 warnings (run `cargo clippy --fix --lib -p alia-server -- ` to apply 95 suggestions)
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/binding/state.rs:173:9
+    |
+173 | /         if let Some(until) = *lockout {
+174 | |             if Instant::now() < until {
+175 | |                 bail!("too many failed bind attempts, locked out");
+176 | |             }
+177 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+    = note: `#[warn(clippy::collapsible_if)]` on by default
+help: collapse nested if block
+    |
+173 ~         if let Some(until) = *lockout
+174 ~             && Instant::now() < until {
+175 |                 bail!("too many failed bind attempts, locked out");
+176 ~             }
+    |
+
+warning: this function has too many arguments (8/7)
+   --> packages/alia-embedded/src/binding/state.rs:268:5
+    |
+268 | /     pub async fn prepare_handoff(
+269 | |         &self,
+270 | |         current_server_id: &str,
+271 | |         new_server_id: &str,
+...   |
+276 | |         issued_at: u64,
+277 | |     ) -> Result<(Vec<u8>, u64)> {
+    | |_______________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+    = note: `#[warn(clippy::too_many_arguments)]` on by default
+
+warning: this function has too many arguments (8/7)
+   --> packages/alia-embedded/src/binding/state.rs:326:5
+    |
+326 | /     pub async fn complete_handoff(
+327 | |         &self,
+328 | |         token: &[u8],
+329 | |         new_server_id: &str,
+...   |
+334 | |         issued_at: u64,
+335 | |     ) -> Result<()> {
+    | |___________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/binding/state.rs:366:9
+    |
+366 | /         if let Some(expires) = data.handoff_expires_at {
+367 | |             if now > expires {
+368 | |                 data.state = BindingState::Bound; // Revert to previous bound state
+369 | |                 drop(data);
+...   |
+373 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+366 ~         if let Some(expires) = data.handoff_expires_at
+367 ~             && now > expires {
+368 |                 data.state = BindingState::Bound; // Revert to previous bound state
+...
+371 |                 bail!("handoff token expired");
+372 ~             }
+    |
+
+warning: field assignment outside of initializer for an instance created with Default::default()
+  --> packages/alia-embedded/src/config/mod.rs:30:5
+   |
+30 |     config.config_path = path.to_path_buf();
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: consider initializing the variable with `config::types::EmbeddedConfig { config_path: path.to_path_buf(), ..Default::default() }` and removing relevant reassignments
+  --> packages/alia-embedded/src/config/mod.rs:29:5
+   |
+29 |     let mut config = EmbeddedConfig::default();
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#field_reassign_with_default
+   = note: `#[warn(clippy::field_reassign_with_default)]` on by default
+
+warning: the `Err`-variant returned from this function is very large
+  --> packages/alia-embedded/src/grpc/auth.rs:20:56
+   |
+20 | pub fn extract_bearer_token(metadata: &MetadataMap) -> Result<String, Status> {
+   |                                                        ^^^^^^^^^^^^^^^^^^^^^^ the `Err`-variant is at least 176 bytes
+   |
+   = help: try reducing the size of `tonic::Status`, for example by boxing large elements or replacing it with `Box<tonic::Status>`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+   = note: `#[warn(clippy::result_large_err)]` on by default
+
+warning: the `Err`-variant returned from this function is very large
+   --> packages/alia-embedded/src/grpc/playback_service.rs:578:55
+    |
+578 | fn decode_scope(scope: Option<&proto::VoiceScope>) -> Result<VoiceScope, Status> {
+    |                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^ the `Err`-variant is at least 176 bytes
+    |
+    = help: try reducing the size of `tonic::Status`, for example by boxing large elements or replacing it with `Box<tonic::Status>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: casting to the same type is unnecessary (`i32` -> `i32`)
+   --> packages/alia-embedded/src/grpc/plugin_service.rs:123:24
+    |
+123 |                 state: plugin_state_to_proto(s.state) as i32,
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `plugin_state_to_proto(s.state)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#unnecessary_cast
+    = note: `#[warn(clippy::unnecessary_cast)]` on by default
+
+warning: the `Err`-variant returned from this function is very large
+  --> packages/alia-embedded/src/grpc/settings_service/cue_files.rs:11:6
+   |
+11 | ) -> Result<Vec<PathBuf>, Status> {
+   |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the `Err`-variant is at least 176 bytes
+   |
+   = help: try reducing the size of `tonic::Status`, for example by boxing large elements or replacing it with `Box<tonic::Status>`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: the `Err`-variant returned from this closure is very large
+  --> packages/alia-embedded/src/grpc/settings_service/cue_files.rs:14:14
+   |
+14 |           .map(|(requested, _)| {
+   |  ______________^
+15 | |             let requested = requested.trim();
+16 | |             let name = if requested.is_empty() {
+17 | |                 format!("direct-response-{}.wav", Uuid::new_v4())
+...  |
+22 | |             Ok(name)
+23 | |         })
+   | |_________^ the `Err`-variant is at least 176 bytes
+   |
+   = help: try reducing the size of `tonic::Status`, for example by boxing large elements or replacing it with `Box<tonic::Status>`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: the `Err`-variant returned from this function is very large
+  --> packages/alia-embedded/src/grpc/settings_service/cue_files.rs:38:33
+   |
+38 | fn validate_leaf(name: &str) -> Result<(), Status> {
+   |                                 ^^^^^^^^^^^^^^^^^^ the `Err`-variant is at least 176 bytes
+   |
+   = help: try reducing the size of `tonic::Status`, for example by boxing large elements or replacing it with `Box<tonic::Status>`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: the `Err`-variant returned from this function is very large
+  --> packages/alia-embedded/src/grpc/settings_service/cue_files.rs:57:6
+   |
+57 | ) -> Result<(), Status> {
+   |      ^^^^^^^^^^^^^^^^^^ the `Err`-variant is at least 176 bytes
+   |
+   = help: try reducing the size of `tonic::Status`, for example by boxing large elements or replacing it with `Box<tonic::Status>`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: the `Err`-variant returned from this function is very large
+  --> packages/alia-embedded/src/grpc/settings_service/cue_files.rs:69:63
+   |
+69 |     fn directory_at(parent: &File, name: &std::ffi::OsStr) -> Result<File, Status> {
+   |                                                               ^^^^^^^^^^^^^^^^^^^^ the `Err`-variant is at least 176 bytes
+   |
+   = help: try reducing the size of `tonic::Status`, for example by boxing large elements or replacing it with `Box<tonic::Status>`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: the `Err`-variant returned from this function is very large
+   --> packages/alia-embedded/src/grpc/settings_service.rs:230:50
+    |
+230 | fn build_response(snapshot: SettingsSnapshot) -> Result<ProtoSettingsSnapshot, Status> {
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the `Err`-variant is at least 176 bytes
+    |
+    = help: try reducing the size of `tonic::Status`, for example by boxing large elements or replacing it with `Box<tonic::Status>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/module/audio_evidence.rs:751:9
+    |
+751 | /         if record.timing.frames > 0 {
+752 | |             if let Some(prior) = previous
+753 | |                 .iter()
+754 | |                 .rev()
+...   |
+780 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+751 ~         if record.timing.frames > 0
+752 ~             && let Some(prior) = previous
+753 |                 .iter()
+...
+778 |                 }
+779 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/module/builder.rs:336:13
+    |
+336 | /             if result.is_err() {
+337 | |                 if let Err(error) = cleanup
+338 | |                     .start()
+339 | |                     .wait_until(tokio::time::Instant::now() + grace)
+...   |
+346 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+336 ~             if result.is_err()
+337 ~                 && let Err(error) = cleanup
+338 |                     .start()
+...
+344 |                     );
+345 ~                 }
+    |
+
+warning: this function has too many arguments (8/7)
+   --> packages/alia-embedded/src/module/cpal_audio/cpal_backend.rs:351:1
+    |
+351 | / fn build_input_stream<T>(
+352 | |     device: &Device,
+353 | |     config: &StreamConfig,
+354 | |     converter: Arc<Mutex<CaptureConverter>>,
+...   |
+361 | | where
+362 | |     T: ToI16Sample + NativeReferenceSample + cpal::SizedSample + Send + 'static,
+    | |________________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: manual implementation of `.is_multiple_of()`
+   --> packages/alia-embedded/src/module/cpal_audio/cpal_backend.rs:476:8
+    |
+476 |     if data.len() % usize::from(clock.probe.format().channels) != 0 {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `!data.len().is_multiple_of(usize::from(clock.probe.format().channels))`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#manual_is_multiple_of
+    = note: `#[warn(clippy::manual_is_multiple_of)]` on by default
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/module/cpal_audio/playback.rs:394:17
+    |
+394 | /                 if *source == MixerSource::LocalCue {
+395 | |                     if let Some(submission) = submission.upgrade() {
+396 | |                         submission.terminate(ObservationEnd::Cancelled {
+397 | |                             reason: "local cue suppressed by playback hold".into(),
+...   |
+400 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+394 ~                 if *source == MixerSource::LocalCue
+395 ~                     && let Some(submission) = submission.upgrade() {
+396 |                         submission.terminate(ObservationEnd::Cancelled {
+397 |                             reason: "local cue suppressed by playback hold".into(),
+398 |                         });
+399 ~                     }
+    |
+
+warning: this `let...else` may be rewritten with the `?` operator
+   --> packages/alia-embedded/src/module/cpal_audio/playback.rs:605:9
+    |
+605 | /         let Some(index) = selected else {
+606 | |             return None;
+607 | |         };
+    | |__________^ help: replace it with: `let index = selected?;`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#question_mark
+    = note: `#[warn(clippy::question_mark)]` on by default
+
+warning: manual implementation of `.is_multiple_of()`
+    --> packages/alia-embedded/src/module/cpal_audio/playback.rs:1020:35
+     |
+1020 |             block.channels > 0 && block.samples.len() % block.channels == 0,
+     |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `block.samples.len().is_multiple_of(block.channels)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#manual_is_multiple_of
+
+warning: this `if` statement can be collapsed
+    --> packages/alia-embedded/src/module/cpal_audio/playback.rs:1104:13
+     |
+1104 | /             if block.cursor % block.channels == 0 {
+1105 | |                 if let Some(lease) = block.output_write.take() {
+1106 | |                     lease.finish(1);
+1107 | |                 }
+1108 | |             }
+     | |_____________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+     |
+1104 ~             if block.cursor % block.channels == 0
+1105 ~                 && let Some(lease) = block.output_write.take() {
+1106 |                     lease.finish(1);
+1107 ~                 }
+     |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/module/discovery.rs:118:9
+    |
+118 | /         if let Some(ble) = &self.ble {
+119 | |             if let Err(error) = ble.reannounce().await {
+120 | |                 tracing::warn!(
+121 | |                     error = %format!("{error:#}"),
+...   |
+125 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+118 ~         if let Some(ble) = &self.ble
+119 ~             && let Err(error) = ble.reannounce().await {
+120 |                 tracing::warn!(
+...
+123 |                 );
+124 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/module/discovery.rs:183:9
+    |
+183 | /         if let Some(fullname) = fullname {
+184 | |             if let Some(daemon) = daemon.as_ref() {
+185 | |                 let _ = daemon.unregister(&fullname);
+186 | |             }
+187 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+183 ~         if let Some(fullname) = fullname
+184 ~             && let Some(daemon) = daemon.as_ref() {
+185 |                 let _ = daemon.unregister(&fullname);
+186 ~             }
+    |
+
+warning: needless call to `as_bytes`
+   --> packages/alia-embedded/src/module/discovery.rs:506:20
+    |
+506 |     let ssid_len = request.ssid.as_bytes().len();
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: `len()` can be called directly on strings: `request.ssid.len()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_as_bytes
+    = note: `#[warn(clippy::needless_as_bytes)]` on by default
+
+warning: needless call to `as_bytes`
+   --> packages/alia-embedded/src/module/discovery.rs:517:19
+    |
+517 |         let len = password.as_bytes().len();
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^ help: `len()` can be called directly on strings: `password.len()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_as_bytes
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/module/discovery.rs:524:5
+    |
+524 | /     if let Some(interface) = request
+525 | |         .interface
+526 | |         .as_deref()
+527 | |         .map(str::trim)
+...   |
+536 | |     }
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+528 ~         .filter(|v| !v.is_empty())
+529 ~         && !interface
+530 |             .chars()
+...
+533 |             bail!("network interface contains unsupported characters");
+534 ~         }
+    |
+
+warning: this `if` has identical blocks
+   --> packages/alia-embedded/src/module/hmmd_mmwave.rs:132:46
+    |
+132 |           } else if state.last_error.is_some() {
+    |  ______________________________________________^
+133 | |             ModuleHealth::Degraded
+134 | |         } else {
+    | |_________^
+    |
+note: same as this
+   --> packages/alia-embedded/src/module/hmmd_mmwave.rs:134:16
+    |
+134 |           } else {
+    |  ________________^
+135 | |             ModuleHealth::Degraded
+136 | |         }
+    | |_________^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#if_same_then_else
+    = note: `#[warn(clippy::if_same_then_else)]` on by default
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/module/motion/servo.rs:520:9
+    |
+520 | /         if mode & PCA_SLEEP == 0 {
+521 | |             if let Err(error) = self.wake(mode) {
+522 | |                 failures.push(format!("restoring running mode: {error:#}"));
+523 | |             }
+524 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+520 ~         if mode & PCA_SLEEP == 0
+521 ~             && let Err(error) = self.wake(mode) {
+522 |                 failures.push(format!("restoring running mode: {error:#}"));
+523 ~             }
+    |
+
+warning: large size difference between variants
+  --> packages/alia-embedded/src/module/motion/writer.rs:90:1
+   |
+90 | / enum Work {
+91 | |     Command(QueuedCommand),
+   | |     ---------------------- the largest variant contains at least 240 bytes
+92 | |     Face(FaceWork),
+   | |     -------------- the second-largest variant contains at least 24 bytes
+93 | | }
+   | |_^ the entire enum is at least 240 bytes
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#large_enum_variant
+   = note: `#[warn(clippy::large_enum_variant)]` on by default
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+   |
+91 -     Command(QueuedCommand),
+91 +     Command(Box<QueuedCommand>),
+   |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/module/playback_session/control.rs:257:9
+    |
+257 | /         if uninitialized {
+258 | |             if let Some((through, speech)) = capture {
+259 | |                 control.initialize_capture(through, speech)?;
+260 | |             }
+261 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+257 ~         if uninitialized
+258 ~             && let Some((through, speech)) = capture {
+259 |                 control.initialize_capture(through, speech)?;
+260 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/module/playback_session.rs:289:9
+    |
+289 | /         if let Some(active) = state.as_mut() {
+290 | |             if same_session(&active.scope, scope) {
+291 | |                 ensure!(
+292 | |                     scope.generation_epoch >= active.scope.generation_epoch,
+...   |
+321 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+289 ~         if let Some(active) = state.as_mut()
+290 ~             && same_session(&active.scope, scope) {
+291 |                 ensure!(
+...
+319 |                 return Ok(());
+320 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/module/playback_session.rs:613:9
+    |
+613 | /         if ended {
+614 | |             if let Some(active) = self.lock()?.as_mut() {
+615 | |                 if active.input == Some(lease.identity()) {
+616 | |                     active.input = None;
+...   |
+619 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+613 ~         if ended
+614 ~             && let Some(active) = self.lock()?.as_mut() {
+615 |                 if active.input == Some(lease.identity()) {
+616 |                     active.input = None;
+617 |                 }
+618 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/module/playback_session.rs:614:13
+    |
+614 | /             if let Some(active) = self.lock()?.as_mut() {
+615 | |                 if active.input == Some(lease.identity()) {
+616 | |                     active.input = None;
+617 | |                 }
+618 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+614 ~             if let Some(active) = self.lock()?.as_mut()
+615 ~                 && active.input == Some(lease.identity()) {
+616 |                     active.input = None;
+617 ~                 }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/module/playback_session.rs:645:9
+    |
+645 | /         if let Some(active) = self.lock()?.as_mut() {
+646 | |             if active.input == Some(*identity) {
+647 | |                 active.input = None;
+648 | |             }
+649 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+645 ~         if let Some(active) = self.lock()?.as_mut()
+646 ~             && active.input == Some(*identity) {
+647 |                 active.input = None;
+648 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/module/registry.rs:283:13
+    |
+283 | /             if matches!(plugin.state, PluginState::Running | PluginState::Starting) {
+284 | |                 if let Err(error) = self.0.stop(&plugin.name).await {
+285 | |                     errors.push(format!("{}: {error:#}", plugin.name));
+286 | |                     failed.insert(plugin.name);
+287 | |                 }
+288 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+283 ~             if matches!(plugin.state, PluginState::Running | PluginState::Starting)
+284 ~                 && let Err(error) = self.0.stop(&plugin.name).await {
+285 |                     errors.push(format!("{}: {error:#}", plugin.name));
+286 |                     failed.insert(plugin.name);
+287 ~                 }
+    |
+
+warning: this `if` statement can be collapsed
+  --> packages/alia-embedded/src/module/speech/duplex.rs:89:21
+   |
+89 | /                     if let Some(active) = session.take() {
+90 | |                         if let Err(error) = finish_session(active, Some(result), &self.event_bus).await {
+91 | |                             warn!(%error, "retiring completed capture failed");
+92 | |                             self.control.controller.fail_closed();
+93 | |                         }
+94 | |                     }
+   | |_____________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+   |
+89 ~                     if let Some(active) = session.take()
+90 ~                         && let Err(error) = finish_session(active, Some(result), &self.event_bus).await {
+91 |                             warn!(%error, "retiring completed capture failed");
+92 |                             self.control.controller.fail_closed();
+93 ~                         }
+   |
+
+warning: this function has too many arguments (12/7)
+   --> packages/alia-embedded/src/module/speech/duplex.rs:669:1
+    |
+669 | / async fn exchange(
+670 | |     endpoint: String,
+671 | |     auth: VoiceAuth,
+672 | |     boot_id: String,
+...   |
+681 | |     cue_ready: oneshot::Sender<VoiceScope>,
+682 | | ) -> Result<()> {
+    | |_______________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (11/7)
+  --> packages/alia-embedded/src/module/speech.rs:47:5
+   |
+47 | /     pub fn new(
+48 | |         audio_bus: AudioBus,
+49 | |         event_bus: EventBus,
+50 | |         wakeword: Arc<dyn WakeWordEngine>,
+...  |
+58 | |         cancel_token: CancellationToken,
+59 | |     ) -> Self {
+   | |_____________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (8/7)
+   --> packages/alia-embedded/src/module/vision_debug.rs:147:1
+    |
+147 | / pub fn vision_debug_meta(
+148 | |     width: i32,
+149 | |     height: i32,
+150 | |     detector_width: i32,
+...   |
+155 | |     primary_face: Option<&FaceDetection>,
+156 | | ) -> VisionDebugFrameMeta {
+    | |_________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#too_many_arguments
+
+warning: this boolean expression can be simplified
+  --> packages/alia-embedded/src/plugin/registry/wasm.rs:37:16
+   |
+37 |               if !entry
+   |  ________________^
+38 | |                 .run
+39 | |                 .as_ref()
+40 | |                 .is_some_and(|run| run.instance_id == self.instance)
+   | |____________________________________________________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#nonminimal_bool
+   = note: `#[warn(clippy::nonminimal_bool)]` on by default
+help: try
+   |
+37 ~             if entry
+38 +                 .run
+39 +                 .as_ref().is_none_or(|run| run.instance_id != self.instance)
+   |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-embedded/src/plugin/registry/wasm.rs:76:9
+    |
+ 76 | /         if let Some(entry) = plugins.get_mut(&self.name) {
+ 77 | |             if entry
+ 78 | |                 .run
+ 79 | |                 .as_ref()
+...   |
+101 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+ 76 ~         if let Some(entry) = plugins.get_mut(&self.name)
+ 77 ~             && entry
+ 78 |                 .run
+...
+ 99 |                 );
+100 ~             }
+    |
+
+warning: field assignment outside of initializer for an instance created with Default::default()
+  --> packages/alia-embedded/src/preflight.rs:41:5
+   |
+41 |     config.config_path = path;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: consider initializing the variable with `config::types::EmbeddedConfig { config_path: path, ..Default::default() }` and removing relevant reassignments
+  --> packages/alia-embedded/src/preflight.rs:40:5
+   |
+40 |     let mut config = EmbeddedConfig::default();
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#field_reassign_with_default
+
+warning: the borrowed expression implements the required traits
+  --> packages/alia-embedded/src/settings.rs:81:34
+   |
+81 |             serde_json::to_value(&before).context("serializing current embedded settings")?;
+   |                                  ^^^^^^^ help: change this to: `before`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_borrows_for_generic_args
+   = note: `#[warn(clippy::needless_borrows_for_generic_args)]` on by default
+
+warning: `alia-embedded` (lib) generated 44 warnings (run `cargo clippy --fix --lib -p alia-embedded -- ` to apply 25 suggestions)
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/tests/duplex_playback/companion.rs:565:9
+    |
+565 | /         if let Some(task) = self.heartbeat.take() {
+566 | |             if task.await.is_err() {
+567 | |                 failed.push("heartbeat join");
+568 | |             }
+569 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+    = note: `#[warn(clippy::collapsible_if)]` on by default
+help: collapse nested if block
+    |
+565 ~         if let Some(task) = self.heartbeat.take()
+566 ~             && task.await.is_err() {
+567 |                 failed.push("heartbeat join");
+568 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/tests/duplex_playback/companion.rs:570:9
+    |
+570 | /         if let Some(runtime) = self.runtime.take() {
+571 | |             if !matches!(
+572 | |                 AssertUnwindSafe(runtime.shutdown()).catch_unwind().await,
+573 | |                 Ok(Ok(()))
+...   |
+577 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+570 ~         if let Some(runtime) = self.runtime.take()
+571 ~             && !matches!(
+572 |                 AssertUnwindSafe(runtime.shutdown()).catch_unwind().await,
+...
+575 |                 failed.push("server shutdown");
+576 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/tests/duplex_playback/companion.rs:578:9
+    |
+578 | /         if let Some(server) = self.voice_server.take() {
+579 | |             if AssertUnwindSafe(server.close())
+580 | |                 .catch_unwind()
+581 | |                 .await
+...   |
+586 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+578 ~         if let Some(server) = self.voice_server.take()
+579 ~             && AssertUnwindSafe(server.close())
+580 |                 .catch_unwind()
+...
+584 |                 failed.push("voice RPC join");
+585 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/tests/duplex_playback/companion.rs:587:9
+    |
+587 | /         if let Some(paired) = self.paired.take() {
+588 | |             if AssertUnwindSafe(paired.close())
+589 | |                 .catch_unwind()
+590 | |                 .await
+...   |
+595 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+587 ~         if let Some(paired) = self.paired.take()
+588 ~             && AssertUnwindSafe(paired.close())
+589 |                 .catch_unwind()
+...
+593 |                 failed.push("paired cleanup");
+594 ~             }
+    |
+
+warning: struct update has no effect, all the fields in the struct have already been specified
+  --> packages/alia-server/tests/duplex_playback/speech/system_capture.rs:71:140
+   |
+71 | ...".into(), pre_roll_ms: 300, upload_queue_frames: 32, ..Default::default() },
+   |                                                           ^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_update
+   = note: `#[warn(clippy::needless_update)]` on by default
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/tests/duplex_playback/speech.rs:222:9
+    |
+222 | /         if let Some(speech) = self.speech.take() {
+223 | |             if speech.stop().await.is_err() {
+224 | |                 failed.push("speech");
+225 | |             }
+226 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+222 ~         if let Some(speech) = self.speech.take()
+223 ~             && speech.stop().await.is_err() {
+224 |                 failed.push("speech");
+225 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/tests/duplex_playback/speech.rs:227:9
+    |
+227 | /         if let Some(wake) = self.wake.take() {
+228 | |             if wake.stop().await.is_err() {
+229 | |                 failed.push("wake");
+230 | |             }
+231 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+227 ~         if let Some(wake) = self.wake.take()
+228 ~             && wake.stop().await.is_err() {
+229 |                 failed.push("wake");
+230 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/tests/duplex_playback/speech.rs:233:9
+    |
+233 | /         if let Some(voice) = self.voice.take() {
+234 | |             if AssertUnwindSafe(voice.close())
+235 | |                 .catch_unwind()
+236 | |                 .await
+...   |
+241 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+233 ~         if let Some(voice) = self.voice.take()
+234 ~             && AssertUnwindSafe(voice.close())
+235 |                 .catch_unwind()
+...
+239 |                 failed.push("voice listener");
+240 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/tests/duplex_playback/speech.rs:245:9
+    |
+245 | /         if let Some(paired) = self.paired.take() {
+246 | |             if AssertUnwindSafe(paired.close())
+247 | |                 .catch_unwind()
+248 | |                 .await
+...   |
+253 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+245 ~         if let Some(paired) = self.paired.take()
+246 ~             && AssertUnwindSafe(paired.close())
+247 |                 .catch_unwind()
+...
+251 |                 failed.push("paired owner");
+252 ~             }
+    |
+
+warning: manual implementation of `.is_multiple_of()`
+  --> packages/alia-server/tests/duplex_playback/r1_live.rs:66:20
+   |
+66 |                 && frame.pcm_s16le.len() % 2 == 0
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `frame.pcm_s16le.len().is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#manual_is_multiple_of
+   = note: `#[warn(clippy::manual_is_multiple_of)]` on by default
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/tests/duplex_playback/r1_live.rs:186:17
+    |
+186 | /                 if let Some(device_frame::Payload::Audio(audio)) = &frame.payload {
+187 | |                     if capture_state.lock().unwrap().stats.accept(audio).is_err() {
+188 | |                         capture_state.lock().unwrap().error = Some("capture_clock_or_format_error");
+189 | |                         break;
+190 | |                     }
+191 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+186 ~                 if let Some(device_frame::Payload::Audio(audio)) = &frame.payload
+187 ~                     && capture_state.lock().unwrap().stats.accept(audio).is_err() {
+188 |                         capture_state.lock().unwrap().error = Some("capture_clock_or_format_error");
+189 |                         break;
+190 ~                     }
+    |
+
+warning: called `map(..).flatten()` on `Iterator`
+   --> packages/alia-server/tests/delivery_repository.rs:154:14
+    |
+154 |               .map(Result::unwrap)
+    |  ______________^
+155 | |             .flatten()
+    | |______________________^ help: try replacing `map` with `filter_map` and remove the `.flatten()`: `filter_map(Result::unwrap)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#map_flatten
+    = note: `#[warn(clippy::map_flatten)]` on by default
+
+warning: `alia-server` (test "duplex_playback") generated 11 warnings (run `cargo clippy --fix --test "duplex_playback" -p alia-server -- ` to apply 10 suggestions)
+warning: `alia-server` (test "delivery_repository") generated 1 warning (run `cargo clippy --fix --test "delivery_repository" -p alia-server -- ` to apply 1 suggestion)
+warning: very complex type used. Consider factoring parts into `type` definitions
+  --> packages/alia-server/tests/execution_service.rs:37:14
+   |
+37 |     sources: std::sync::Mutex<Vec<(chrono::DateTime<chrono::Utc>, Option<Uuid>, Option<i64>)>>,
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#type_complexity
+   = note: `#[warn(clippy::type_complexity)]` on by default
+
+warning: called `map(..).flatten()` on `Iterator`
+   --> packages/alia-server/tests/execution_repository.rs:485:14
+    |
+485 |               .map(Result::unwrap)
+    |  ______________^
+486 | |             .flatten()
+    | |______________________^ help: try replacing `map` with `filter_map` and remove the `.flatten()`: `filter_map(Result::unwrap)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#map_flatten
+    = note: `#[warn(clippy::map_flatten)]` on by default
+
+warning: field assignment outside of initializer for an instance created with Default::default()
+   --> packages/alia-server/tests/expression_eval.rs:273:5
+    |
+273 |     constraints.allow_playful = true;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: consider initializing the variable with `alia_server::expression::ExpressionConstraints { allow_playful: true, ..Default::default() }` and removing relevant reassignments
+   --> packages/alia-server/tests/expression_eval.rs:272:5
+    |
+272 |     let mut constraints = alia_server::expression::ExpressionConstraints::default();
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#field_reassign_with_default
+    = note: `#[warn(clippy::field_reassign_with_default)]` on by default
+
+warning: the `Err`-variant returned from this function is very large
+   --> packages/alia-server/src/channels/embedded/motion/tests.rs:109:57
+    |
+109 |     fn operation(&self, operation: &MotionOperation) -> Result<MotionEvidence, Status> {
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the `Err`-variant is at least 176 bytes
+    |
+    = help: try reducing the size of `tonic::Status`, for example by boxing large elements or replacing it with `Box<tonic::Status>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#result_large_err
+
+warning: using `contains()` instead of `iter().any()` is more efficient
+    --> packages/alia-server/src/grpc/voice_session.rs:1530:13
+     |
+1530 | /             h.channel
+1531 | |                 .checked
+1532 | |                 .lock()
+1533 | |                 .unwrap()
+1534 | |                 .iter()
+1535 | |                 .any(|value| *value == refreshed_token)
+     | |_______________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#manual_contains
+     = note: `#[warn(clippy::manual_contains)]` on by default
+help: try
+     |
+1530 ~             h.channel
+1531 +                 .checked
+1532 +                 .lock()
+1533 +                 .unwrap().contains(&refreshed_token)
+     |
+
+warning: items after a test module
+   --> packages/alia-server/src/modules/delivery/repository/control.rs:643:1
+    |
+643 |   mod initiative_tests {
+    |   ^^^^^^^^^^^^^^^^^^^^
+...
+719 | / fn validate_snapshot_advance(
+720 | |     old: &BoundControlReceipt,
+721 | |     next: &BoundControlReceipt,
+722 | | ) -> ControlLedgerResult<()> {
+    | |____________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#items_after_test_module
+    = note: `#[warn(clippy::items_after_test_module)]` on by default
+    = help: move the items to before the test module was defined
+
+warning: field assignment outside of initializer for an instance created with Default::default()
+   --> packages/alia-server/src/modules/interaction/dialogue_policy.rs:192:9
+    |
+192 |         policy.support_need_phrases = vec!["heavy heart".to_string()];
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: consider initializing the variable with `config::DialoguePolicyResourceSection { support_need_phrases: vec!["heavy heart".to_string()], ..Default::default() }` and removing relevant reassignments
+   --> packages/alia-server/src/modules/interaction/dialogue_policy.rs:191:9
+    |
+191 |         let mut policy = DialoguePolicyResourceSection::default();
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#field_reassign_with_default
+    = note: `#[warn(clippy::field_reassign_with_default)]` on by default
+
+warning: this `MutexGuard` is held across an await point
+   --> packages/alia-server/src/modules/interaction/integration_tests/cache.rs:377:17
+    |
+377 |             let messages = f.conversation.messages.lock().unwrap();
+    |                 ^^^^^^^^
+    |
+    = help: consider using an async-aware `Mutex` type or ensuring the `MutexGuard` is dropped before calling `await`
+note: these are all the await points this lock is held through
+   --> packages/alia-server/src/modules/interaction/integration_tests/cache.rs:415:18
+    |
+415 |                 .await
+    |                  ^^^^^
+...
+425 |                 .await
+    |                  ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#await_holding_lock
+    = note: `#[warn(clippy::await_holding_lock)]` on by default
+
+warning: this `MutexGuard` is held across an await point
+   --> packages/alia-server/src/modules/interaction/integration_tests/cache.rs:382:17
+    |
+382 |             let events = f.conversation.events.lock().unwrap();
+    |                 ^^^^^^
+    |
+    = help: consider using an async-aware `Mutex` type or ensuring the `MutexGuard` is dropped before calling `await`
+note: these are all the await points this lock is held through
+   --> packages/alia-server/src/modules/interaction/integration_tests/cache.rs:415:18
+    |
+415 |                 .await
+    |                  ^^^^^
+...
+425 |                 .await
+    |                  ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#await_holding_lock
+
+warning: this `MutexGuard` is held across an await point
+   --> packages/alia-server/src/modules/interaction/integration_tests/cache.rs:484:17
+    |
+484 |             let prompts = answer.0.lock().unwrap();
+    |                 ^^^^^^^
+    |
+    = help: consider using an async-aware `Mutex` type or ensuring the `MutexGuard` is dropped before calling `await`
+note: these are all the await points this lock is held through
+   --> packages/alia-server/src/modules/interaction/integration_tests/cache.rs:494:50
+    |
+494 |             assert_eq!(catalog, skills.catalog().await.unwrap().fingerprint);
+    |                                                  ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#await_holding_lock
+
+warning: this `MutexGuard` is held across an await point
+   --> packages/alia-server/src/modules/interaction/integration_tests/cache.rs:488:17
+    |
+488 |             let events = f.conversation.events.lock().unwrap();
+    |                 ^^^^^^
+    |
+    = help: consider using an async-aware `Mutex` type or ensuring the `MutexGuard` is dropped before calling `await`
+note: these are all the await points this lock is held through
+   --> packages/alia-server/src/modules/interaction/integration_tests/cache.rs:494:50
+    |
+494 |             assert_eq!(catalog, skills.catalog().await.unwrap().fingerprint);
+    |                                                  ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#await_holding_lock
+
+warning: this `MutexGuard` is held across an await point
+   --> packages/alia-server/src/modules/interaction/integration_tests/cache.rs:607:17
+    |
+607 |             let events = f.conversation.events.lock().unwrap();
+    |                 ^^^^^^
+    |
+    = help: consider using an async-aware `Mutex` type or ensuring the `MutexGuard` is dropped before calling `await`
+note: these are all the await points this lock is held through
+   --> packages/alia-server/src/modules/interaction/integration_tests/cache.rs:617:18
+    |
+617 |                 .await.unwrap().is_empty());
+    |                  ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#await_holding_lock
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/src/modules/interaction/integration_tests.rs:370:9
+    |
+370 | /         if identity.playback_sequence == 1 {
+371 | |             if let Some(gate) = &self.first_gate {
+372 | |                 gate.acquire().await.unwrap().forget();
+373 | |             }
+374 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+370 ~         if identity.playback_sequence == 1
+371 ~             && let Some(gate) = &self.first_gate {
+372 |                 gate.acquire().await.unwrap().forget();
+373 ~             }
+    |
+
+warning: items after a test module
+   --> packages/alia-server/src/modules/interaction/prompt.rs:289:1
+    |
+289 | mod tests {
+    | ^^^^^^^^^
+...
+379 | pub(super) fn runtime_context_has_user_memory(context: &RuntimePromptContext) -> bool {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#items_after_test_module
+    = help: move the items to before the test module was defined
+
+warning: struct update has no effect, all the fields in the struct have already been specified
+   --> packages/alia-server/src/modules/interaction/prompt.rs:331:15
+    |
+331 |             ..ChatMessage::default()
+    |               ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#needless_update
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+   --> packages/alia-server/src/modules/interaction/skills/registry_tests.rs:107:18
+    |
+107 |     let changes: [(&str, fn(&mut LoadedSkill)); 10] = [
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#type_complexity
+
+warning: field assignment outside of initializer for an instance created with Default::default()
+   --> packages/alia-server/src/modules/platform/insights/service/tests.rs:260:9
+    |
+260 |         config.enabled = true;
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: consider initializing the variable with `config::InsightsSection { enabled: true, habit_detection_schedule: "invalid cron".into(), ..Default::default() }` and removing relevant reassignments
+   --> packages/alia-server/src/modules/platform/insights/service/tests.rs:259:9
+    |
+259 |         let mut config = InsightsSection::default();
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#field_reassign_with_default
+
+warning: using `contains()` instead of `iter().any()` is more efficient
+  --> packages/alia-server/src/providers/llm/response.rs:90:17
+   |
+90 |             && !output.iter().any(|existing: &&str| *existing == label)
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `output.contains(&label)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#manual_contains
+
+warning: `alia-server` (test "execution_service") generated 1 warning
+warning: `alia-server` (test "execution_repository") generated 1 warning (run `cargo clippy --fix --test "execution_repository" -p alia-server -- ` to apply 1 suggestion)
+warning: `alia-server` (test "expression_eval") generated 1 warning
+warning: `alia-server` (lib test) generated 195 warnings (180 duplicates) (run `cargo clippy --fix --lib -p alia-server --tests -- ` to apply 5 suggestions)
+warning: called `.err().expect()` on a `Result` value
+   --> packages/alia-server/tests/delivery_service.rs:344:30
+    |
+344 |   ...                   .err()
+    |  ________________________^
+345 | | ...                   .expect("nil request must not create an output owner");
+    | |_____________________________^ help: try: `expect_err`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#err_expect
+    = note: `#[warn(clippy::err_expect)]` on by default
+
+    Checking alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+warning: manual implementation of `.is_multiple_of()`
+   --> packages/alia-server/tests/voice_stream_live.rs:358:34
+    |
+358 |     assert!(!bytes.is_empty() && bytes.len() % 2 == 0);
+    |                                  ^^^^^^^^^^^^^^^^^^^^ help: replace with: `bytes.len().is_multiple_of(2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#manual_is_multiple_of
+    = note: `#[warn(clippy::manual_is_multiple_of)]` on by default
+
+warning: `alia-server` (test "delivery_service") generated 1 warning (run `cargo clippy --fix --test "delivery_service" -p alia-server -- ` to apply 1 suggestion)
+warning: `alia-server` (test "voice_stream_live") generated 1 warning (run `cargo clippy --fix --test "voice_stream_live" -p alia-server -- ` to apply 1 suggestion)
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/tests/server_runtime/settings_authorization.rs:511:9
+    |
+511 | /         if let Some(mut request) = request.take() {
+512 | |             if tokio::time::timeout(Duration::from_secs(5), &mut request).await.is_err() {
+513 | |                 request.abort();
+514 | |                 let _ = request.await;
+515 | |             }
+516 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+    = note: `#[warn(clippy::collapsible_if)]` on by default
+help: collapse nested if block
+    |
+511 ~         if let Some(mut request) = request.take()
+512 ~             && tokio::time::timeout(Duration::from_secs(5), &mut request).await.is_err() {
+513 |                 request.abort();
+514 |                 let _ = request.await;
+515 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/tests/server_runtime/settings_read_authorization.rs:194:9
+    |
+194 | /         if let Some(mut request) = request.take() {
+195 | |             if tokio::time::timeout(Duration::from_secs(5), &mut request).await.is_err() {
+196 | |                 request.abort();
+197 | |                 let _ = request.await;
+198 | |             }
+199 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+194 ~         if let Some(mut request) = request.take()
+195 ~             && tokio::time::timeout(Duration::from_secs(5), &mut request).await.is_err() {
+196 |                 request.abort();
+197 |                 let _ = request.await;
+198 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> packages/alia-server/tests/server_runtime/plugin_authorization.rs:459:9
+    |
+459 | /         if let Some(mut pending) = request.take() {
+460 | |             if tokio::time::timeout(Duration::from_secs(5), &mut pending).await.is_err() {
+461 | |                 pending.abort();
+462 | |                 let _ = pending.await;
+463 | |             }
+464 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+459 ~         if let Some(mut pending) = request.take()
+460 ~             && tokio::time::timeout(Duration::from_secs(5), &mut pending).await.is_err() {
+461 |                 pending.abort();
+462 |                 let _ = pending.await;
+463 ~             }
+    |
+
+warning: field assignment outside of initializer for an instance created with Default::default()
+  --> packages/alia-server/tests/server_runtime/paired_noop.rs:14:9
+   |
+14 |         embedded.config_path = f.dir.join("embedded.toml");
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: consider initializing the variable with `alia_embedded::config::EmbeddedConfig { config_path: f.dir.join("embedded.toml"), ..Default::default() }` and removing relevant reassignments
+  --> packages/alia-server/tests/server_runtime/paired_noop.rs:13:9
+   |
+13 |         let mut embedded = EmbeddedConfig::default();
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#field_reassign_with_default
+   = note: `#[warn(clippy::field_reassign_with_default)]` on by default
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+  --> packages/alia-server/tests/server_runtime/classifier.rs:43:14
+   |
+43 |     answers: Arc<Mutex<Vec<(&'static str, Vec<ChatMessage>)>>>,
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#type_complexity
+   = note: `#[warn(clippy::type_complexity)]` on by default
+
+warning: `alia-server` (test "server_runtime") generated 5 warnings (run `cargo clippy --fix --test "server_runtime" -p alia-server -- ` to apply 3 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.63s
+
+EXIT_CODE: 0

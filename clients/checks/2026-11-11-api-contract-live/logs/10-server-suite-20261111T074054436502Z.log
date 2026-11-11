@@ -1,0 +1,1798 @@
+COMMAND: cargo test -p alia-server --offline --locked --no-fail-fast -- --nocapture --test-threads=4
+START_UTC: 20261111T074054436502Z
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.59s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-7935b3105a1c6046)
+
+running 419 tests
+test adapters::easy_turn::tests::rejects_invalid_config_before_starting_work ... ok
+test adapters::easy_turn::tests::sends_valid_pcm_and_checks_correlated_model_observation ... ok
+test adapters::easy_turn::tests::cancels_in_flight_request_and_releases_local_capacity ... ok
+test adapters::easy_turn::tests::rejects_late_generation_and_unknown_state ... ok
+test api::deliveries::tests::unconfirmed_database_errors_never_expose_private_diagnostics_or_advise_replay ... ok
+test api::effects::tests::database_errors_are_sanitized_and_invalid_json_uses_the_machine_error_envelope ... ok
+test api::channels::tests::rejected_restart_request_does_not_poison_runtime_shutdown ... ok
+test api::channels::tests::dropped_http_receiver_does_not_hide_restart_rollback_failure ... ok
+test api::skills::tests::skill_change_errors_preserve_database_and_internal_responses ... ok
+test api::skills::tests::update_skill_request_rejects_legacy_tools_field ... ok
+test api::skills::tests::create_skill_request_rejects_legacy_tools_field ... ok
+test api::skills::tests::create_skill_request_accepts_preferred_tools ... ok
+test api::wasm_plugins::tests::upload_does_not_accept_malformed_or_oversized_base64 ... ok
+test bootstrap::builder::llm_tests::configured_roles_share_one_init_and_cleanup_owner_but_overrides_do_not ... ok
+
+thread 'bootstrap::registry::tests::aliases_share_one_probe_but_same_names_do_not_merge_distinct_instances' (9055420) panicked at packages/alia-server/src/bootstrap/registry_tests.rs:65:32:
+injected probe panic
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test bootstrap::factory::tests::adapters_require_explicit_valid_selection ... ok
+test bootstrap::registry::tests::busy_requests_do_not_queue_and_dropped_callers_release_admission ... ok
+test bootstrap::registry::tests::concurrency_limit_also_bounds_queued_checks_by_the_original_deadline ... ok
+test bootstrap::registry::tests::stopping_releases_pending_checks_and_rejects_future_probe_admission ... ok
+test bootstrap::registry::tests::total_deadline_keeps_finished_results_and_releases_every_running_probe ... ok
+test bootstrap::setup::tests::cancellation_rejects_an_accepted_save_whose_body_finishes_during_drain ... ok
+test bootstrap::setup::tests::cancelled_setup_does_not_bind_or_read_terminal ... ok
+test bootstrap::builder::llm_tests::default_profile_selects_third_noop_and_alias_with_one_owner ... ok
+test adapters::easy_turn::tests::bounds_deadline_response_size_and_upstream_errors ... ok
+test bootstrap::setup::tests::setup_terminal_worker_releases_input_after_cancellation ... ignored, requires a real PTY; run with --ignored --nocapture --test-threads=1
+test bootstrap::setup::tests::unauthenticated_setup_listener_is_loopback_only ... ok
+test bootstrap::registry::tests::aliases_share_one_probe_but_same_names_do_not_merge_distinct_instances ... ok
+test channels::cli::tests::idle_terminal_worker_joins_and_restores_terminal_on_shutdown ... ignored, requires a real PTY; run with --ignored --nocapture --test-threads=1
+test channels::cli::tests::output_without_a_running_worker_fails_explicitly ... ok
+test channels::cli::tests::cancelled_stop_waiter_retains_real_blocking_worker_until_join ... ok
+test channels::cli::text::tests::failed_durable_offer_and_foreign_identity_never_reach_native_source_write ... ok
+test channels::cli::text::tests::full_text_requires_end_and_stdout_failure_keeps_partial_utf8_fact ... ok
+test channels::cli::text::tests::model_terminal_control_sequences_are_rejected_before_native_write ... ok
+test channels::cli::text::tests::old_exact_cancel_cannot_close_a_new_text_writer ... ok
+test channels::cli::text::tests::real_console_write_proves_utf8_bytes_and_restores_terminal ... ignored, requires a real PTY; run with --ignored --nocapture --test-threads=1
+test channels::embedded::channel::lifecycle_tests::actual_loop_early_return_stays_a_shutdown_failure ... ok
+test channels::embedded::channel::lifecycle_tests::plugin_command_rejects_non_string_payload_before_connecting ... ok
+sensor cancellation: owner_active=true sensor_job_retained=true resources_released=true stopped=Ok(()) stopped_again=Ok(())
+test channels::embedded::channel::lifecycle_tests::sensor_sync_waits_for_background_owner_cancellation ... ok
+test channels::embedded::channel::motion_pin_tests::motion_pin_is_optional_but_partial_malformed_and_wrong_length_pins_are_rejected ... ok
+test channels::embedded::channel::motion_pin_tests::unsigned_binding_status_cannot_populate_a_motion_pin_or_replace_its_configured_key ... ok
+test channels::embedded::motion::tests::a_known_durable_identity_cannot_become_fresh_when_its_row_disappears ... ok
+test channels::cli::text::tests::exact_cancel_waits_for_native_write_and_survives_dropped_delivery_waiter ... ok
+test channels::embedded::motion::tests::animation_pin_is_resolved_only_from_the_approved_catalog ... ok
+test channels::embedded::motion::tests::animation_without_an_operator_approved_catalog_is_rejected ... ok
+test channels::embedded::motion::tests::all_users_and_voice_nonvoice_share_one_ordered_device_sequence ... ok
+test channels::embedded::motion::tests::first_cancel_loss_retries_original_command_without_repeating_submission ... ok
+test channels::embedded::motion::tests::expired_idle_control_is_reopened_only_for_new_intent_and_generation_never_rewinds ... ok
+test channels::embedded::motion::tests::first_signed_snapshot_may_already_contain_complete_submission_evidence ... ok
+test channels::embedded::motion::tests::forged_identity_or_position_receipt_is_unknown_and_cannot_retire_the_original_writer ... ok
+test channels::embedded::motion::tests::immutable_source_and_bounded_retirement_map_do_not_create_replay_permission ... ok
+test channels::embedded::motion::tests::lost_submit_ack_is_unknown_and_exact_cancel_never_replays ... ok
+test channels::embedded::motion::tests::missing_response_and_other_owner_cancel_have_no_physical_dispatch_authority ... ok
+test channels::embedded::motion::tests::missing_trusted_pin_rejects_raw_motion_submission_before_ledger_or_control ... ok
+test channels::embedded::motion::tests::orchestrator_refreshes_accepted_motion_to_submitted_without_position_completion_or_resubmit ... ok
+test channels::embedded::motion::tests::original_response_record_is_restored_without_opening_control_or_resubmitting ... ok
+test bootstrap::setup::tests::setup_completion_delivers_response_and_closes_stalled_connections ... ok
+test bootstrap::setup::tests::pending_publication_keeps_setup_available_until_confirmed_response_drains ... ok
+test channels::embedded::motion::tests::revoked_response_cancels_original_command_and_still_records_real_receipts ... ok
+test channels::embedded::motion::tests::shutdown_waiter_drop_retains_owner_and_dependencies_until_writer_quiesces ... ok
+test channels::embedded::motion::tests::typed_motion_mapping_rejects_implicit_targets_nonfinite_and_unsafe_animation_names ... ok
+test channels::embedded::playback::tests::decoder_copy_limits_include_an_incomplete_native_frame ... ok
+test channels::embedded::playback::tests::decoder_rejects_truncation_and_format_changes_without_speaking_headers ... ok
+test channels::embedded::playback::tests::decoder_rejects_unimplemented_presentation_and_wrong_identity_or_contract ... ok
+test channels::embedded::playback::tests::durable_gates_precede_wire_and_end_continues_monotonic_submission_evidence ... ok
+test channels::embedded::playback::tests::fence_receipt_must_prove_matching_session_and_minimum_epoch ... ok
+test channels::embedded::playback::tests::fragmented_wav_preserves_original_scope_sequence_and_actual_rate ... ok
+test channels::embedded::motion::tests::signed_exchange_rejects_wrong_nonce_device_version_and_pinned_key ... ok
+test channels::embedded::playback::tests::heartbeats_do_not_extend_delivery_deadline_and_exact_cancel_keeps_prefix ... ok
+test channels::embedded::playback::tests::precise_cancel_merges_final_prefix_and_bare_control_ack_is_unknown ... ok
+test channels::embedded::playback::tests::streaming_producer_error_keeps_upload_and_receipts_until_exact_fence ... ok
+test channels::embedded::playback::tests::idle_receipt_timeout_cancels_and_joins_the_audio_producer ... ok
+test channels::embedded::playback::tests::streaming_token_cancel_keeps_upload_and_receipts_until_exact_fence ... ok
+test channels::embedded::playback::tests::terminal_receipt_survives_cancelled_observer_ack_and_failed_fence ... ok
+test channels::embedded::motion::tests::restarted_catalog_cannot_rebind_or_hide_the_original_motion_intent ... ok
+test config::publication::tests::an_exclusive_marker_conflict_never_removes_the_other_record ... ok
+test config::publication::tests::a_base_symlink_keeps_its_canonical_overlay_but_a_candidate_symlink_is_rejected ... ok
+test config::publication::tests::existing_marker_mismatch_remains_typed_and_does_not_start_another_intent ... ok
+test config::publication::tests::invalid_input_and_pre_marker_failure_preserve_unowned_files ... ok
+test config::publication::tests::fragment_tree_and_new_ancestors_are_synced_before_the_marker_and_base ... ok
+test config::publication::tests::marker_removal_failure_requires_the_in_memory_intent_until_sync_succeeds ... ok
+test config::publication::tests::recovery_rejects_path_escape_and_cleans_only_its_matching_descriptor_temporary ... ok
+test config::publication::tests::retry_syncs_all_ancestors_left_visible_by_an_earlier_preparation_failure ... ok
+test discovery::tests::normalizes_service_type ... ok
+test discovery::tests::uses_public_endpoint_when_configured ... ok
+test error::tests::app_errors_publish_status_code_reason_and_safe_message ... ok
+
+thread 'expression::abi::wasm_tests::real_wasm_appraisal_requires_exact_persistent_pin_and_is_revocable' (9055602) panicked at packages/alia-server/src/expression/abi.rs:319:10:
+called `Result::unwrap()` on an `Err` value: guest memory must declare a maximum within the host budget
+test expression::abi::wasm_tests::real_wasm_appraisal_requires_exact_persistent_pin_and_is_revocable ... FAILED
+test expression::affect::tests::disabled_affect_has_no_snapshot_effect ... ok
+test expression::affect::tests::event_is_inactive_at_exact_expiry_and_before_its_source_time ... ok
+test expression::affect::tests::expired_events_are_absent_from_snapshot_and_relationship ... ok
+test expression::affect::tests::gratitude_and_frustration_have_distinct_bounded_effects ... ok
+test expression::affect::tests::nonlinear_saturation_softens_near_bounds ... ok
+test expression::affect::tests::profile_does_not_promote_turn_scoped_signals_to_relationship ... ok
+test expression::affect::tests::relationship_axes_change_more_slowly_than_affect ... ok
+test expression::affect::tests::relationship_profile_uses_live_reason_codes_and_never_private_evidence ... ok
+test expression::affect::tests::replay_order_comes_from_canonical_time_and_identity ... ok
+test expression::affect::tests::single_event_delta_is_rate_limited ... ok
+test expression::affect::tests::user_scope_uses_policy_sticky_decay ... ok
+test expression::orchestrator::tests::accepted_is_not_completion_and_cannot_start_another_phase ... ok
+test expression::orchestrator::tests::cancellation_unknown_or_failed_does_not_confirm_or_preempt ... ok
+test expression::orchestrator::tests::command_timeout_preserves_uncertainty_and_exact_cancel_identity ... ok
+test expression::orchestrator::tests::concurrent_same_plan_executes_once_and_old_completion_cannot_clear_new_plan ... ok
+test expression::orchestrator::tests::delayed_cancel_and_old_scope_never_cancel_the_new_plan ... ok
+test expression::orchestrator::tests::dropped_execution_retains_exact_unconfirmed_command_until_confirmed_cancel ... ok
+test expression::orchestrator::tests::invalid_or_legacy_receipts_never_retire_the_original_writer ... ok
+test expression::orchestrator::tests::missing_canonical_response_never_reaches_the_adapter ... ok
+test expression::orchestrator::tests::missing_motion_evidence_and_local_skip_cannot_retire_a_writer ... ok
+test expression::orchestrator::tests::phases_filter_and_duplicate_phase_reuses_original_evidence ... ok
+test expression::orchestrator::tests::two_runtimes_and_users_have_independent_plan_owners ... ok
+test expression::orchestrator::tests::unknown_motion_outcome_retires_only_with_original_quiescence_evidence ... ok
+test expression::orchestrator::tests::unsupported_command_protocol_has_no_motion_or_cancel_side_effects ... ok
+test expression::runtime::tests::affect_state_can_shift_expression_towards_cheerful ... ok
+test expression::runtime::tests::appraisal_engine_requires_persisted_implementation_approval ... ok
+test expression::runtime::tests::builtin_safety_enforces_motion_frequency_limit ... ok
+test expression::runtime::tests::builtin_safety_removes_actions_that_exceed_plan_risk_or_interruptibility ... ok
+test expression::runtime::tests::dialogue_act_and_content_tone_steer_intent_before_realization ... ok
+test expression::runtime::tests::dialogue_act_maps_apology_to_gentle_intent ... ok
+test expression::runtime::tests::external_abi_plugin_can_contribute_appraisal_and_intent ... ok
+test expression::runtime::tests::external_abi_plugin_timeout_is_recoverable ... ok
+test expression::runtime::tests::external_planners_cannot_restore_disabled_automatic_motion ... ok
+test expression::runtime::tests::motion_requires_negotiated_capability ... ok
+test expression::runtime::tests::planner_and_safety_plugins_can_adjust_expression_plan ... ok
+test expression::runtime::tests::regulation_prevents_negative_affect_from_overexpressing ... ok
+test expression::runtime::tests::safety_context_can_force_minimal_expression ... ok
+test channels::embedded::playback::tests::streaming_receipt_timeout_keeps_upload_and_receipts_until_exact_fence ... ok
+test expression::runtime::tests::wasm_expression_input_excludes_identity_memory_and_internal_state ... ok
+test grpc::voice_auth::tests::removed_or_replaced_channel_cannot_lend_authority_to_a_source ... ok
+test grpc::voice_auth::tests::invalid_or_revoked_credentials_never_authenticate ... ok
+test grpc::voice_auth::tests::source_keeps_original_epochs_and_rejects_each_revocation ... ok
+test grpc::voice_auth::tests::signed_device_requires_an_active_configured_owner ... ok
+test grpc::voice_auth::tests::voice_admission_requires_explicit_instance_id_without_type_alias_fallback ... ok
+test grpc::voice_session::tests::authenticated_refresh_frame_extends_transport_idle_but_not_capture_freshness ... ok
+test config::publication::tests::recovery_rejects_target_candidate_and_fragment_changes_without_overwriting ... ok
+test grpc::voice_session::tests::capture_gap_fails_and_invalidates_already_enqueued_response ... ok
+test grpc::voice_session::tests::binding_revocation_closes_on_periodic_revalidation ... ok
+test grpc::voice_session::tests::busy_model_retries_bounded_window_without_requiring_another_utterance ... ok
+test grpc::voice_session::tests::complete_wait_keeps_owner_and_only_close_sends_terminal_fence ... ok
+test grpc::voice_session::tests::continuously_ready_capture_does_not_starve_model_or_control ... ok
+test grpc::voice_session::tests::disabled_barge_in_discards_speech_crossing_output_end_until_silence ... ok
+test grpc::voice_session::tests::disabled_barge_in_keeps_original_reply_and_accepts_the_next_fresh_turn ... ok
+test grpc::voice_session::tests::dropping_last_producer_ends_output_even_while_voice_session_stays_alive ... ok
+test grpc::voice_session::tests::initiative_closed_output_gate_cannot_advance_scope_or_read_context ... ok
+test grpc::voice_session::tests::initiative_snapshot_polling_cannot_extend_capture_idle_deadline ... ok
+test grpc::voice_session::tests::explicit_wait_needs_complete_explicit_continue_and_stop_never_resumes ... ok
+test grpc::voice_session::tests::disabled_barge_in_preserves_close_and_rejects_broken_capture_clocks ... ok
+test grpc::voice_session::tests::initiative_snapshot_rechecks_speech_arriving_during_authentication ... ok
+test grpc::voice_session::tests::initiative_snapshot_rejects_original_output_even_when_held ... ok
+test grpc::voice_session::tests::paired_v2_requires_explicit_bounded_software_hold_capabilities ... ok
+test grpc::voice_session::tests::initiative_snapshot_requires_capture_and_never_allocates_output ... ok
+test grpc::voice_session::tests::newer_captured_speech_rejects_old_continue_and_new_topic_replaces_original_owner ... ok
+test grpc::voice_session::tests::recognized_speech_bypasses_stt_and_backchannel_preserves_generation ... ok
+test grpc::voice_session::tests::privacy_change_during_detection_retires_session_and_new_session_gets_new_epoch ... ok
+test grpc::voice_session::tests::privacy_change_retires_idle_session_and_cancels_queued_response ... ok
+test grpc::voice_session::tests::replacing_a_session_cancels_the_old_owner_and_old_drop_preserves_new_owner ... ok
+test channels::embedded::motion::tests::five_second_command_keeps_owned_observation_after_initial_waiter_is_dropped ... ok
+test grpc::voice_session::tests::relationship_change_during_detection_retires_session_and_new_session_gets_new_epoch ... ok
+test grpc::voice_session::tests::semantic_controls_match_whole_complete_utterances_not_substrings ... ok
+test grpc::voice_session::tests::slow_control_blocks_same_channel_replacement_but_not_other_channels ... ok
+test grpc::voice_session::tests::saturated_recognized_queue_fails_closed_without_leaking_output_producer ... ok
+test grpc::voice_session::tests::source_epoch_is_fixed_at_ready_before_first_audio_and_not_renewed_by_auth ... ok
+test grpc::voice_session::tests::resume_revalidates_original_privacy_relationship_and_binding_before_enqueue ... ok
+test grpc::voice_session::tests::speech_arriving_during_inference_rejects_old_snapshot_and_reevaluates ... ok
+test modules::companion::decision::tests::candidate_identity_survives_policy_and_appraisal_rebuild_without_refreshing_expiry ... ok
+test modules::companion::decision::tests::daily_budget_cooldown_dedup_and_response_gates_are_independent ... ok
+test modules::companion::decision::tests::expiry_is_half_open_and_invalid_frozen_times_are_rejected ... ok
+test modules::companion::decision::tests::hard_gates_override_enabled_and_idle_state ... ok
+test modules::companion::decision::tests::live_capture_must_be_fresh_and_limits_the_decision_deadline ... ok
+test modules::companion::decision::tests::old_shadow_cannot_be_promoted_and_policy_content_changes_also_revoke ... ok
+test modules::companion::decision::tests::replay_is_stable_across_json_key_order_and_keeps_nanosecond_observations ... ok
+test modules::companion::decision::tests::simulated_opportunity_never_allows_output_and_defaults_remain_shadow ... ok
+test modules::companion::decision::tests::source_expiry_shortens_candidate_and_canonical_reference_order_is_stable ... ok
+test modules::companion::decision::tests::unknown_fields_and_malformed_or_excessive_inputs_are_rejected ... ok
+test modules::companion::decision::tests::utc_midnight_limits_frozen_budget_validity ... ok
+test grpc::voice_session::tests::speech_queued_during_resume_revalidation_invalidates_the_original_detection ... ok
+test grpc::voice_session::tests::renewed_credentials_survive_repeated_periodic_revalidation ... ok
+test modules::companion::live::tests::capacity_lock_serializes_distinct_owners_in_the_same_schema ... ok
+test modules::companion::live::tests::atomic_admission_rollback_and_original_pending_lock_reconcile_without_second_permit ... ok
+test modules::companion::live::tests::committed_original_transaction_returns_existing_and_cleanup_survives_revocation ... ok
+test modules::companion::live::tests::last_daily_budget_is_serialized_and_erased_charge_is_not_refunded ... ok
+test grpc::voice_session::tests::wrong_or_stale_signed_refresh_is_rejected_and_closes_scoped_output ... ok
+test modules::companion::live::tests::pending_capacity_original_expiry_and_source_erasure_remain_bounded ... ok
+test modules::companion::repository::tests::absent_opportunity_uses_database_time_while_future_observations_are_rejected ... ok
+test modules::companion::live::tests::shadow_sources_and_limited_worklist_never_upgrade_to_live ... ok
+test modules::companion::repository::tests::bounded_page_and_explicit_simulated_opportunity_never_acquire_output_authority ... ok
+test modules::companion::repository::tests::fixed_shadow_receipt_survives_competing_workers_restart_and_duplicate_trigger ... ok
+test modules::companion::repository::tests::privacy_erasure_is_owner_scoped_and_policy_cas_cannot_revive_a_shadow_candidate ... ok
+test modules::companion::repository::tests::private_retention_and_capacity_are_bounded_while_erasure_keeps_identity ... ok
+test modules::companion::repository::tests::receipt_and_candidate_failure_rolls_back_the_entire_admission ... ok
+test modules::companion::repository::tests::source_erasure_triggers_ignore_cache_hits_but_cover_graph_node_projections ... ok
+test modules::companion::repository::tests::source_revision_and_relationship_clear_erase_private_replay_but_keep_tombstones ... ok
+test modules::companion::repository::tests::stale_sources_are_retired_without_starving_discovery_or_refreshing_original_time ... ok
+test modules::companion::live::tests::commit_checks_original_short_admission_deadline_without_refreshing_output_deadline ... ok
+test modules::companion::runner::tests::existing_acknowledged_transaction_returns_receipt_without_reserve_or_tts ... ok
+test modules::companion::runner::tests::lost_reserve_reply_cancels_original_identity_without_second_permit_or_tts ... ok
+test modules::delivery::audio::tests::clones_slices_queue_derived_pcm_and_http_bytes_share_last_drop ... ok
+test modules::delivery::audio::tests::global_capacity_is_shared_and_cancelled_waiter_releases_local_credit ... ok
+test modules::companion::runner::tests::rejected_reserve_cancels_original_identity_without_second_permit_or_tts ... ok
+test modules::delivery::audio::tests::same_response_cannot_renew_or_bypass_held_capacity ... ok
+test modules::delivery::audio::tests::seal_accounts_retained_capacity_and_rejects_oversized_allocations ... ok
+test modules::delivery::audio::tests::standalone_request_is_not_a_canonical_response_budget ... ok
+test modules::delivery::audio::tests::registry_has_no_historical_uuid_growth_and_live_owners_are_bounded ... ok
+test modules::delivery::repository::delivery_intent_digest_preserves_sorted_json_identity ... ok
+test modules::delivery::service::output::gate::tests::applied_resume_handoff_keeps_owner_closed_and_never_refreshes_original_deadline ... ok
+test modules::delivery::service::output::gate::tests::confirmation_keeps_original_deadline_and_requires_explicit_continue ... ok
+test modules::delivery::service::output::gate::tests::expiry_cancellation_and_new_speech_never_release_old_hold ... ok
+test modules::delivery::service::output::gate::tests::original_output_lifetime_and_real_owner_counts_bound_retention ... ok
+test modules::interaction::cache::review::tests::parses_cache_review_with_surrounding_text ... ok
+test modules::interaction::cache::review::tests::parses_fenced_cache_review_decision ... ok
+test modules::companion::runner::tests::shutdown_during_original_reserve_joins_failure_and_preserves_charge ... ok
+test modules::interaction::dialogue_policy::tests::classifies_user_semantics ... ok
+test modules::interaction::dialogue_policy::tests::preserves_cache_minimality ... ok
+test modules::interaction::dialogue_policy::tests::uses_configured_phrase_lists ... ok
+test modules::interaction::error_notice::tests::builds_chinese_notice_without_raw_error ... ok
+test modules::interaction::error_notice::tests::builds_english_notice_for_non_cjk_input ... ok
+test modules::interaction::error_notice::tests::cancelled_error_does_not_dispatch_voice_or_text ... ok
+test modules::interaction::error_notice::tests::unadmitted_error_notice_never_starts_tts_or_side_effects ... ok
+test modules::interaction::initiative::tests::dropping_reservation_waiter_cancels_original_request ... ok
+test modules::interaction::initiative::tests::replacement_keeps_new_mailbox_and_rejects_old_scope ... ok
+test modules::interaction::initiative::tests::reservation_timeout_cancels_original_without_enqueuing_a_retry ... ok
+test modules::companion::service::tests::same_channel_has_one_outstanding_snapshot_and_close_drains_its_original_attempt ... ok
+test modules::interaction::conversation::service::tests::durable_input_provenance_preserves_time_owner_and_atomicity ... ok
+test modules::delivery::repository::control::initiative_tests::initiative_registration_requires_canonical_capture_and_original_output_deadline ... ok
+test modules::interaction::integration_tests::cache::cancelled_generation_leaves_blocked_catalog_finish_without_persistence ... ok
+test modules::interaction::integration_tests::cache::cancelled_cache_lookup_preserves_user_source_and_terminal_audit ... ok
+test modules::interaction::integration_tests::cache::changed_skill_catalog_rejects_approved_exact_and_semantic_cache_context ... ok
+test modules::interaction::integration_tests::failed_user_source_prevents_model_and_tool_processing ... ok
+test modules::interaction::integration_tests::cache::exact_and_semantic_hits_share_one_response_exit_and_keep_revocable_source_lineage ... ok
+test modules::interaction::integration_tests::context::corrected_transcript_keeps_the_single_persisted_raw_source_and_lease ... ok
+test modules::interaction::integration_tests::context::clear_or_policy_change_during_model_call_rejects_old_output_and_allows_a_new_turn ... ok
+test modules::interaction::integration_tests::memory_search::disabled_memory_search_cannot_read_through_a_stale_tool_list ... ok
+test modules::interaction::integration_tests::memory_search::memory_search_confirmation_exposes_only_pending_execution_fact ... ok
+test modules::interaction::integration_tests::memory_search::memory_search_required_role_is_enforced_before_reading ... ok
+test modules::interaction::integration_tests::memory_search::response_freeze_prevents_even_authorized_memory_search_dispatch ... ok
+test modules::interaction::integration_tests::memory_search::empty_or_invalid_memory_search_filter_never_widens_the_read ... ok
+test modules::interaction::integration_tests::missing_source_does_not_publish_completion_or_memory_capture ... ok
+test modules::interaction::integration_tests::memory_search::terminal_execution_appraisal_rejects_foreign_source_and_late_fact_change ... ok
+test modules::interaction::integration_tests::memory_search::successful_memory_search_reads_canonical_sql_with_limits_and_retains_prior_roots ... ok
+test modules::interaction::integration_tests::prepared_voice_error_before_register_ack_keeps_original_context_and_response ... ok
+test modules::interaction::integration_tests::memory_search::rig_native_tool_round_preserves_receipts_context_and_final_turn_budget ... ok
+test modules::interaction::integration_tests::recognized_speech_keeps_original_channel_and_rejects_same_name_replacement ... ok
+test modules::interaction::integration_tests::response_commit_failure_suppresses_completion_and_memory_capture ... ok
+test modules::interaction::integration_tests::saturated_voice_queue_rejects_overflow_and_skips_cancelled_input ... ok
+test modules::interaction::integration_tests::sentence_delivery_presynthesizes_bounded_fragments_under_one_response ... ok
+test modules::interaction::integration_tests::sentence_hold_retains_in_flight_result_and_defers_next_tts ... ok
+test modules::interaction::integration_tests::sentence_tts_failure_is_not_committed_as_success_or_replayed ... ok
+test modules::interaction::persona::service::tests::default_template_uses_persona_name_variable ... ok
+test modules::interaction::persona::service::tests::empty_persona_name_falls_back_to_neutral_name ... ok
+test modules::interaction::persona::service::tests::renders_custom_persona_name ... ok
+test modules::interaction::prompt::tests::llm_messages_keep_completed_history_before_current_request ... ok
+test modules::interaction::prompt::tests::llm_messages_keep_unanswered_history_as_user_context ... ok
+test modules::interaction::prompt::tests::stt_context_prompt_warns_about_transcription_uncertainty ... ok
+test modules::interaction::prompt::tests::tts_prompt_for_chinese_requires_speakable_plain_text ... ok
+test modules::interaction::prompt::tests::tts_prompt_for_unknown_language_keeps_general_speech_rules ... ok
+test modules::interaction::routing::jev::tests::allowed_choices_follow_enabled_roles_and_reject_ambiguous_catalogs ... ok
+test modules::interaction::routing::jev::tests::cost_compatibility_does_not_hide_duplicate_answer_keys ... ok
+test modules::interaction::routing::jev::tests::does_not_follow_redirect_or_retry_provider_errors ... ok
+test modules::interaction::routing::jev::tests::duplicate_probability_keys_cannot_hide_an_out_of_range_value ... ok
+test modules::interaction::routing::jev::tests::openrouter_cost_and_canonical_model_are_explicit ... ok
+test modules::interaction::routing::jev::tests::probability_key_validation_is_bounded ... ok
+test modules::interaction::routing::jev::tests::rejects_invalid_answers_missing_usage_and_model_drift ... ok
+test modules::interaction::routing::jev::tests::rejects_unsafe_endpoints_and_unfixed_models ... ok
+test modules::interaction::routing::jev::tests::sends_only_current_model_and_budget_after_chat_hot_updates ... ok
+test modules::interaction::routing::jev::tests::sends_typed_decision_with_untrusted_skills_only_in_state ... ok
+test modules::interaction::routing::jev::tests::unknown_chat_profiles_do_not_invent_model_identity_or_call_chat ... ok
+test modules::interaction::routing::service::tests::both_mode_classification_prompt_preserves_route_boundaries ... ok
+test modules::interaction::routing::service::tests::classification_user_prompt_wraps_user_text_as_payload ... ok
+test modules::interaction::routing::service::tests::concrete_router_preserves_major_only_and_atomic_policy_updates ... ok
+test modules::interaction::routing::service::tests::conversation_prompts_preserve_escalation_and_tool_rules ... ok
+test modules::interaction::routing::service::tests::major_only_mode_skips_classification_prompt ... ok
+test modules::interaction::routing::service::tests::minor_only_classification_prompt_removes_major_route ... ok
+test modules::interaction::routing::service::tests::router_health_checks_local_binding_in_each_live_mode ... ok
+test modules::interaction::routing::service::tests::routing_uses_each_offered_catalog_and_fallback_never_calls_the_model ... ok
+test modules::interaction::integration_tests::text_delivery::a_large_provider_chunk_splits_only_at_utf8_boundaries_under_one_delivery ... ok
+test modules::interaction::skills::registry::tests::catalog_content_checks_reject_changed_selections_and_preserve_unrelated_ones ... ok
+test modules::interaction::skills::registry::tests::cancelled_commit_waiter_keeps_publication_owned_and_stop_waits_for_it ... ok
+test modules::interaction::skills::registry::tests::live_candidates_are_ordered_metadata_without_prompt_or_tool_bindings ... ok
+test modules::interaction::integration_tests::text_delivery::broken_model_stream_keeps_partial_chunks_without_success_end_or_assistant_history ... ok
+test modules::interaction::skills::registry::tests::failed_commit_and_failed_reconciliation_disable_index_until_successful_reload ... ok
+test modules::interaction::skills::registry::tests::rejected_commit_rebuilds_authoritative_index_and_keeps_original_database_error ... ok
+test modules::interaction::streaming::tests::cheerful_override_needs_high_confidence_when_baseline_is_serious ... ok
+test modules::interaction::streaming::tests::parses_sentence_expression_patch_from_fenced_batch ... ok
+test modules::interaction::streaming::tests::prosody_delta_respects_volume_and_night_caps ... ok
+test modules::interaction::supervision::tests::admission_is_bounded_until_completed_tasks_are_joined ... ok
+test modules::interaction::supervision::tests::cancelled_admission_never_polls_request ... ok
+test modules::interaction::supervision::tests::shutdown_waits_for_dispatched_effect_fact_after_cancellation ... ok
+test modules::interaction::tools::tests::cosine_similarity_scores_parallel_vectors_highest ... ok
+test modules::interaction::tools::tests::tool_routing_text_contains_indexable_metadata ... ok
+test modules::interaction::turn::tests::beginning_new_turn_cancels_previous_with_superseded_reason ... ok
+test modules::interaction::turn::tests::cancelled_stage_never_polls_even_a_ready_future ... ok
+test modules::interaction::turn::tests::finishing_old_generation_does_not_unregister_current_session ... ok
+test modules::interaction::turn::tests::late_cancelled_input_does_not_supersede_live_generation ... ok
+test modules::interaction::turn::tests::owner_cancellation_records_interrupted_stage ... ok
+test modules::memory::capture::tests::parses_json_with_surrounding_text ... ok
+test modules::interaction::skills::registry::tests::stop_waits_for_prepared_change_and_closes_future_mutation_admission ... ok
+test modules::interaction::skills::registry::tests::unchanged_reload_preserves_catalog_but_disable_and_same_name_recreation_invalidate_it ... ok
+test modules::interaction::integration_tests::text_delivery::buffered_and_streamed_text_each_commit_one_response_and_source_epoch ... ok
+test modules::memory::context::invitation::history_tests::committed_live_invitation_is_read_only_history_for_a_new_generation_request ... ok
+test modules::memory::context::invitation::history_tests::derived_history_cannot_omit_or_forge_companion_marker_or_inherit_live_admission ... ok
+test modules::memory::context::invitation::history_tests::invitation_history_requires_committed_response_and_same_owner_session_channel ... ok
+test modules::memory::context::invitation::history_tests::memory_and_cache_preserve_history_roots_and_reject_a_deleted_invitation_on_consumption ... ok
+test modules::memory::context::invitation::purpose_tests::invitation_authorizes_only_its_two_output_operations ... ok
+test modules::memory::context::invitation::history_tests::ordinary_appraisal_with_invitation_history_cannot_become_another_companion_source ... ok
+test modules::memory::context::invitation::tests::invitation_keeps_original_parent_and_every_root_but_grants_only_new_output_request ... ok
+test modules::memory::context::invitation::tests::invitation_rejects_changed_envelopes_final_text_and_additional_media_at_real_delivery_gates ... ok
+test modules::memory::context::invitation::tests::invitation_current_policy_and_source_erasure_revoke_gates_but_preserve_cleanup_and_charge ... ok
+test modules::memory::context::invitation::tests::invitation_stored_content_and_final_content_are_revalidated_before_output ... ok
+test modules::memory::context::invitation::history_tests::invitation_history_rechecks_sources_text_policy_and_privacy_before_late_commit ... ok
+test modules::memory::context::rebuild::tests::expired_claim_takeover_rejects_late_token_and_commits_only_the_new_receipt ... ok
+test modules::memory::maintenance::tests::candidate_write_after_clear_returns_error_instead_of_zero_created_success ... ok
+test modules::memory::maintenance::tests::consolidation_commits_multiple_updates_and_creates_in_one_snapshot ... ok
+test modules::memory::maintenance::tests::consolidation_retirement_preserves_evidence_and_does_not_advance_privacy_epoch ... ok
+test modules::memory::maintenance::tests::invalid_later_consolidation_target_leaves_the_entire_plan_unwritten ... ok
+test modules::memory::maintenance::tests::parses_memory_consolidation_with_surrounding_text ... ok
+test modules::memory::maintenance::tests::parses_memory_extraction_with_fence_and_reason ... ok
+test modules::memory::policy::tests::detects_sensitive_memory_categories ... ok
+test modules::memory::policy::tests::matching_preserves_unicode_negation_and_meaningful_punctuation ... ok
+test modules::memory::policy::tests::response_style_preferences_share_merge_key ... ok
+test modules::memory::service::initialization_tests::configured_persistence_is_not_published_before_policy_initialization ... ok
+test modules::platform::insights::service::tests::availability_tests::enabled_service_preserves_initialization_and_phase_errors ... ok
+test modules::platform::insights::service::tests::availability_tests::policy_disabled_service_remains_inert_and_healthy ... ok
+test modules::platform::insights::service::tests::deadline_tests::hanging_phase_releases_its_permit_and_preserves_acknowledged_cache_approval ... ok
+test modules::platform::insights::service::tests::deadline_tests::stable_user_uuid_never_returns_nil_for_empty_text ... ok
+test modules::platform::insights::service::tests::lifecycle_tests::failed_second_cron_registration_rolls_back_first_and_rejects_restart ... ok
+
+running 1 test
+
+thread 'tokio-rt-worker' (9058427) panicked at packages/alia-server/src/modules/platform/lifecycle.rs:460:21:
+injected stop panic
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test modules::platform::lifecycle::tests::panicked_stop_retains_owner_and_dependencies_as_incomplete ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 418 filtered out; finished in 0.07s
+
+test modules::platform::lifecycle::tests::panicked_stop_retains_owner_and_dependencies_as_incomplete ... ok
+test modules::memory::context::rebuild::tests::receipt_failure_rolls_back_supersede_and_insert_and_cannot_refresh_revoked_intent ... ok
+test oobe::routes::tests::cli_completion_or_cancellation_prevents_late_http_writes ... ok
+test oobe::routes::tests::cli_keeps_fragment_layout_and_refuses_to_replace_existing_configuration ... ok
+test oobe::routes::tests::concurrent_http_saves_publish_one_configuration_and_one_completion ... ok
+test oobe::routes::tests::durability::http_postpublication_failure_reserves_the_original_intent_until_sync_retry ... ok
+test oobe::routes::tests::durability::cli_postpublication_failure_keeps_its_fragments_and_blocks_http_until_retry ... ok
+test oobe::routes::tests::durability::http_prepublication_sync_failure_preserves_old_files_and_allows_retry ... ok
+test oobe::routes::tests::generated_http_template_loads_all_example_roles_without_external_fragments ... ok
+test oobe::routes::tests::malformed_config_does_not_create_target_or_signal_ready ... ok
+test oobe::routes::tests::durability::loader_recovers_the_original_publication_without_the_previous_setup_owner ... ok
+test oobe::routes::tests::missing_role_profiles_leave_original_config_and_setup_state_unchanged ... ok
+test oobe::routes::tests::publication_io_failure_keeps_original_target_and_emits_no_ready ... ok
+test oobe::routes::tests::noop_and_absent_optional_roles_do_not_validate_unused_profiles ... ok
+test oobe::routes::tests::setup_rejects_foreign_hosts_origins_and_non_json_without_writing ... ok
+test oobe::routes::tests::target_fragments_are_validated_and_preserved_with_the_proposed_base ... ok
+test openapi::tests::auth_error_injection_preserves_domain_media_is_idempotent_and_handles_every_method ... ok
+test openapi::tests::companion_contract_matches_owner_routes_required_fields_and_real_errors ... ok
+test openapi::tests::execution_contract_documents_durable_results_confirmation_and_typed_errors ... ok
+test oobe::routes::tests::wrong_role_kind_or_provider_is_rejected_before_publication ... ok
+test openapi::tests::operation_ids_are_unique_and_resource_names_are_stable ... ok
+test plugins::home_assistant::tests::cache_document_round_trips ... ok
+test plugins::home_assistant::tests::endpoint_normalization_requires_http_url ... ok
+test plugins::home_assistant::tests::light_resolution_accepts_entity_id_and_friendly_name ... ok
+test plugins::home_assistant::tests::light_resolution_reports_ambiguity ... ok
+test openapi::tests::secured_operations_document_json_auth_errors_and_public_logout_stays_public ... ok
+test providers::embedding::openai::tests::identified_settings_reject_wrong_types_and_leave_configuration_unchanged ... ok
+test providers::embedding::openai::tests::held_request_keeps_its_original_profile_and_settings_do_not_wait_for_network ... ok
+test providers::embedding::openai::tests::preview_is_pure_and_credential_rotation_does_not_change_vector_identity ... ok
+test providers::embedding::openai::tests::malformed_provider_replies_never_acquire_a_profile ... ok
+test providers::llm::response::tests::composed_model_labels_retain_each_actual_provider_once ... ok
+test providers::llm::response::tests::json_object_slices_handles_braces_inside_strings ... ok
+test providers::embedding::openai::tests::total_request_deadline_covers_a_stalled_body_and_next_request_recovers ... ok
+test providers::llm::service::http_tests::invalid_tool_arguments_and_duplicate_identity_fail_before_execution ... ok
+test providers::llm::service::http_tests::profile_json_modes_and_schema_names_reach_each_native_protocol ... ok
+test providers::llm::service::http_tests::responses_and_unary_providers_keep_native_calls_without_raw_payloads ... ok
+test providers::llm::service::http_tests::stalled_requests_release_settings_lock_and_cancel_transport ... ok
+test providers::llm::service::http_tests::strict_streams_preserve_unicode_and_require_provider_terminal ... ok
+test providers::llm::service::tests::scripted_text_uses_rig_stream_and_obeys_lifecycle ... ok
+test providers::stt::whisper::tests::parses_verbose_json_segment_quality_metadata ... ok
+test providers::tts::gpt_sovits::tests::http::cancelling_partial_body_and_dropping_unpolled_stream_release_credits ... ok
+test providers::tts::gpt_sovits::tests::http::dropped_http_stream_does_not_release_a_delivered_clone ... ok
+test providers::tts::gpt_sovits::tests::http::error_body_stops_at_four_kib_without_waiting_for_eof ... ok
+test providers::tts::gpt_sovits::tests::http::health_and_synthesis_preserve_unknown_state_after_cancelled_weight_switch ... ok
+test providers::tts::gpt_sovits::tests::http::health_supplies_languages_without_synthesis_inputs_and_rejects_server_errors ... ok
+test providers::llm::service::http_tests::budgets_close_unfinished_streams_and_unary_bodies ... ok
+test providers::tts::gpt_sovits::tests::http::oversized_content_length_rejects_without_consuming_a_body ... ok
+test providers::tts::gpt_sovits::tests::http::pitch_does_not_rewrite_an_unproven_fixed_offset_or_accept_partial_header ... ok
+test providers::tts::gpt_sovits::tests::http::remote_weights_require_both_acknowledgements_and_retry_after_partial_failure ... ok
+test providers::tts::gpt_sovits::tests::http::settings_wait_for_the_original_audio_stream_to_release_weights ... ok
+test providers::tts::gpt_sovits::tests::http::small_wav_buffered_and_fragmented_pitch_stream_keep_bytes_and_owner ... ok
+test providers::tts::gpt_sovits::tests::http::unending_chunked_stream_has_a_total_bound_even_if_consumer_drops_every_chunk ... ok
+test providers::tts::gpt_sovits::tests::http::unknown_length_buffered_body_rejects_cumulative_overflow ... ok
+test providers::tts::gpt_sovits::tests::pause_bias_expands_fragment_interval ... ok
+test providers::tts::gpt_sovits::tests::pitch_degradation_is_reported_as_provider_adjustment ... ok
+test providers::tts::gpt_sovits::tests::pitch_shift_mapping_requires_sample_rate_fallback_opt_in ... ok
+test providers::tts::gpt_sovits::tests::pitch_shift_rewrites_wav_sample_rate ... ok
+test providers::tts::gpt_sovits::tests::prosody_maps_to_sovits_generation_params_with_limits ... ok
+
+running 1 test
+test providers::tts::gpt_sovits::tests::settings_waits::cancelling_weight_setup_keeps_local_settings_and_releases_queued_capacity ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 418 filtered out; finished in 0.00s
+
+test providers::tts::gpt_sovits::tests::settings_waits::cancelling_weight_setup_keeps_local_settings_and_releases_queued_capacity ... ok
+
+running 1 test
+test providers::tts::gpt_sovits::tests::settings_waits::weight_setup_deadline_includes_audio_capacity_admission ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 418 filtered out; finished in 0.00s
+
+test providers::tts::gpt_sovits::tests::settings_waits::weight_setup_deadline_includes_audio_capacity_admission ... ok
+test providers::tts::gpt_sovits::tests::streaming_pitch_rewriter_buffers_until_wav_header_is_available ... ok
+test scheduler::cron::tests::parses_explicit_seconds_cron ... ok
+test scheduler::cron::tests::parses_standard_five_field_cron_by_adding_seconds ... ok
+test scheduler::cron::tests::rejects_malformed_cron_field_counts ... ok
+test settings::context_policy::tests::patch_preserves_unmentioned_policy_and_rejects_invalid_types ... ok
+test settings::storage::tests::a_non_regular_target_is_rejected_before_opening_for_write ... ok
+test settings::storage::tests::a_queued_save_snapshots_after_admission_without_holding_the_registry_read_lock ... ok
+test settings::storage::tests::later_save_syncs_parents_left_visible_by_an_earlier_prepare_failure ... ok
+test settings::storage::tests::preparation_failure_keeps_the_complete_previous_snapshot_and_removes_candidate ... ok
+test settings::storage::tests::private_new_files_and_existing_modes_are_preserved_without_replacing_hardlinks ... ok
+test settings::storage::tests::published_failure_reports_unknown_and_explicit_retry_syncs_the_complete_parent_chain ... ok
+test settings::storage::tests::valid_and_dangling_symlinks_follow_the_target_without_creating_missing_link_parents ... ok
+test tools::builtin::catalog_tests::catalog_generation_includes_default_hints_and_schema_terms ... ok
+test tools::builtin::catalog_tests::changed_tool_definition_rebuilds_catalog_and_clears_embedding ... ok
+test tools::builtin::catalog_tests::generated_catalog_rebuilds_when_routing_hints_change ... ok
+test tools::builtin::catalog_tests::unchanged_tool_preserves_operator_catalog_metadata ... ok
+test tools::entry::tests::foreign_json_cannot_claim_rich_content_and_unknown_cannot_unwrap_receipt ... ok
+test tools::entry::tests::schema_rejects_cycles_and_exponential_reference_expansion_before_compile ... ok
+test tools::entry::tests::schema_uses_one_dto_and_offline_full_validation ... ok
+test tools::fetch::tests::escaped_text_and_call_id_fit_the_durable_receipt ... ok
+test modules::memory::context::invitation::history_tests::expired_retired_invitation_survives_context_reconstruction_and_shadow_as_history_only ... ok
+test tools::fetch::tests::html_conversion_strips_scripts_resolves_links_and_clips_unicode ... ok
+test tools::fetch::tests::public_only_policy_rejects_local_tunnels_and_special_ranges ... ok
+test tools::fetch::tests::redirects_resolve_again_and_reject_private_destination ... ok
+test tools::fetch::tests::request_uses_pinned_dns_address_and_original_host_and_bounded_body ... ok
+test tools::fetch::tests::stalled_dns_is_inside_total_deadline ... ok
+test tools::mcp::http::tests::bounded_http_never_follows_redirect_or_sends_credentials_to_other_endpoint ... ok
+test tools::fetch::tests::html_conversion_deadline_includes_blocking_worker_queue ... ok
+test tools::mcp::http::tests::bounded_http_rejects_oversized_json_comments_and_event_floods ... ok
+test tools::mcp::http::tests::subscription_windows_never_reset_unfinished_frame_budget ... ok
+test tools::mcp::tests::mcp_catalog_notification_and_restart_never_revive_old_entries ... ok
+test tools::mcp::tests::mcp_catalog_principal_schema_and_rich_receipt_use_one_entry ... ok
+test tools::mcp::tests::mcp_stop_during_call_retains_unknown_and_never_resends ... ok
+test tools::mcp::tests::modern_subscription_remains_live_while_idle_and_invalidates_catalog ... ok
+test tools::mcp::tests::stopping_a_completed_failed_handshake_reports_stopped_and_keeps_error ... ok
+test tools::mcp::stdio::tests::stdio_hash_mismatch_is_rejected_and_original_process_group_is_joined ... ok
+test providers::tts::gpt_sovits::tests::http::incomplete_pitch_header_and_idle_timeout_are_errors_not_normal_eof ... ok
+test modules::memory::context::invitation::tests::invitation_short_admission_expiry_preserves_existing_output_until_original_candidate_deadline ... ok
+
+failures:
+
+failures:
+    expression::abi::wasm_tests::real_wasm_appraisal_requires_exact_persistent_pin_and_is_revocable
+
+test result: FAILED. 415 passed; 1 failed; 3 ignored; 0 measured; 0 filtered out; finished in 22.27s
+
+error: test failed, to rerun pass `-p alia-server --lib`
+     Running unittests src/main.rs (target/debug/deps/alia_server-39bbb49110071ab7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/openapi.rs (target/debug/deps/openapi-b40a9872d84a3db5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/appraisal_provenance.rs (target/debug/deps/appraisal_provenance-e7b5a0be13c13011)
+
+running 20 tests
+test delayed_draft_cannot_refresh_relationship_epoch ... ok
+test committed_judgment_is_idempotent_and_enters_complete_projection_roots ... ok
+test appraisal_cannot_rewrite_an_ancestor_memory_it_consumed ... ok
+test global_nan_and_private_draft_evidence_cannot_acquire_authority ... ok
+test initialization_preserves_current_policy_and_rejects_unsupported_or_damaged_rows ... ok
+test negative_zero_policy_survives_sql_restart_and_projection_validation ... ok
+test privacy_clear_erases_projections_and_rejects_their_output_authority ... ok
+test privacy_erasure::erasure_preserves_records_and_projections_of_another_tenant ... ok
+test committed_child_is_excluded_after_parent_revision_private_or_expiry_change ... ok
+test privacy_erasure::forgetting_original_appraisal_input_counts_the_overlapping_closure_once ... ok
+test privacy_erasure::forgetting_unrelated_memory_erases_all_revoked_appraisal_memory_bodies ... ok
+test privacy_erasure::late_sql_failure_rolls_back_memory_erasure_and_both_authority_paths ... ok
+test privacy_erasure::privacy_epoch_trigger_erases_canonical_appraisal_memory_without_a_forget_call ... ok
+test relationship_clear_is_idempotent_and_erases_only_its_owner_derived_memories ... ok
+test privacy_erasure::policy_revoked_appraisal_graph_does_not_poison_a_fresh_valid_context ... ok
+test same_identity_different_draft_does_not_write ... ok
+test source_revision_change_rejects_pending_interpretation ... ok
+test unrelated_forget_does_not_reauthorize_or_hide_independent_committed_memory ... ok
+test short_event_expiry_revokes_projection_but_preserves_live_relationship_event ... ok
+test privacy_erasure::migration_erases_old_epoch_and_malformed_origins_but_keeps_current_appraisals ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.11s
+
+     Running tests/cache_context.rs (target/debug/deps/cache_context-5ddaf213c27b058e)
+
+running 17 tests
+test atomic_replacement_and_repeated_origin_keep_one_monotonic_version ... ok
+test cache_source_merge_rechecks_revision_expiry_and_prevents_self_replacement ... ok
+test committed_response_context_owner_and_original_body_are_required ... ok
+test clear_blocks_late_jobs_and_physically_erases_text_and_vectors_atomically ... ok
+test expiry_cleanup_skips_in_flight_refresh_and_preserves_its_new_revision ... ok
+test insights::automatic_insight_phases_obey_capture_policy_and_use_only_canonical_user_rows ... ok
+test expiry_cleanup_caps_each_batch_at_256_and_keeps_live_entries ... ok
+test insights::clear_while_automatic_extractor_waits_blocks_its_old_model_result ... ok
+test insights::consolidation_uses_maintenance_lease_and_persistent_enable_switch ... ok
+test insights::held_review_cannot_activate_replacement_or_count_a_stale_decision ... ok
+test malformed_vectors_and_immutable_profile_descriptors_are_rejected ... ok
+test missing_context_table_fails_without_resolving_any_public_application_table ... ok
+test private_owner_scope_and_real_1536_vector_reads_are_isolated ... ok
+test profile_changes_revoke_late_work_and_dimensions_never_mix ... ok
+test replacement_rollback_keeps_previous_reviewed_content_and_vector ... ok
+test review_cannot_replace_or_invent_the_original_skill_catalog_binding ... ok
+test stale_review_and_embedding_cannot_modify_replacement_or_recreated_key ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.40s
+
+     Running tests/channel_registry.rs (target/debug/deps/channel_registry-8009926bd5aa1b4b)
+
+running 3 tests
+test channel_type_cannot_shadow_a_concrete_id ... ok
+test lookup_requires_exact_instance_id_even_for_a_unique_type ... ok
+test duplicate_active_instance_id_is_rejected ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/config.rs (target/debug/deps/config-fc7640ca3b4c31bc)
+
+running 11 tests
+
+running 1 test
+test approved_animation_catalog_is_local_empty_by_default_and_validated_on_load ... ok
+test decision_openrouter_request_and_returned_identity_are_pinned_separately ... ok
+test decision_profile_is_optional_and_rejects_wrong_protocol_or_mutable_identity ... ok
+test duplex_hold_budget_defaults_and_explicit_bounds_are_checked_during_deserialization ... ok
+test duplex_voice_interruption_is_disabled_unless_explicitly_enabled ... ok
+test loads_config_fragments_recursively_in_sorted_order ... ok
+test rejects_legacy_top_level_llm_provider_sections ... ok
+test retired_expression_process_configuration_is_rejected ... ok
+test decision_settings_validate_atomically_and_do_not_accept_chat_parameters ... ok
+test decision_credentials_use_only_the_selected_environment_and_preserve_explicit_keys ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.03s
+
+test parses_split_example_config ... ok
+
+running 1 test
+test decision_credentials_use_only_the_selected_environment_and_preserve_explicit_keys ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.03s
+
+test decision_credentials_use_only_the_selected_environment_and_preserve_explicit_keys ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/context_lease.rs (target/debug/deps/context_lease-f5a5393da6047284)
+
+running 26 tests
+test authority_cannot_be_refreshed_or_rebound_and_notice_is_fixed ... ok
+test capture_materializes_canonical_rows_and_has_no_output_authority ... ok
+test cache_merges_origin_roots_keeps_new_ingress_and_rechecks_row_version ... ok
+test actual_history_is_bounded_and_unsourced_messages_stay_out ... ok
+test clear_during_embedding_cannot_refresh_original_epoch ... ok
+test clear_retains_display_history_but_revokes_generation_and_capture_sources ... ok
+test execution_projection_is_canonical_and_status_change_revokes_it ... ok
+test graph_depth_and_consolidation_flag_are_real_persistent_policy ... ok
+test graph_projection_and_memory_roots_are_revalidated_before_use ... ok
+test historical_assistant_contributes_only_with_complete_live_roots ... ok
+test materializes_actual_trimmed_inputs_and_preserves_original_identity ... ok
+test memory_binding_copies_graph_and_historical_user_roots ... ok
+test memory_extension_retains_all_previously_read_material_and_roots ... ok
+test memory_search_options_only_narrow_policy_and_empty_layers_do_not_expand ... ok
+test policy_cas_is_persistent_and_pause_does_not_disable_manual_forget ... ok
+test policy_change_during_embedding_cannot_refresh_original_policy ... ok
+test policy_digest_survives_jsonb_float_roundtrip ... ok
+test postgres_memory_write_enforces_current_policy_without_ram_projection ... ok
+test profiled_embedding_reads_matching_memory_vector_in_the_context_snapshot ... ok
+test revoked_original_roots_cannot_send_query_embedding ... ok
+test rollback_or_missing_canonical_storage_never_returns_empty_authority ... ok
+test source_clock_skew_never_changes_capture_epoch_authority ... ok
+test stale_source_cannot_send_query_embedding ... ok
+test timed_resume_is_one_persistent_cas_and_does_not_resign_old_work ... ok
+test unpersisted_raw_query_cannot_send_query_embedding ... ok
+test validated_transaction_serializes_clear_until_effect_commit ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.21s
+
+     Running tests/delivery_repository.rs (target/debug/deps/delivery_repository-d7ade3f74df4a7e4)
+
+running 15 tests
+test dispatch_audit_failure_gives_no_permit_and_preserves_pending ... ok
+test cleared_source_cannot_commit_old_assistant_history ... ok
+test cancel_request_preserves_prefix_until_exact_fence_receipt ... ok
+test concurrent_response_intent_and_delivery_reservation_are_idempotent ... ok
+test end_accepted_is_observing_and_submission_never_invents_presentation ... ok
+test first_visible_cancel_checkpoint_after_ack_loss_is_valid_and_late_facts_do_not_reopen_unknown ... ok
+test only_one_dispatch_permit_and_no_replay_after_dispatch_ack_loss ... ok
+test owner_lease_recovery_changes_only_expired_rows_and_never_replays ... ok
+test policy_revocation_blocks_new_audio_admission_and_retains_inflight_facts ... ok
+test privacy_epoch_fences_every_new_media_boundary_but_keeps_observed_facts ... ok
+test progress_audit_foreign_key_does_not_invert_response_delivery_lock_order ... ok
+test reads_and_cancellation_cannot_cross_owners_and_revocation_blocks_dispatch ... ok
+test receipt_and_final_status_roll_back_together_on_audit_failure ... ok
+test rejects_bad_identity_regression_and_counts_above_durable_offer ... ok
+test response_history_commit_is_atomic_and_freezes_final_content ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.23s
+
+     Running tests/delivery_service.rs (target/debug/deps/delivery_service-7ad4a413aa6bd42a)
+
+running 14 tests
+test closed_admission_and_already_cancelled_input_send_no_media ... ok
+test completed_error_future_is_not_repolled_and_known_prefix_survives ... ok
+test cancellation_timeout_persists_unknown_but_retains_actual_adapter_owner ... ok
+test dropping_caller_preserves_supervisor_and_shutdown_uses_exact_identity ... ok
+test failed_durable_offer_prevents_external_audio_and_preserves_zero_bound ... ok
+test another_instance_cancels_observing_output_through_durable_control ... ok
+test local_transport_unknown_preserves_device_sequence_and_uses_independent_final_checkpoint ... ok
+test lease_wait_does_not_pause_adapter_holding_source_transaction ... ok
+test old_epoch_heartbeat_cancels_original_playback_and_preserves_prefix ... ok
+test delivery_recovery_deadline_resumes_without_restarting_or_replaying ... ok
+test submitted_receipt_is_terminal_without_post_speech_evidence ... ok
+test unconfirmed_cancel_is_unknown_and_cannot_replay ... ok
+test recovered_unknown_lease_stops_the_returning_original_owner ... ok
+test output_control_recovery_deadline_resumes_without_restarting_or_replaying ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 19.47s
+
+     Running tests/delivery_text.rs (target/debug/deps/delivery_text-e182f09b1af4a381)
+
+running 6 tests
+test revoked_source_closes_new_offers_but_preserves_actual_late_write_facts ... ok
+test source_notice_only_admits_its_fixed_literal_and_cannot_commit_history ... ok
+test immutable_contiguous_utf8_chunks_require_exact_end_and_actual_written_prefix ... ok
+test recovered_unknown_keeps_prefix_and_audits_late_checkpoint_without_replay ... ok
+test text_dispatch_permit_and_intent_are_unique_across_repository_instances ... ok
+test text_bounds_and_cross_medium_evidence_are_enforced ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+
+     Running tests/delivery_text_service.rs (target/debug/deps/delivery_text_service-018ad9b077ee6b5e)
+
+running 4 tests
+test text_is_durable_before_native_write_and_retry_never_dispatches_again ... ok
+test dropped_text_waiter_keeps_native_owner_until_exact_cancel_checkpoint ... ok
+test failed_text_offer_never_reaches_native_and_error_eof_never_completes ... ok
+test unobserved_ack_is_unknown_without_invented_written_bytes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+
+     Running tests/duplex_playback.rs (target/debug/deps/duplex_playback-5bb30082945b42d1)
+
+running 44 tests
+
+thread 'cleanup::rpc_task_panic_is_reported_after_listener_release' (9061159) panicked at packages/alia-server/tests/duplex_playback/cleanup.rs:40:13:
+injected rpc task panic
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'cleanup::rpc_close_timeout_joins_task_before_reporting_failure' (9061158) panicked at packages/alia-server/tests/duplex_playback.rs:418:16:
+called `Result::unwrap()` on an `Err` value: Elapsed(())
+test cleanup::cancelling_rpc_close_keeps_task_abort_owned ... ok
+
+thread 'cleanup::rpc_task_panic_is_reported_after_listener_release' (9061159) panicked at packages/alia-server/tests/duplex_playback.rs:418:25:
+called `Result::unwrap()` on an `Err` value: JoinError::Panic(Id(2), "injected rpc task panic", ...)
+test cleanup::rpc_close_timeout_joins_task_before_reporting_failure ... ok
+test cleanup::rpc_task_panic_is_reported_after_listener_release ... ok
+test companion::failure_diagnostic_reports_live_claims_without_private_values ... ok
+
+thread 'companion::heartbeat_cleanup_failure_preserves_primary_and_joins_other_owners' (9061172) panicked at packages/alia-server/tests/duplex_playback/companion.rs:841:25:
+injected heartbeat failure
+
+thread 'companion::heartbeat_cleanup_failure_preserves_primary_and_joins_other_owners' (9061172) panicked at packages/alia-server/tests/duplex_playback/companion.rs:851:21:
+injected primary failure
+Companion fixture cleanup entered at injected setup boundary before inner timer
+
+thread 'companion::heartbeat_cleanup_failure_preserves_primary_and_joins_other_owners' (9061172) panicked at packages/alia-server/tests/duplex_playback/companion.rs:609:9:
+Companion cleanup failed at ["heartbeat join"]
+Delivery context cleanup failed
+test companion::heartbeat_cleanup_failure_preserves_primary_and_joins_other_owners ... ok
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="voice_snapshot" wait_ms=1 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="freeze_intent" wait_ms=1 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion original admission budget phase="admit" attempt=0 remaining_ms=1973 clock="server_utc_deadline_evaluation"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="admit" attempt=0 outcome="fresh" wait_ms=35 clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="voice_snapshot" wait_ms=1 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="freeze_intent" wait_ms=1 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion original admission budget phase="admit" attempt=0 remaining_ms=1976 clock="server_utc_deadline_evaluation"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="admit" attempt=0 outcome="fresh" wait_ms=31 clock="server_process_monotonic"
+test companion::scanner_commits_one_fixed_invitation_through_real_voice_and_paired_playback ... ok
+test companion::applied_resume_lost_ack_and_new_local_speech_handoff_to_h2_on_original_output ... ok
+
+thread 'db_cleanup::cleanup_crossing_original_deadline_fails_after_draining_once' (9061347) panicked at packages/alia-server/tests/delivery_support/mod.rs:544:42:
+Delivery test exceeded 45s
+test db_cleanup::cleanup_crossing_original_deadline_fails_after_draining_once ... ok
+
+thread 'db_cleanup::cleanup_panic_still_attempts_database_cleanup_and_fails_case' (9061348) panicked at packages/alia-server/tests/duplex_playback/db_cleanup.rs:178:21:
+context failure
+Delivery context cleanup failed
+test db_cleanup::cleanup_panic_still_attempts_database_cleanup_and_fails_case ... ok
+
+thread 'db_cleanup::database_cleanup_panic_fails_otherwise_successful_case' (9061350) panicked at packages/alia-server/tests/duplex_playback/db_cleanup.rs:196:20:
+database failure
+Delivery database cleanup failed
+test db_cleanup::database_cleanup_panic_fails_otherwise_successful_case ... ok
+
+thread 'db_cleanup::outer_deadline_drops_body_then_cleans_context_before_database' (9061351) panicked at packages/alia-server/tests/delivery_support/mod.rs:553:23:
+Delivery test exceeded 45s
+test db_cleanup::outer_deadline_drops_body_then_cleans_context_before_database ... ok
+
+thread 'db_cleanup::primary_panic_survives_both_cleanup_failures' (9061352) panicked at packages/alia-server/tests/duplex_playback/db_cleanup.rs:149:30:
+Box<dyn Any>
+
+thread 'db_cleanup::primary_panic_survives_both_cleanup_failures' (9061352) panicked at packages/alia-server/tests/duplex_playback/db_cleanup.rs:152:13:
+secondary context failure
+
+thread 'db_cleanup::primary_panic_survives_both_cleanup_failures' (9061352) panicked at packages/alia-server/tests/duplex_playback/db_cleanup.rs:156:13:
+secondary database failure
+Delivery context cleanup failed
+Delivery database cleanup failed
+test db_cleanup::primary_panic_survives_both_cleanup_failures ... ok
+
+thread 'db_cleanup::primary_panic_survives_cleanup_crossing_original_deadline' (9061353) panicked at packages/alia-server/tests/duplex_playback/db_cleanup.rs:118:17:
+Box<dyn Any>
+test db_cleanup::primary_panic_survives_cleanup_crossing_original_deadline ... ok
+test control_ack_loss_is_observed_from_original_device_command ... ok
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="voice_snapshot" wait_ms=1 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="freeze_intent" wait_ms=1 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion original admission budget phase="admit" attempt=0 remaining_ms=1965 clock="server_utc_deadline_evaluation"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="admit" attempt=0 outcome="fresh" wait_ms=35 clock="server_process_monotonic"
+ WARN alia_server::modules::companion::service: original Companion attempt ended without confirmed output stage="original_output"
+test companion::source_erasure_during_original_tts_prevents_first_media_and_preserves_charge ... ok
+test held_after_end_preserves_unsubmitted_tail_beyond_media_idle ... ok
+test held_full_native_queue_keeps_original_pcm_and_control_lane_available ... ok
+
+thread 'initialization::policy_sql_failure_removes_schema_and_closes_work_pool' (9061476) panicked at packages/alia-server/tests/delivery_support/mod.rs:203:18:
+called `Result::unwrap()` on an `Err` value: Execution Error: error returned from database: column "policy" of relation "context_policy" does not exist
+
+Caused by:
+    0: error returned from database: column "policy" of relation "context_policy" does not exist
+    1: error returned from database: column "policy" of relation "context_policy" does not exist
+    2: column "policy" of relation "context_policy" does not exist
+test initialization::policy_sql_failure_removes_schema_and_closes_work_pool ... ok
+
+thread 'initialization::user_seed_sql_failure_removes_schema_and_closes_work_pool' (9061503) panicked at packages/alia-server/tests/delivery_support/mod.rs:183:275:
+called `Result::unwrap()` on an `Err` value: Exec(SqlxError(Database(PgDatabaseError { severity: Error, code: "42703", message: "column \"password_hash\" of relation \"users\" does not exist", detail: None, hint: None, position: Some(Original(33)), where: None, schema: None, table: None, column: None, data_type: None, constraint: None, file: Some("parse_target.c"), line: Some(1073), routine: Some("checkInsertTargets") })))
+test initialization::user_seed_sql_failure_removes_schema_and_closes_work_pool ... ok
+
+thread 'initialization::work_pool_initialization_panic_removes_created_schema' (9061510) panicked at packages/alia-server/tests/duplex_playback/initialization.rs:28:49:
+injected work pool initialization failure
+test initialization::work_pool_initialization_panic_removes_created_schema ... ok
+initialization cancellation: stage=after_schema, schema_remains=Some(false), work_pool_remains=false
+test initialization_cancel::cancelled_after_schema_creation_removes_schema ... ok
+initialization cancellation: stage=after_work_pool, schema_remains=Some(false), work_pool_remains=false
+test initialization_cancel::cancelled_after_work_pool_creation_closes_pool_and_removes_schema ... ok
+
+thread 'initialization_cancel::cancelled_buffered_ready_cannot_be_retried_as_a_closed_fixture' (9061522) panicked at packages/alia-server/tests/delivery_support/mod.rs:88:13:
+Delivery database initialization cancelled
+initialization cancellation: stage=buffered_ready, schema_remains=Some(false), work_pool_remains=false
+buffered ready cancellation: initially_pending=true, entered=true, released=true, notified=true, owner_pending=true, retry_cancelled=true
+test initialization_cancel::cancelled_buffered_ready_cannot_be_retried_as_a_closed_fixture ... ok
+initialization cancellation: stage=inflight_create, schema_remains=Some(false), work_pool_remains=false
+inflight CREATE cancellation: lock_observed=true, same_backend_waiting=true, close_pending=true, completion_pending=true, backend_exited=true
+test initialization_cancel::cancelled_inflight_create_is_drained_before_schema_cleanup ... ok
+test held_before_first_start_survives_handshake_idle_and_resumes_one_original_output ... ok
+
+thread 'partial_runtime::cancelling_channel_initialization_sql_closes_partial_pair_before_database' (9061536) panicked at packages/alia-server/tests/duplex_playback/partial_runtime.rs:46:21:
+injected cancellation at channel initialization SQL
+test partial_runtime::cancelling_channel_initialization_sql_closes_partial_pair_before_database ... ok
+test r1_live::field_media_catches_up_after_a_delayed_poll ... ok
+test r1_live::field_media_prebuffers_without_extending_tones_or_replaying_a_long_hold ... ok
+ALIA_R1_LIVE {"stage":"authenticated_ready","evidence":{"session_number":1}}
+test r1_live::field_relay_forwards_metadata_and_pcm_and_closes_on_owner_stop ... ok
+ALIA_R1_LIVE {"stage":"capture_window","evidence":{"start_sample_offset":0,"end_sample_offset":80000,"samples":80000,"speech_samples":80000,"peak":257}}
+ALIA_R1_LIVE {"stage":"capture_window","evidence":{"start_sample_offset":80000,"end_sample_offset":160000,"samples":80000,"speech_samples":80000,"peak":257}}
+ALIA_R1_LIVE {"stage":"capture_window","evidence":{"start_sample_offset":160000,"end_sample_offset":240000,"samples":80000,"speech_samples":68800,"peak":257}}
+ALIA_R1_LIVE {"stage":"capture_window","evidence":{"start_sample_offset":240000,"end_sample_offset":320000,"samples":80000,"speech_samples":80000,"peak":257}}
+ALIA_R1_LIVE {"stage":"cumulative_speech_threshold","evidence":{"seconds":20,"speech_samples":320000,"received_samples":331200}}
+test r1_live::natural_long_speech_accepts_breaths_but_requires_speech_and_window_duration ... ok
+test r1_live::remote_r1_natural_long_speech_real_server_duplex_and_rewake ... ignored, opens an explicitly configured remote R1/ALSA node; requires natural long speech with breaths, two short utterances, rewake and low-volume playback
+test r1_live::remote_r1_short_speech_real_server_duplex_and_rewake ... ignored, opens an explicitly configured remote R1/ALSA node; requires human short utterances, rewake and low-volume playback; does not validate natural long speech
+test r1_live::remote_r1_system_control_transport ... ignored, uses an explicitly configured remote R1 and real Server; automatic PCM transport and Start/Stop checks with an ordinary Embedded restart gate, no speech, playback or UART initialization
+test r1_live::remote_r1_system_start_stop_and_silent_recovery ... ignored, requires explicitly initialized remote R1, three ordinary speech windows, 300 seconds silent idle, operator gates and an ordinary Embedded process restart
+ALIA_R1_LIVE {"stage":"capture_window","evidence":{"start_sample_offset":0,"end_sample_offset":80000,"samples":80000,"speech_samples":80000,"peak":257}}
+ALIA_R1_LIVE {"stage":"capture_window","evidence":{"start_sample_offset":80000,"end_sample_offset":160000,"samples":80000,"speech_samples":80000,"peak":257}}
+ALIA_R1_LIVE {"stage":"capture_window","evidence":{"start_sample_offset":160000,"end_sample_offset":240000,"samples":80000,"speech_samples":78400,"peak":257}}
+ALIA_R1_LIVE {"stage":"capture_window","evidence":{"start_sample_offset":240000,"end_sample_offset":320000,"samples":80000,"speech_samples":80000,"peak":257}}
+ALIA_R1_LIVE {"stage":"cumulative_speech_threshold","evidence":{"seconds":20,"speech_samples":320000,"received_samples":321600}}
+ALIA_R1_LIVE {"stage":"capture_window","evidence":{"start_sample_offset":320000,"end_sample_offset":400000,"samples":80000,"speech_samples":16000,"peak":257}}
+test r1_live::scalar_capture_statistics_keep_continuity_and_distinguish_total_from_active_run ... ok
+test r1_live::system_control::idle_evidence_rejects_new_sessions_late_pcm_and_relay_failure ... ok
+ALIA_R1_LIVE {"stage":"expected_stop_transport_cancellation","evidence":{"source":"capture_transport_error"}}
+test r1_live::system_control::only_explicit_stop_allows_cancelled_transport_status ... ok
+
+thread 'partial_runtime::channel_initialization_sql_error_closes_partial_pair_before_database' (9061577) panicked at packages/alia-server/tests/duplex_playback.rs:600:14:
+called `Result::unwrap()` on an `Err` value: Execution Error: error returned from database: relation "motion_deliveries" does not exist
+
+Caused by:
+    0: error returned from database: relation "motion_deliveries" does not exist
+    1: error returned from database: relation "motion_deliveries" does not exist
+    2: relation "motion_deliveries" does not exist
+test partial_runtime::channel_initialization_sql_error_closes_partial_pair_before_database ... ok
+test registration_reply_after_fence_never_repopulates_obsolete_channel_binding ... ok
+test replacement_session_keeps_new_native_owner_when_old_output_is_cleaned_up ... ok
+test speech::speech_upload_and_real_server_playback_share_pause_cancel_and_reconnect_ownership ... ok
+test speech::system_capture::signed_system_start_stop_and_disconnect_use_real_server_ownership ... ok
+paired Delivery shutdown error: delivery shutdown incomplete: supervised output still owns channels and ledger
+
+thread 'late_drain::paired_late_drain_joins_original_write_before_database_cleanup_and_keeps_failure' (9061534) panicked at packages/alia-server/tests/duplex_playback.rs:636:9:
+paired Delivery cleanup failed
+Delivery context cleanup failed
+test late_drain::paired_late_drain_joins_original_write_before_database_cleanup_and_keeps_failure ... ok
+Companion fixture cleanup entered at injected setup boundary before inner timer
+
+thread 'companion::outer_45_second_timeout_joins_real_owners_before_database_cleanup' (9061173) panicked at packages/alia-server/tests/delivery_support/mod.rs:553:23:
+Delivery test exceeded 45s
+test companion::outer_45_second_timeout_joins_real_owners_before_database_cleanup ... ok
+
+test result: ok. 40 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 45.72s
+
+     Running tests/easy_turn_live.rs (target/debug/deps/easy_turn_live-c624cf2a0829d9f4)
+
+running 1 test
+test official_audio_through_production_rust_adapter ... ignored, requires a real Easy-Turn service and ALIA_EASY_TURN_PCM pointing to official backchannel_real_1 PCM16
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/embedded_channel.rs (target/debug/deps/embedded_channel-af8b9d4d818e1b10)
+
+running 3 tests
+test normalizes_stereo_pcm16_payload_to_mono ... ok
+test normalization_rejects_oversized_pcm_before_conversion ... ok
+test normalized_pcm_keeps_encoded_credit_until_the_last_derived_clone ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/embodiment_operations.rs (target/debug/deps/embodiment_operations-14b62a9ffafeff7e)
+
+running 11 tests
+test exact_dispatched_execution_and_principal_are_required_and_duplicate_is_one_operation ... ok
+test accepted_and_cancelled_without_stop_keep_resources_and_new_cancel_can_stop_terminal_work ... ok
+test cancel_timeout_retains_owner_then_accepts_late_cancelling_evidence ... ok
+test cross_service_cancel_and_observe_wait_for_real_start_completion_after_timeout ... ok
+test failed_operation_can_receive_authorized_stop_without_losing_its_failure ... ok
+test feedback_for_a_different_existing_operation_cannot_release_its_resources ... ok
+test feedback_rejects_stale_future_boot_regression_replay_and_oversized_payloads ... ok
+test full_normal_call_capacity_does_not_block_durable_cancel_admission ... ok
+test new_execution_cancel_after_restart_is_not_suppressed_by_persisted_cancelling ... ok
+test recovery_only_queries_and_unknown_or_new_boot_never_releases_resources ... ok
+test observation_timeout_keeps_original_owner_and_unknown_resource_reservation ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.58s
+
+     Running tests/execution_repository.rs (target/debug/deps/execution_repository-37252c21bfe44ee1)
+
+running 19 tests
+test approval_binds_actor_intent_and_confirmation_requirement ... ok
+test automatic_effect_still_requires_a_durable_approval_transaction ... ok
+test approval_and_outbox_roll_back_together_on_real_database_error ... ok
+test cancellation_and_claim_have_one_winner ... ok
+test catalog_change_between_proposal_and_approval_is_rejected ... ok
+test changed_catalog_or_worker_policy_consumes_stale_outbox_without_dispatch ... ok
+test completion_and_audit_event_commit_atomically ... ok
+test completion_database_failure_preserves_dispatch_for_safe_retry ... ok
+test completions_are_claim_bound_idempotent_and_reject_conflicts ... ok
+test concurrent_idempotency_preserves_one_effect_and_rejects_changed_intent ... ok
+test concurrent_proposals_cannot_exceed_per_user_confirmation_capacity ... ok
+test concurrent_workers_cannot_claim_the_same_effect_twice ... ok
+test expired_approval_cannot_be_dispatched ... ok
+test expired_dispatch_recovers_to_unknown_once_and_never_reclaims ... ok
+test failed_outbox_consumption_rolls_back_the_claim ... ok
+test concurrent_approvals_cannot_exceed_durable_queue_capacity ... ok
+test queries_and_owner_mutations_do_not_cross_user_boundaries ... ok
+test role_downgrade_before_claim_prevents_dispatch ... ok
+test user_revocation_is_checked_at_proposal_approval_and_claim ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.78s
+
+     Running tests/execution_service.rs (target/debug/deps/execution_service-ea30d4b35d8f476d)
+
+running 31 tests
+test ai_memory_tool_validates_persisted_source_owner_and_epoch_in_postgres ... ok
+test dropped_submit_after_approval_commit_keeps_session_cancellation_ownership ... ok
+test dropping_shutdown_wait_retains_worker_join_and_receipt_persistence ... ok
+test claim_uses_pinned_executor_when_catalog_is_hot_replaced ... ok
+test duplicate_request_and_changed_model_correlation_execute_once ... ok
+test ledger_scan_deadline_resumes_without_restarting_or_replaying_effects ... ok
+test approval_commit_ack_timeout_keeps_session_cancellation_ownership ... ok
+test lost_approval_commit_ack_keeps_session_cancellation_ownership ... ok
+test missing_identity_and_revoked_owner_fail_before_executor ... ok
+test missing_implementation_revision_is_rejected_at_registration_and_proposal ... ok
+test model_confirmed_argument_does_not_approve_and_rest_owner_must_match ... ok
+test policy_change_blocks_old_approval_and_claim_but_fresh_context_can_execute ... ok
+test queued_ai_memory_tool_cannot_survive_clear_when_server_clock_is_ahead ... ok
+test queued_ai_memory_tool_cannot_survive_clear_when_server_clock_is_behind ... ok
+test queued_ai_memory_tool_cannot_write_back_after_clear ... ok
+test queued_effect_and_retransmission_preserve_the_original_source ... ok
+test receipt_write_failure_is_shutdown_failure_then_recovers_unknown ... ok
+test replay_of_unknown_effect_returns_existing_fact_without_retrying_executor ... ok
+test revocation_after_dispatch_preserves_the_actual_late_completion ... ok
+test same_schema_hot_replacement_invalidates_undispatched_approval ... ok
+test shutdown_cancellation_write_failure_is_visible_and_does_not_claim_execution ... ok
+test shutdown_cancels_session_intent_without_requiring_prior_parent_cancellation ... ok
+test locked_ledger_bounds_admission_and_entire_shutdown_cancellation_batch ... ok
+test shutdown_joins_dispatched_deadline_and_persists_unknown_without_retry ... ok
+test locked_ledger_cannot_extend_the_tool_result_wait_or_fabricate_cancellation ... ok
+test shutdown_preserves_unapproved_proposal_for_later_explicit_owner_review ... ok
+test shutdown_waits_for_inflight_admission_before_cancelling_session_intent ... ok
+test source_notice_cannot_authorize_a_tool_effect ... ok
+test transport_errors_and_legacy_false_results_require_definitive_failure_evidence ... ok
+test workers_are_bounded_and_cancelled_queued_voice_never_dispatches ... ok
+test shutdown_deadline_reports_live_worker_and_retains_its_eventual_receipt ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.48s
+
+     Running tests/expression_abi.rs (target/debug/deps/expression_abi-c768809b000ea281)
+
+running 2 tests
+test rejects_replaced_json_process_abi_versions ... ok
+test wasm_expression_metadata_has_explicit_version_and_no_native_commands ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/expression_appraisal.rs (target/debug/deps/expression_appraisal-f8fd2931bc3268e3)
+
+running 2 tests
+test classifier_detects_support_need_and_minimal_preference ... ok
+test classifier_detects_sarcastic_dissatisfaction ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/expression_eval.rs (target/debug/deps/expression_eval-562ce3fb10fb0944)
+
+running 6 tests
+test planner_respects_tts_capability_limits_before_synthesis ... ok
+test planner_uses_memory_boundaries_to_reduce_motion_intensity ... ok
+test planner_regression_cases_hold ... ok
+test appraisal_regression_cases_hold ... ok
+test resource_governance_config_is_present ... ok
+test sentence_speech_uses_local_cues_without_markup ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/expression_regulation.rs (target/debug/deps/expression_regulation-9ba797493092ebb1)
+
+running 1 test
+test negative_high_arousal_state_is_deescalated ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/expression_trace.rs (target/debug/deps/expression_trace-8d46502a680f5d78)
+
+running 2 tests
+test groups_current_provider_events_in_original_turn_order ... ok
+test removed_plan_affect_and_correction_events_are_not_replayed ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/interaction.rs (target/debug/deps/interaction-7ea5884e318b22e7)
+
+running 7 tests
+test builds_pcm_silence_gap ... ok
+test decodes_tts_wav_to_pcm_payload ... ok
+test cache_policy_rejects_tool_memory_dynamic_and_legacy_entries ... ok
+test cache_policy_allows_safe_memory_independent_exact_entries ... ok
+test detects_minor_llm_escalation_marker ... ok
+test pipeline_cache_entry_uses_default_lookup_scope ... ok
+test renders_runtime_context_prompt_outside_persona ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/interaction_tools.rs (target/debug/deps/interaction_tools-f8dcedbf05e33008)
+
+running 9 tests
+test db_routing_keywords_can_match_without_definition_text_overlap ... ok
+test avoids_global_tool_injection_when_no_tool_matches ... ok
+test preferred_skill_tools_do_not_hide_globally_matching_tools ... ok
+test preferred_tools_are_kept_for_skill_context_when_nothing_else_matches ... ok
+test routes_global_tools_by_query_relevance ... ok
+test routes_search_language_to_fetch_candidate ... ok
+test routes_preference_statements_to_memory_store ... ok
+test routes_embedded_mic_volume_to_embedded_volume_tool ... ok
+test url_and_arithmetic_structural_rules_still_work_without_db_keywords ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/jev_router.rs (target/debug/deps/jev_router-b20fbc31d901edfe)
+
+running 4 tests
+test hung_decision_exhausts_the_original_deadline_without_a_second_budget ... ok
+test valid_clarification_is_a_minor_answer_without_escalation_or_fallback ... ok
+test live_tier_change_cannot_turn_clarification_into_an_action_capable_fallback ... ok
+test invalid_or_failed_decisions_use_one_local_fallback_without_legacy_classification ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/llm.rs (target/debug/deps/llm-0b65b0e6214c5bc0)
+
+running 1 test
+test persisted_context_author_survives_retired_provider_message_fields ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/llm_providers.rs (target/debug/deps/llm_providers-d5c53e27feb6e321)
+
+running 6 tests
+test missing_llm_profile_returns_error ... ok
+test decision_profiles_cannot_be_used_as_chat_or_embedding_and_legacy_needs_no_key ... ok
+test llm_profiles_can_reference_named_provider_profiles ... ok
+test unknown_llm_provider_is_rejected_and_noop_requires_explicit_selection ... ok
+test unknown_embedding_provider_is_rejected_and_noop_requires_explicit_selection ... ok
+test creates_provider_neutral_llm_adapters ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/memory.rs (target/debug/deps/memory-612aa53776e4bf94)
+
+running 13 tests
+test memory_capabilities_describe_built_in_store ... ok
+test memory_runtime_migration_declares_pgvector_profile_and_graph_tables ... ok
+test memory_runtime_normalizes_evidence_topics_and_retrieval_trace ... ok
+test hidden_memory_can_be_explained_and_deleted ... ok
+test memory_user_controls_delete_by_topic_kind_and_export_hidden_reasons ... ok
+test context_pack_suppresses_sensitive_and_private_memories ... ok
+test repeated_preference_is_consolidated_in_memory_runtime ... ok
+test test_list_get_and_clear ... ok
+test test_store_and_retrieve ... ok
+test visible_memory_is_not_reported_as_suppressed ... ok
+test test_update_and_delete ... ok
+test background_consolidation_dedupes_promotes_demotes_and_reframes_affective_memory ... ok
+test postgres_pgvector_memory_runtime_round_trips_embedding_vector_and_graph ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+
+     Running tests/memory_capture.rs (target/debug/deps/memory_capture-8cc27f26c322f0dc)
+
+running 6 tests
+test llm_selected_capture_blocks_sensitive_memories ... ok
+test llm_selected_capture_stores_only_high_confidence_durable_memories ... ok
+test deletion_while_extractor_is_waiting_rejects_its_late_result ... ok
+test llm_selected_capture_does_not_store_when_model_returns_no_memories ... ok
+test llm_selected_capture_updates_existing_preference_memory ... ok
+test pending_turn_received_before_clear_cannot_be_extracted_later ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.21s
+
+     Running tests/memory_embedding.rs (target/debug/deps/memory_embedding-d9850fb013b0c784)
+
+running 16 tests
+test clear_while_rebuild_waits_rejects_its_original_epoch ... ok
+test disable_then_reenable_does_not_refresh_old_work_but_rebuilds_current_memory ... ok
+test duplicate_inline_and_rebuild_work_keeps_the_first_confirmed_vector ... ok
+test actual_profiles_separate_dynamic_dimensions_and_cache_is_irrelevant ... ok
+test failed_first_row_does_not_starve_later_rebuild_batches ... ok
+test malformed_results_never_become_memory_vectors ... ok
+test private_memory_and_paused_projection_do_not_send_inference_requests ... ok
+test restart_with_uncommitted_profile_sends_no_embedding_requests ... ok
+test same_dimension_model_and_endpoint_changes_reject_late_old_projection ... ok
+test slow_model_times_out_inline_then_finishes_owned_rebuild ... ok
+test standalone_query_cannot_refresh_epoch_after_clear ... ok
+test stopping_rebuild_joins_inference_and_restart_repairs_missing_projection ... ok
+test empty_scan_recovery_does_not_clear_unconfirmed_projection_write ... ok
+test successful_projection_does_not_clear_failed_rebuild_scan ... ok
+test vector_sql_failure_keeps_canonical_write_and_surfaces_retrieval_failure ... ok
+test successful_empty_scan_clears_only_its_recovered_database_failure ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 40.75s
+
+     Running tests/memory_embedding_provenance.rs (target/debug/deps/memory_embedding_provenance-6043f8a2612bd210)
+
+running 7 tests
+test edited_raw_message_is_not_exported_by_rebuild ... ok
+test affect_disabled_and_unrelated_relationship_clear_preserve_ordinary_vectors ... ok
+test raw_message_edited_during_actual_inference_rejects_writeback ... ok
+test relationship_clear_before_rebuild_skips_derived_memory ... ok
+test parent_changed_during_actual_inference_rejects_writeback ... ok
+test relationship_clear_during_actual_inference_rejects_writeback ... ok
+test invalid_parent_closure_is_not_exported_by_rebuild ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.18s
+
+     Running tests/memory_message_pins.rs (target/debug/deps/memory_message_pins-343c1b5d6e58e991)
+
+running 3 tests
+test edited_message_cannot_reauthorize_memory_in_new_context_retrieval_or_patch ... ok
+test incomplete_pins_fail_closed_while_relationship_clear_preserves_independent_memory ... ok
+test consolidation_retains_both_message_pins_and_rejects_either_source_revision ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.93s
+
+     Running tests/memory_privacy.rs (target/debug/deps/memory_privacy-9ffc1866319d5411)
+
+running 31 tests
+test batch_update_keeps_old_conversation_sources_and_adds_new_verified_sources ... ok
+test changed_revision_and_expired_sources_reject_background_writes ... ok
+test automatic_and_batch_dedup_preserve_unicode_negation_and_punctuation ... ok
+test concurrent_batch_and_forget_cannot_commit_against_a_changed_original ... ok
+test configured_database_failure_never_switches_to_in_memory_storage ... ok
+test concurrent_maintenance_publishes_one_stable_promotion ... ok
+test consolidation_of_weak_duplicates_does_not_depend_on_uuid_update_order ... ok
+test consolidation_keeps_ancestors_needed_by_another_duplicate_group ... ok
+test dedup_keeps_the_canonical_ancestor_of_a_stronger_duplicate ... ok
+test consolidation_preserves_complete_ancestor_revisions_for_new_promotions ... ok
+test deleting_source_erases_derived_records_and_graph_plaintext_atomically ... ok
+test deletion_sql_failure_rolls_back_epoch_and_projections_without_ram_success ... ok
+test dedup_selects_a_live_keeper_from_the_complete_three_candidate_group ... ok
+test deterministic_consolidation_commits_functional_batch_and_tracks_promoted_source ... ok
+test memory_mode_atomic_batches_and_exact_forget_match_persistent_contract ... ok
+test memory_mode_enforces_owner_epoch_revision_and_dependency_cascade ... ok
+test embedding_returning_after_delete_cannot_restore_a_vector ... ok
+test late_persisted_conversation_source_cannot_cross_the_forget_boundary ... ok
+test maintenance_skips_revoked_or_private_candidates_and_obeys_durable_policy ... ok
+test old_epoch_is_rejected_across_instances_and_empty_clear_also_invalidates ... ok
+test older_embedding_cannot_overwrite_the_corrected_revision ... ok
+test postgres_batches_preserve_original_snapshot_and_prior_lineage ... ok
+test ram_epoch_rejects_old_sources_without_wall_clock_comparisons ... ok
+test postgres_forget_uses_one_epoch_and_never_reselects_later_records ... ok
+test postgres_invalid_batches_and_foreign_forget_never_partially_commit ... ok
+test promotion_inherits_old_message_fact_and_deleted_output_never_reappears ... ok
+test source_epoch_is_authoritative_with_fast_slow_and_unsourced_messages ... ok
+test source_delete_and_derived_commit_race_cannot_leave_a_live_copy ... ok
+test sql_failure_rolls_back_entire_batch_and_multi_target_forget ... ok
+test updates_deletes_ids_and_dependencies_are_owner_scoped ... ok
+test source_admission_is_bounded_by_the_privacy_lock_and_current_account ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.69s
+
+     Running tests/migrations.rs (target/debug/deps/migrations-6bd60e335b8627f1)
+
+running 8 tests
+test bundled_manifest_contains_every_sql_migration ... ok
+test concurrent_startups_apply_each_migration_once ... ok
+test changed_applied_sql_is_rejected_without_executing_it ... ok
+test first_migration_failure_rolls_back_journal_creation ... ok
+test sql_scripts_preserve_quoted_semicolons_and_function_bodies ... ok
+test failed_migration_rolls_back_sql_and_journal_then_recovers ... ok
+
+thread 'motion_rename_preserves_historical_json_and_unknown_without_replay' (9066964) panicked at packages/alia-server/tests/migrations.rs:206:5:
+assertion `left == right` failed
+  left: 17
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test motion_rename_preserves_historical_json_and_unknown_without_replay ... FAILED
+test bundled_schema_installs_with_pgvector_and_restarts_without_changes ... ok
+
+failures:
+
+failures:
+    motion_rename_preserves_historical_json_and_unknown_without_replay
+
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+error: test failed, to rerun pass `-p alia-server --test migrations`
+     Running tests/motion_delivery.rs (target/debug/deps/motion_delivery-8819797b8f7d5f5f)
+
+running 8 tests
+test fixed_source_notice_cannot_authorize_a_motion_command ... ok
+test animation_ledger_lookup_preserves_owner_response_channel_and_exact_content ... ok
+test concurrent_claims_grant_one_physical_permission_and_preserve_original_identity ... ok
+test audit_failure_rolls_back_permission_before_external_output ... ok
+test parent_cancellation_and_absolute_deadline_cannot_be_renewed ... ok
+test revocation_stops_admission_but_keeps_actual_submitted_facts ... ok
+test unknown_freezes_prefix_and_keeps_idempotent_ordered_late_checkpoints ... ok
+test wrong_owner_channel_scope_or_dispatch_cannot_touch_motion_delivery ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.95s
+
+     Running tests/output_control.rs (target/debug/deps/output_control-70db9f828a5bc282)
+
+running 13 tests
+test control_intent_and_first_outcome_roll_back_with_their_audit ... ok
+test actual_lost_commit_ack_returns_unknown_and_lookup_cannot_authorize_replay ... ok
+test expired_active_audio_owner_cannot_resume_but_late_submission_stays_recordable ... ok
+test expired_recovery_is_owner_independent_but_cannot_steal_a_live_instance ... ok
+test confirm_and_resume_inherit_original_hold_deadline_and_commands_are_bounded ... ok
+test later_audio_deadline_limits_new_pause_and_resume_without_refreshing_binding ... ok
+test original_response_scope_context_and_existing_audio_owner_are_required ... ok
+test prepared_binding_is_unique_and_first_admission_is_the_only_send_permit ... ok
+test late_original_outcome_does_not_rewind_current_snapshot_or_grow_poll_audit ... ok
+test same_scope_with_another_canonical_response_returns_typed_conflict ... ok
+test snapshot_cannot_claim_a_command_sequence_never_admitted_by_the_owner ... ok
+test resume_authority_locks_are_held_until_the_intent_commit ... ok
+test resume_waits_for_committing_revocation_and_never_refreshes_original_context ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.75s
+
+     Running tests/output_lifecycle.rs (target/debug/deps/output_lifecycle-92c920478e014ce1)
+
+running 11 tests
+test cancellation_during_register_ack_wait_cancels_original_response ... ok
+test enqueue_owns_media_before_waiter_and_last_producer_drop ... ok
+test forged_bind_candidate_cannot_cancel_another_request_response ... ok
+test lost_control_ack_observes_same_intent_without_reapplying ... ok
+test queued_bind_then_immediate_retirement_cancels_original_response ... ok
+test later_audio_permit_deadline_fences_inflight_resume_without_opening_gate ... ok
+test response_cancellation_during_register_ack_wait_stops_original_bind ... ok
+test scope_fence_timeout_retains_original_future_until_real_join ... ok
+test unavailable_ack_and_observation_retire_unknown_without_replay ... ok
+test held_original_media_keeps_sql_lease_heartbeat_alive ... ok
+test semantic_expiry_during_register_ack_wait_cancels_original_response ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.79s
+
+     Running tests/persona.rs (target/debug/deps/persona-57e490d978dfd075)
+
+running 1 test
+test test_render_system_prompt ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/plugin_storage.rs (target/debug/deps/plugin_storage-259d6c04e4a7d91d)
+
+running 4 tests
+test plugin_storage_migration_declares_server_owned_json_store ... ok
+test plugin_storage_manifest_accepts_declared_collections ... ok
+test plugin_storage_manifest_rejects_unsafe_declarations ... ok
+test postgres_plugin_storage_round_trips_records_and_policy ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/provider_adapters.rs (target/debug/deps/provider_adapters-9e412b16a716de26)
+
+running 6 tests
+test tts_capabilities_default_to_no_expression_controls ... ok
+test minimal_tts_capabilities_report_expression_degradations ... ok
+test tts_capabilities_report_limits_and_text_bounds ... ok
+test tts_request_preserves_provider_neutral_expression_metadata ... ok
+test stt_minimal_result_and_capabilities_are_provider_neutral ... ok
+test whisper_capabilities_match_verbose_json_metadata ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/registry.rs (target/debug/deps/registry-910758852cc44499)
+
+running 1 test
+test classifies_registry_sources ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/router.rs (target/debug/deps/router-c01621c749c25dc1)
+
+running 15 tests
+test test_llm_mode ... ok
+test offered_skill_names_prefer_exact_match_before_trim_compatibility ... ok
+test major_only_rejects_minor_and_skill_classification_outputs ... ok
+test skill_decision_requires_an_offered_name_and_preserves_mode_fallback ... ok
+test test_strip_code_fences_bare_json ... ok
+test test_strip_code_fences_with_json_tag ... ok
+test test_strip_code_fences_without_tag ... ok
+test test_to_decision_major_llm_both_mode ... ok
+test test_to_decision_major_llm_solo_mode ... ok
+test test_parse_tool_selection_response_filters_to_candidates ... ok
+test test_to_decision_minor_llm_both_mode ... ok
+test test_to_decision_minor_llm_solo_mode ... ok
+test test_to_decision_skill ... ok
+test test_to_decision_skill_without_name_falls_back ... ok
+test test_to_decision_unknown_falls_back ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/rules.rs (target/debug/deps/rules-09c05ad40b4ef816)
+
+running 1 test
+test test_event_rule_matching ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/scheduler.rs (target/debug/deps/scheduler-2a02a8df13323336)
+
+running 1 test
+test test_matches_pattern ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/sensors.rs (target/debug/deps/sensors-d04caa711ca0185a)
+
+running 8 tests
+test plugin_sensor_helpers_namespace_track_and_unregister ... ok
+test registry_ingest_auto_registers_and_queries_latest ... ok
+test embedded_sensor_reading_ingests_using_public_sensor_id ... ok
+test embedded_sensor_mirror_registers_remote_definitions_and_marks_missing_offline ... ok
+test sensor_condition_evaluator_refreshes_missing_provider_value ... ok
+test sensor_condition_evaluator_uses_latest_registry_value ... ok
+test sensor_read_tool_refreshes_from_registered_provider ... ok
+test sensor_tools_read_from_shared_registry ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/server_background.rs (target/debug/deps/server_background-3f110aef96a79880)
+
+running 13 tests
+test closing_admission_cancels_queued_restart_before_owner_releases_guard ... ok
+test channel_stop_waiter_drop_retains_cleanup_and_requests_other_stops ... ok
+test dropped_startup_cancels_partial_workers_and_errors_survive_join ... ok
+test dropping_start_waiter_cannot_detach_startup_or_restart_after_close ... ok
+
+thread 'panicking_channel_stop_stays_incomplete_and_retains_resource_owner' (9067916) panicked at packages/alia-server/tests/server_background.rs:458:9:
+injected channel stop panic
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test close_and_register_race_cannot_escape_shutdown_snapshot ... ok
+test parent_cancellation_interrupts_endpoint_and_joins_worker ... ok
+test embedded_stop_interrupts_stalled_http2_connect_and_discovery ... ok
+test same_id_replacement_requires_confirmed_successful_cleanup ... ok
+test sensor_cleanup_is_joined_and_cannot_restart ... ok
+test cancelled_stop_waiter_retains_native_cleanup_handle ... ok
+test whole_restart_guard_prevents_id_operations_from_crossing_replacements ... ok
+test panicking_channel_stop_stays_incomplete_and_retains_resource_owner ... ok
+test real_discovery_cancellation_waits_for_native_shutdown_ack ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-b69125e8bfbca854)
+
+running 112 tests
+[auth-lock] blocker_pid=11898 witnessed_waiters=2
+[auth-wire] post /api/v1/auth/register status=200 content_type=application/json
+[auth-race] statuses=[409, 200]
+[auth-wire] post /api/v1/auth/register status=409 content_type=application/json
+[auth-error] {"error":{"code":"ALREADY_EXISTS","reason":"email_already_registered","message":"email already registered"}}
+[auth-wire] post /api/v1/auth/register status=200 content_type=application/json
+[auth-wire] post /api/v1/auth/login status=400 content_type=text/plain
+[auth-extractor] Failed to parse the request body as JSON: EOF while parsing an object at line 1 column 1
+[auth-wire] post /api/v1/auth/login status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/login status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/login status=422 content_type=text/plain
+[auth-extractor] Failed to deserialize the JSON body into the target type: missing field `email` at line 1 column 11
+[auth-wire] post /api/v1/auth/login status=413 content_type=text/plain
+[auth-extractor] Failed to buffer the request body: length limit exceeded
+[auth-wire] post /api/v1/auth/register status=400 content_type=text/plain
+[auth-extractor] Failed to parse the request body as JSON: EOF while parsing an object at line 1 column 1
+[auth-wire] post /api/v1/auth/register status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/register status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/register status=422 content_type=text/plain
+[auth-extractor] Failed to deserialize the JSON body into the target type: name: invalid type: integer `42`, expected a string at line 1 column 10
+[auth-wire] post /api/v1/auth/register status=413 content_type=text/plain
+[auth-extractor] Failed to buffer the request body: length limit exceeded
+[auth-wire] post /api/v1/auth/refresh status=400 content_type=text/plain
+[auth-extractor] Failed to parse the request body as JSON: EOF while parsing an object at line 1 column 1
+[auth-wire] post /api/v1/auth/refresh status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/refresh status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/refresh status=422 content_type=text/plain
+[auth-extractor] Failed to deserialize the JSON body into the target type: missing field `refresh_token` at line 1 column 11
+[auth-wire] post /api/v1/auth/refresh status=413 content_type=text/plain
+[auth-extractor] Failed to buffer the request body: length limit exceeded
+[auth-wire] post /api/v1/auth/logout status=400 content_type=text/plain
+[auth-extractor] Failed to parse the request body as JSON: EOF while parsing an object at line 1 column 1
+[auth-wire] post /api/v1/auth/logout status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/logout status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] post /api/v1/auth/logout status=422 content_type=text/plain
+[auth-extractor] Failed to deserialize the JSON body into the target type: missing field `refresh_token` at line 1 column 11
+[auth-wire] post /api/v1/auth/logout status=413 content_type=text/plain
+[auth-extractor] Failed to buffer the request body: length limit exceeded
+[auth-wire] patch /api/v1/users/me status=400 content_type=text/plain
+[auth-extractor] Failed to parse the request body as JSON: EOF while parsing an object at line 1 column 1
+[auth-wire] patch /api/v1/users/me status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] patch /api/v1/users/me status=415 content_type=text/plain
+[auth-extractor] Expected request with `Content-Type: application/json`
+[auth-wire] patch /api/v1/users/me status=422 content_type=text/plain
+[auth-extractor] Failed to deserialize the JSON body into the target type: name: invalid type: integer `42`, expected a string at line 1 column 10
+[auth-wire] patch /api/v1/users/me status=413 content_type=text/plain
+[auth-extractor] Failed to buffer the request body: length limit exceeded
+[auth-wire] patch /api/v1/users/me status=200 content_type=application/json
+[auth-wire] patch /api/v1/users/me status=403 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_FORBIDDEN","message":"insufficient permissions"}}
+[auth-wire] patch /api/v1/users/me status=403 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_FORBIDDEN","message":"insufficient permissions"}}
+[auth-wire] patch /api/v1/users/me status=400 content_type=application/json
+[auth-error] {"error":{"code":"VALIDATION_ERROR","message":"name must be between 1 and 120 characters"}}
+[auth-wire] patch /api/v1/users/me status=400 content_type=application/json
+[auth-error] {"error":{"code":"VALIDATION_ERROR","message":"name must be between 1 and 120 characters"}}
+[auth-wire] patch /api/v1/users/me status=200 content_type=application/json
+test api_contract_auth::http_json_extractors_and_patch_me_match_declared_wire_contract ... ok
+[auth-wire] post /api/v1/auth/register status=200 content_type=application/json
+[auth-wire] post /api/v1/auth/register status=200 content_type=application/json
+[auth-lock] blocker_pid=11902 witnessed_waiters=1
+[auth-wire] post /api/v1/auth/login status=200 content_type=application/json
+test api_contract_auth::http_registration_normalizes_email_and_serializes_duplicate_writes ... ok
+[auth-wire] post /api/v1/auth/register status=200 content_type=application/json
+[auth-wire] get /api/v1/users/me status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"token_missing","message":"missing or malformed authorization header"}}
+[auth-wire] get /api/v1/users/me status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"token_missing","message":"missing or malformed authorization header"}}
+[auth-wire] get /api/v1/users/me status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"token_invalid","message":"invalid or expired token"}}
+[auth-wire] get /api/v1/users/me status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"token_invalid","message":"invalid or expired token"}}
+[auth-wire] post /api/v1/auth/login status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"invalid_credentials","message":"invalid email or password"}}
+[auth-wire] post /api/v1/auth/login status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"invalid_credentials","message":"invalid email or password"}}
+[auth-wire] post /api/v1/auth/refresh status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"refresh_token_invalid","message":"invalid refresh token"}}
+[auth-lock] blocker_pid=11914 witnessed_waiters=2
+[auth-race] statuses=[401, 200]
+[auth-wire] post /api/v1/auth/refresh status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"refresh_token_invalid","message":"invalid refresh token"}}
+[auth-wire] post /api/v1/auth/refresh status=200 content_type=application/json
+[auth-wire] post /api/v1/auth/logout status=200 content_type=application/json
+[auth-wire] post /api/v1/auth/logout status=200 content_type=application/json
+[auth-wire] post /api/v1/auth/refresh status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"refresh_token_invalid","message":"invalid refresh token"}}
+[auth-wire] post /api/v1/auth/login status=200 content_type=application/json
+[auth-wire] get /api/v1/users/me status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"account_inactive","message":"account does not exist or is not active"}}
+[auth-wire] post /api/v1/auth/refresh status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"account_inactive","message":"account does not exist or is not active"}}
+[auth-wire] post /api/v1/auth/login status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"invalid_credentials","message":"invalid email or password"}}
+[auth-wire] post /api/v1/auth/refresh status=401 content_type=application/json
+[auth-error] {"error":{"code":"AUTH_INVALID_CREDENTIALS","reason":"refresh_token_invalid","message":"invalid refresh token"}}
+test api_contract_auth::http_auth_reasons_rotation_logout_and_inactive_accounts ... ok
+[auth-wire] get /api/v1/users/me status=503 content_type=application/json
+[auth-error] {"error":{"code":"SERVICE_UNAVAILABLE","reason":"account_verification_unavailable","message":"account verification unavailable"}}
+[auth-lookup-timeout] elapsed_ms=2004
+[auth-wire] get /api/v1/users/me status=200 content_type=application/json
+test api_contract_auth::http_account_lookup_lock_timeout_is_503_and_recovers_after_unlock ... ok
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations status=200 OK component=Conversation bytes=243 items=Some(1)
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations status=200 OK component=Conversation bytes=693 items=Some(3)
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/a4550062-9b4c-4362-aa68-6bccb458332d status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/c5a04310-2c3b-4e83-b4bc-9e86e13f5d08 status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/2d29b49e-35df-4694-95dd-fb16c9ca7224 status=404 Not Found component=ErrorResponse bytes=65 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/not-a-uuid status=400 text=Invalid URL: Cannot parse `id` with value `not-a-uuid`: UUID parsing failed: invalid character: found `n` at 1
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a status=401 Unauthorized component=ErrorResponse bytes=124 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/a4550062-9b4c-4362-aa68-6bccb458332d status=200 OK component=Conversation bytes=241 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a status=200 OK component=Conversation bytes=241 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/a4550062-9b4c-4362-aa68-6bccb458332d/messages status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/c5a04310-2c3b-4e83-b4bc-9e86e13f5d08/messages status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/2d29b49e-35df-4694-95dd-fb16c9ca7224/messages status=404 Not Found component=ErrorResponse bytes=65 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/not-a-uuid/messages status=400 text=Invalid URL: Cannot parse `id` with value `not-a-uuid`: UUID parsing failed: invalid character: found `n` at 1
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/messages status=401 Unauthorized component=ErrorResponse bytes=124 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/a4550062-9b4c-4362-aa68-6bccb458332d/messages status=200 OK component=Message bytes=162 items=Some(1)
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/messages status=200 OK component=Message bytes=162 items=Some(1)
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/a4550062-9b4c-4362-aa68-6bccb458332d/events status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/c5a04310-2c3b-4e83-b4bc-9e86e13f5d08/events status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/2d29b49e-35df-4694-95dd-fb16c9ca7224/events status=404 Not Found component=ErrorResponse bytes=65 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/not-a-uuid/events status=400 text=Invalid URL: Cannot parse `id` with value `not-a-uuid`: UUID parsing failed: invalid character: found `n` at 1
+[conversation-http] http://127.0.0.1:55994/api/v1/conversations/b61a6f38-9ebc-4d12-be1c-e869507c72f1/messages status=200 OK component=Message bytes=511 items=Some(3)
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/events status=401 Unauthorized component=ErrorResponse bytes=124 items=None
+[conversation-http] http://127.0.0.1:55994/api/v1/conversations/b61a6f38-9ebc-4d12-be1c-e869507c72f1/events status=200 OK component=AgentEvent bytes=2002 items=Some(8)
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/a4550062-9b4c-4362-aa68-6bccb458332d/events status=200 OK component=AgentEvent bytes=237 items=Some(1)
+[conversation-http] http://127.0.0.1:55994/api/v1/conversations/b61a6f38-9ebc-4d12-be1c-e869507c72f1/expression-traces status=200 OK component=ExpressionTrace bytes=1289 items=Some(2)
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/events status=200 OK component=AgentEvent bytes=237 items=Some(1)
+[conversation-http] http://127.0.0.1:55994/api/v1/conversations/b61a6f38-9ebc-4d12-be1c-e869507c72f1/expression-traces?turn_id=00000000-0000-0000-0000-000000000002 status=200 OK component=ExpressionTrace bytes=806 items=Some(1)
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/a4550062-9b4c-4362-aa68-6bccb458332d/expression-traces status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/c5a04310-2c3b-4e83-b4bc-9e86e13f5d08/expression-traces status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:55994/api/v1/conversations/b61a6f38-9ebc-4d12-be1c-e869507c72f1/expression-traces?turn_id=25928aa0-b4c2-4d5d-bafe-b51f424a3071 status=200 OK component=ExpressionTrace bytes=2 items=Some(0)
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/2d29b49e-35df-4694-95dd-fb16c9ca7224/expression-traces status=404 Not Found component=ErrorResponse bytes=65 items=None
+[conversation-http] http://127.0.0.1:55994/api/v1/conversations/b61a6f38-9ebc-4d12-be1c-e869507c72f1/expression-traces?limit=1 status=200 OK component=ExpressionTrace bytes=316 items=Some(1)
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/not-a-uuid/expression-traces status=400 text=Invalid URL: Cannot parse `id` with value `not-a-uuid`: UUID parsing failed: invalid character: found `n` at 1
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/expression-traces status=401 Unauthorized component=ErrorResponse bytes=124 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/a4550062-9b4c-4362-aa68-6bccb458332d/expression-traces status=200 OK component=ExpressionTrace bytes=316 items=Some(1)
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/expression-traces status=200 OK component=ExpressionTrace bytes=316 items=Some(1)
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/a4550062-9b4c-4362-aa68-6bccb458332d status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/c5a04310-2c3b-4e83-b4bc-9e86e13f5d08 status=403 Forbidden component=ErrorResponse bytes=72 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/2d29b49e-35df-4694-95dd-fb16c9ca7224 status=404 Not Found component=ErrorResponse bytes=65 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/not-a-uuid status=400 text=Invalid URL: Cannot parse `id` with value `not-a-uuid`: UUID parsing failed: invalid character: found `n` at 1
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a status=401 Unauthorized component=ErrorResponse bytes=124 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations?limit=-1 status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations?limit=18446744073709551616 status=400 text=Failed to deserialize query string: limit: number too large to fit in target type
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations?limit=one status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/messages?limit=-1 status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/messages?limit=18446744073709551616 status=400 text=Failed to deserialize query string: limit: number too large to fit in target type
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/messages?limit=one status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/events?limit=-1 status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/events?limit=18446744073709551616 status=400 text=Failed to deserialize query string: limit: number too large to fit in target type
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/events?limit=one status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/expression-traces?limit=-1 status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+test api_contract_conversations::conversations_http_preserves_json_and_filters_trace_sources ... ok
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/expression-traces?limit=18446744073709551616 status=400 text=Failed to deserialize query string: limit: number too large to fit in target type
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/expression-traces?limit=one status=400 text=Failed to deserialize query string: limit: invalid digit found in string
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a/expression-traces?turn_id=bad status=400 text=Failed to deserialize query string: turn_id: UUID parsing failed: invalid length: expected length 32 for simple format, found 3
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a status=200 OK component=DeleteConversationResult bytes=16 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/838e3d2c-7ed1-482a-9314-d1ec10c5100a status=404 Not Found component=ErrorResponse bytes=65 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/a4550062-9b4c-4362-aa68-6bccb458332d status=200 OK component=Conversation bytes=241 items=None
+[conversation-http] http://127.0.0.1:55983/api/v1/conversations/c5a04310-2c3b-4e83-b4bc-9e86e13f5d08 status=200 OK component=DeleteConversationResult bytes=16 items=None
+test api_contract_conversations::conversations_http_authority_rejections_and_owned_delete ... ok
+[conversation-http] http://127.0.0.1:56006/api/v1/conversations?limit=0 status=200 OK component=Conversation bytes=2 items=Some(0)
+[conversation-http] http://127.0.0.1:56006/api/v1/conversations status=200 OK component=Conversation bytes=23013 items=Some(100)
+[conversation-http] http://127.0.0.1:56006/api/v1/conversations?limit=18446744073709551615 status=200 OK component=Conversation bytes=114909 items=Some(500)
+[conversation-http] http://127.0.0.1:56006/api/v1/conversations/6744342b-69b2-468f-b62e-989ef6df7550/messages?limit=0 status=200 OK component=Message bytes=2 items=Some(0)
+[conversation-http] http://127.0.0.1:56006/api/v1/conversations/6744342b-69b2-468f-b62e-989ef6df7550/messages status=200 OK component=Message bytes=136894 items=Some(1000)
+[conversation-http] http://127.0.0.1:56006/api/v1/conversations/6744342b-69b2-468f-b62e-989ef6df7550/messages?limit=18446744073709551615 status=200 OK component=Message bytes=688894 items=Some(5000)
+[conversation-http] http://127.0.0.1:56006/api/v1/conversations/6744342b-69b2-468f-b62e-989ef6df7550/events?limit=0 status=200 OK component=AgentEvent bytes=2 items=Some(0)
+[conversation-http] http://127.0.0.1:56006/api/v1/conversations/6744342b-69b2-468f-b62e-989ef6df7550/events status=200 OK component=AgentEvent bytes=236787 items=Some(1000)
+[conversation-http] http://127.0.0.1:56006/api/v1/conversations/6744342b-69b2-468f-b62e-989ef6df7550/events?limit=18446744073709551615 status=200 OK component=AgentEvent bytes=1192787 items=Some(5000)
+[conversation-http] http://127.0.0.1:56006/api/v1/conversations/6744342b-69b2-468f-b62e-989ef6df7550/expression-traces?limit=0 status=200 OK component=ExpressionTrace bytes=2 items=Some(0)
+[conversation-http] http://127.0.0.1:56006/api/v1/conversations/6744342b-69b2-468f-b62e-989ef6df7550/expression-traces status=200 OK component=ExpressionTrace bytes=118984 items=Some(1)
+[conversation-http] http://127.0.0.1:56006/api/v1/conversations/6744342b-69b2-468f-b62e-989ef6df7550/expression-traces?limit=18446744073709551615 status=200 OK component=ExpressionTrace bytes=602984 items=Some(1)
+test api_contract_conversations::conversations_http_zero_default_and_clamped_limits ... ok
+test auth::concurrent_first_registrations_elect_one_admin_and_allow_later_promotion ... ok
+test auth::concurrent_refresh_consumes_token_once_and_successor_remains_usable ... ok
+test auth::refresh_failure_preserves_original_token_and_invalid_tokens_create_no_successor ... ok
+test cancelling_or_dropping_build_future_rolls_back_partial_init ... ok
+test classifier::cancelling_an_in_flight_jev_request_never_answers_or_executes_tools ... ok
+test auth::registration_rolls_back_user_identity_and_token_on_insert_failure ... ok
+test classifier::http_skill_catalog_drives_real_classification_and_final_model_context ... ok
+test classifier::classification_in_flight_revalidates_the_selected_skill_and_current_fallback_mode ... ok
+test classifier::jev_choices_reach_minor_major_and_clarification_without_minor_classification ... ok
+test companion::companion_http_policy_is_owner_scoped_cas_and_survives_restart ... ok
+test classifier::jev_in_flight_skill_choices_keep_original_definition_identity ... ok
+test companion::companion_live_policy_is_explicit_and_persists_without_output_authority ... ok
+test companion::companion_public_request_capacity_rejects_ninth_and_cancel_releases_all_tokens ... ok
+test companion::companion_http_prewrite_timeout_preserves_original_operation_for_retry ... ok
+test companion::companion_shadow_http_has_durable_retry_and_erasure_without_side_effects ... ok
+test companion::companion_stop_retains_inflight_public_request_until_its_caller_is_cancelled ... ok
+test context_policy::disabled_memory_still_erases_and_can_be_hot_enabled_then_restarted ... ok
+test context_policy::embedding_identity_changes_need_explicit_policy_commit_after_restart ... ok
+test context_policy::independent_server_patch_preserves_other_instances_policy_changes ... ok
+test context_policy::policy_patch_commits_before_ram_and_requires_current_admin_and_version ... ok
+test delivery::canonical_response_and_history_commit_once_or_roll_back_together ... ok
+test delivery::committed_response_retry_never_recreates_erased_assistant_history ... ok
+
+running 1 test
+[runtime-phase] pid=12115 unix_ms=1794383153292 elapsed_ms=0 phase=child.entered
+[runtime-phase] pid=12115 unix_ms=1794383153292 elapsed_ms=0 phase=child.runtime.ready
+[runtime-phase] pid=12115 unix_ms=1794383153292 elapsed_ms=0 phase=fixture.permit.begin
+[runtime-phase] pid=12115 unix_ms=1794383153292 elapsed_ms=0 phase=fixture.permit.done
+[runtime-phase] pid=12115 unix_ms=1794383153292 elapsed_ms=0 phase=fixture.admin_connect.begin
+[runtime-phase] pid=12115 unix_ms=1794383153297 elapsed_ms=5 phase=fixture.admin_connect.done
+[runtime-phase] pid=12115 unix_ms=1794383153297 elapsed_ms=5 phase=fixture.create_schema.begin schema=server_runtime_2c736c4d4209476a96a072bb05f68706
+[runtime-phase] pid=12115 unix_ms=1794383153298 elapsed_ms=6 phase=fixture.create_schema.done
+[runtime-phase] pid=12115 unix_ms=1794383153298 elapsed_ms=6 phase=fixture.pool_connect.begin
+[runtime-phase] pid=12115 unix_ms=1794383153301 elapsed_ms=8 phase=fixture.pool_connect.done
+[runtime-phase] pid=12115 unix_ms=1794383153302 elapsed_ms=10 phase=fixture.ready
+[runtime-phase] pid=12115 unix_ms=1794383153302 elapsed_ms=10 phase=migrations.begin
+[runtime-phase] pid=12115 unix_ms=1794383153713 elapsed_ms=421 phase=migrations.done
+[runtime-phase] pid=12115 unix_ms=1794383153713 elapsed_ms=421 phase=owner.insert.begin
+[runtime-phase] pid=12115 unix_ms=1794383153713 elapsed_ms=421 phase=owner.insert.done
+[runtime-phase] pid=12115 unix_ms=1794383153713 elapsed_ms=421 phase=server.build.begin
+test delivery::delivery_http_is_owner_scoped_and_cancellation_is_separate_from_generation ... ok
+[runtime-phase] pid=12115 unix_ms=1794383154908 elapsed_ms=1616 phase=server.build.done
+[runtime-phase] pid=12115 unix_ms=1794383154908 elapsed_ms=1616 phase=response.prepare.begin
+[runtime-phase] pid=12115 unix_ms=1794383154935 elapsed_ms=1643 phase=response.prepare.done
+[runtime-phase] pid=12115 unix_ms=1794383154935 elapsed_ms=1643 phase=producer.bind.begin
+[runtime-phase] pid=12115 unix_ms=1794383154944 elapsed_ms=1652 phase=producer.bind.done
+[runtime-phase] pid=12115 unix_ms=1794383154944 elapsed_ms=1652 phase=native.enter.begin
+[runtime-phase] pid=12115 unix_ms=1794383154962 elapsed_ms=1670 phase=native.blocking.entered
+[runtime-phase] pid=12115 unix_ms=1794383154962 elapsed_ms=1670 phase=native.enter.done
+[runtime-phase] pid=12115 unix_ms=1794383154962 elapsed_ms=1670 phase=shutdown.begin
+[runtime-phase] pid=12115 unix_ms=1794383154962 elapsed_ms=1670 phase=cancellation_panic.raised
+
+thread 'delivery::panicked_playback_fence_retains_original_native_future_and_dependencies' (9068659) panicked at packages/alia-server/tests/server_runtime/delivery.rs:676:9:
+injected precise cancellation panic
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[runtime-phase] pid=12115 unix_ms=1794383155009 elapsed_ms=1717 phase=shutdown.incomplete
+[runtime-phase] pid=12115 unix_ms=1794383155009 elapsed_ms=1717 phase=cancellation_panic.begin
+[runtime-phase] pid=12115 unix_ms=1794383155009 elapsed_ms=1717 phase=cancellation_panic.observed
+[runtime-phase] pid=12115 unix_ms=1794383155009 elapsed_ms=1717 phase=delivery_unknown.begin
+[runtime-phase] pid=12115 unix_ms=1794383155022 elapsed_ms=1730 phase=delivery_unknown.done
+[runtime-phase] pid=12115 unix_ms=1794383155022 elapsed_ms=1730 phase=retained_database.ping.begin
+[runtime-phase] pid=12115 unix_ms=1794383155022 elapsed_ms=1730 phase=retained_database.ping.done
+[runtime-phase] pid=12115 unix_ms=1794383155022 elapsed_ms=1730 phase=native.release.begin
+[runtime-phase] pid=12115 unix_ms=1794383155022 elapsed_ms=1730 phase=native.blocking.returned
+[runtime-phase] pid=12115 unix_ms=1794383155025 elapsed_ms=1733 phase=retirement.finished
+[runtime-phase] pid=12115 unix_ms=1794383155025 elapsed_ms=1733 phase=native.release.done
+[runtime-phase] pid=12115 unix_ms=1794383155025 elapsed_ms=1733 phase=quarantine.wait.begin
+[runtime-phase] pid=12115 unix_ms=1794383155068 elapsed_ms=1776 phase=quarantine.retained
+[runtime-phase] pid=12115 unix_ms=1794383155068 elapsed_ms=1776 phase=quarantined_database.ping.begin
+[runtime-phase] pid=12115 unix_ms=1794383155069 elapsed_ms=1776 phase=quarantined_database.ping.done
+[runtime-phase] pid=12115 unix_ms=1794383155069 elapsed_ms=1777 phase=fixture.body.returned
+[runtime-phase] pid=12115 unix_ms=1794383155069 elapsed_ms=1777 phase=fixture.close_pool.begin
+[runtime-phase] pid=12115 unix_ms=1794383155069 elapsed_ms=1777 phase=fixture.close_pool.done
+[runtime-phase] pid=12115 unix_ms=1794383155069 elapsed_ms=1777 phase=fixture.drop_schema.begin
+[runtime-phase] pid=12115 unix_ms=1794383155157 elapsed_ms=1865 phase=fixture.drop_schema.done
+[runtime-phase] pid=12115 unix_ms=1794383155157 elapsed_ms=1865 phase=fixture.close_admin.begin
+[runtime-phase] pid=12115 unix_ms=1794383155157 elapsed_ms=1865 phase=fixture.close_admin.done
+[runtime-phase] pid=12115 unix_ms=1794383155158 elapsed_ms=1866 phase=fixture.cleanup.done
+[runtime-phase] pid=12115 unix_ms=1794383155158 elapsed_ms=1866 phase=child.exit
+test delivery::panicked_playback_fence_retains_original_native_future_and_dependencies ... ok
+test companion::companion_runtime_discovers_canonical_sources_and_joins_worker ... ok
+test devices::device_routes_enforce_current_owner_or_admin_before_any_action ... ok
+test devices::device_status_uses_live_identity_and_reports_unavailable_without_fake_offline ... ok
+test delivery::delivery_shutdown_retains_native_owner_channels_and_database_past_both_deadlines ... ok
+test dropping_run_closes_listeners_and_drains_owned_tasks_without_cancelling_parent ... ok
+test effects::request_recovery_reads_original_effect_after_tool_removal_without_reapproving ... ok
+test embedding_profile::cache_disabled_http_profile_switch_is_atomic_and_immediately_projects_memory ... ok
+test embodiment::empty_embodiment_has_no_fake_capabilities_and_requires_current_account ... ok
+test embodiment::physical_operation_http_separates_execution_cancel_and_positive_stop_evidence ... ok
+test expression::appraisal_ack_deadline_reports_unknown_and_clear_fences_the_original_identity ... ok
+test expression::dropping_clear_before_commit_rolls_back_and_same_operation_can_retry ... ok
+test dispatched_execution_retains_outbound_plugin_and_database_until_receipt ... ok
+test expression::expression_writer_drains_before_owned_pool_closes_even_after_shutdown_waiter_times_out ... ok
+test expression::expression_writer_failure_is_reported_after_join_and_never_blocks_pool_cleanup ... ok
+test expression::failed_relationship_delete_never_acknowledges_success ... ok
+test expression::relationship_clear_waits_for_older_insert_and_restart_does_not_restore_it ... ok
+test expression::full_or_closed_writer_rejects_new_appraisal_without_publishing_it ... ok
+test failed_startup_returns_pending_handle_until_native_rollback_finishes ... ok
+test health::independent_default_profile_receives_health_and_settings ... ok
+test health::stopping_http_health_drops_active_probes_before_runtime_join ... ok
+test independent_instances_keep_other_listener_and_shared_pool_alive ... ok
+test health::http_health_has_one_total_budget_and_preserves_independent_same_name_instances ... ok
+test insights::cancelled_trigger_releases_count_and_waiter_rechecks_account_after_capacity ... ok
+test insights::disabled_cached_user_is_rejected_by_trigger_and_schedule_without_llm ... ok
+test insights::extraction_uses_current_source_epoch_without_comparing_server_and_database_clocks ... ok
+test health::shared_openai_health_is_opt_in_single_probe_and_busy_requests_do_not_queue ... ok
+test insights::log_insert_failure_is_error_even_when_memory_batch_already_committed ... ok
+test insights::stale_snapshot_reaches_trigger_as_error_and_persists_failure_log ... ok
+test joined_stop_error_does_not_skip_remaining_cleanup_or_become_success ... ok
+test motion::motion_fact_api_is_owner_only_and_response_cancellation_reaches_admission ... ok
+test native_stop_deadline_keeps_owner_and_pool_until_actual_completion ... ok
+test occupied_listener_and_invalid_factory_fail_before_module_initialization ... ok
+test partial_init_and_start_failures_stop_workers_once_in_reverse_order ... ok
+test paired_noop::paired_noop_runtimes_restore_binding_and_release_resources_after_restart ... ok
+test plugin_authorization::administrator_retains_global_management_contract ... ok
+[plugin-authorization-wait] case=AdminExport observed=true request_finished=false
+[plugin-authorization-revoked] case=AdminExport status=403 exposed_other=false changed=false
+test plugin_authorization::global_export_rechecks_admin_after_storage_wait ... ok
+[plugin-authorization-wait] case=AdminPurge observed=true request_finished=false
+[plugin-authorization-revoked] case=AdminPurge status=403 exposed_other=false changed=false
+test plugin_authorization::global_purge_rechecks_admin_after_storage_wait_without_deleting ... ok
+[plugin-authorization] purge=false status=403 exposed_other=false changed=false records_before=9 records_after=9
+test plugin_authorization::ordinary_user_cannot_export_all_plugin_owners ... ok
+[plugin-authorization] purge=true status=403 exposed_other=false changed=false records_before=9 records_after=9
+test plugin_authorization::ordinary_user_cannot_purge_all_plugin_owners ... ok
+[plugin-authorization-wait] case=PersonalPurge observed=true request_finished=false
+[plugin-authorization-revoked] case=PersonalPurge status=403 exposed_other=false changed=false
+test plugin_authorization::personal_purge_rechecks_active_account_after_storage_wait_without_deleting ... ok
+test plugin_authorization::personal_storage_is_bound_to_authenticated_user_and_scope ... ok
+test relationship_api::appraisal_policy_patch_is_durable_hot_and_preserves_cas_on_failure ... ok
+test relationship_api::relationship_clear_database_failure_retains_original_intent_for_retry ... ok
+test relationship_api::relationship_clear_has_owner_scope_cas_and_durable_retry_identity ... ok
+test relationship_rebuild::explicit_rebuild_pins_page_policy_expiry_and_receipts_through_retries ... ok
+test required_tool_catalog_failure_prevents_ready_and_can_be_retried ... ok
+test settings::file_failure_keeps_live_settings_and_same_value_retry_persists_for_restart ... ok
+test relationship_api::relationship_clear_timeout_retains_original_intent_for_retry ... ok
+test settings::module_partial_failure_saves_desired_settings_and_explicit_retry_applies_again ... ok
+[settings-auth-preview] call=2 change=KeepAdmin status=200 elapsed_ms=20 desired_changed=true live_changed=true file_changed=true module_applies=1
+test settings_authorization::active_admin_patch_and_same_value_retry_do_not_advance_policy ... ok
+test settings::privacy_patch_uses_admin_sql_cas_and_all_instances_read_committed_policy ... ok
+[settings-auth-preview] call=2 change=Delete status=403 elapsed_ms=0 desired_changed=false live_changed=false file_changed=false module_applies=0
+[settings-auth-preview] call=0 change=DemoteAfterAdmission status=200 elapsed_ms=9 desired_changed=true live_changed=true file_changed=true module_applies=1
+test settings_authorization::deletion_during_second_preview_prevents_non_policy_settings ... ok
+test settings_authorization::demotion_after_apply_admission_does_not_claim_cross_module_rollback ... ok
+[settings-auth-preview] call=1 change=Demote status=403 elapsed_ms=1 desired_changed=false live_changed=false file_changed=false module_applies=0
+[settings-auth-preview] call=2 change=Disable status=403 elapsed_ms=1 desired_changed=false live_changed=false file_changed=false module_applies=0
+test settings_authorization::demotion_during_first_preview_prevents_non_policy_settings ... ok
+test settings_authorization::disabling_during_second_preview_prevents_non_policy_settings ... ok
+[settings-auth-preview] call=2 change=LookupError status=503 elapsed_ms=1 desired_changed=false live_changed=false file_changed=false module_applies=0
+test settings_authorization::fresh_account_lookup_error_is_unavailable_without_settings_changes ... ok
+[settings-auth-witness] reached=true polls=1 blocked=1 policy_blocked=1 policy_reads=1 policy_active=1 policy_locks=1 barrier_idle=1 gate_held_seen=true request_finished_seen=false
+[settings-auth-wait] status=403 error_code=AUTH_FORBIDDEN json_body=true desired_before=Some(Number(8)) desired_after=Some(Number(8)) live_before=8 live_after=8 file_changed=false module_applies=0
+test settings_authorization::non_policy_patch_rechecks_admin_after_waiting_for_policy ... ok
+[settings-read-witness] reached=true polls=1 policy_waiters=1 gate_held=true request_finished=false
+[settings-read-result] change=LookupError status=503 elapsed_ms=2 has_etag=false sentinel_exposed=false file_changed=false
+test settings_read_authorization::settings_get_account_lookup_error_returns_no_settings_or_etag ... ok
+[settings-read-witness] reached=true polls=1 policy_waiters=1 gate_held=true request_finished=false
+[settings-auth-preview] call=2 change=LookupTimeout status=503 elapsed_ms=2002 desired_changed=false live_changed=false file_changed=false module_applies=0
+test settings_authorization::fresh_account_lookup_timeout_is_bounded_without_settings_changes ... ok
+[settings-read-witness] reached=true polls=1 policy_waiters=1 gate_held=true request_finished=false
+[settings-read-result] change=KeepAdmin status=200 elapsed_ms=6 has_etag=true sentinel_exposed=true file_changed=false
+test settings_read_authorization::settings_get_preserves_admin_json_secret_prefix_and_etag_contracts ... ok
+[settings-read-witness] reached=true polls=2 policy_waiters=1 gate_held=true request_finished=false
+[settings-read-result] change=Demote status=403 elapsed_ms=2 has_etag=false sentinel_exposed=false file_changed=false
+test settings_read_authorization::settings_get_rechecks_admin_after_policy_wait_before_returning_secrets ... ok
+[settings-read-result] change=LookupTimeout status=503 elapsed_ms=2003 has_etag=false sentinel_exposed=false file_changed=false
+[settings-read-witness] reached=true polls=2 policy_waiters=1 gate_held=true request_finished=false
+test settings_read_authorization::settings_get_account_lookup_timeout_is_bounded_and_returns_no_settings_or_etag ... ok
+[settings-read-result] change=Delete status=403 elapsed_ms=1 has_etag=false sentinel_exposed=false file_changed=false
+test settings_read_authorization::settings_get_rejects_deleted_account_after_policy_wait ... ok
+[settings-read-witness] reached=true polls=1 policy_waiters=1 gate_held=true request_finished=false
+[settings-read-result] change=Disable status=403 elapsed_ms=1 has_etag=false sentinel_exposed=false file_changed=false
+test settings_read_authorization::settings_get_rejects_disabled_account_after_policy_wait ... ok
+[settings-apply-exit] disconnect=true apply_dropped=1 active_tasks=0 desired_preserved=true sql_version=2 file_unchanged=true
+test settings_shutdown::client_disconnect_drops_apply_and_same_value_retry_completes ... ok
+[settings-apply-exit] disconnect=false apply_dropped=1 active_tasks=0 desired_preserved=true sql_version=2 file_unchanged=true
+test settings_shutdown::shutdown_drops_pipelined_settings_apply_and_preserves_partial_outcome ... ok
+[settings-shared-lock] privacy_sql_preserved=true registry_projection_preserved=true file_unchanged=true update_gate_released=true active_tasks=0
+test settings_shutdown::shutdown_releases_privacy_gate_while_waiting_for_shared_policy_lock ... ok
+test skills::concurrent_skill_reload_retains_readers_and_publishes_the_latest_snapshot ... ok
+test skills::failed_skill_snapshot_keeps_the_complete_index_and_rolls_back_http_changes ... ok
+test skills::http_crud_publishes_skill_context_without_granting_tool_authority ... ok
+test source_epoch::rule_captures_source_before_slow_condition ... ok
+test source_epoch::subscription_captures_source_before_condition_and_action_queue ... ok
+test source_epoch::unowned_system_action_does_not_acquire_memory_authority ... ok
+test source_epoch::timer_captures_source_before_condition_and_action_queue ... ok
+startup resources: owned_pool_closed=true, shared_pool_usable=true, http_released=true, grpc_released=true, workers_left=0, stops=1
+buffered startup failure: finished_before_cancel=true, returned_ready=false, failure_report_unchanged=true
+test startup::buffered_startup_failures_survive_later_parent_cancellation ... ok
+startup resources: owned_pool_closed=true, shared_pool_usable=true, http_released=true, grpc_released=true, workers_left=0, stops=1
+buffered startup cancellation: ready_notified=true, returned_ready=false, cleanup_finished=true
+test startup::cancelled_buffered_startup_rejects_ready_and_rolls_back ... ok
+startup resources: owned_pool_closed=true, shared_pool_usable=true, http_released=true, grpc_released=true, workers_left=0, stops=1
+unpolled startup cancellation: rollback_finished=true, parent_cancelled=false
+test startup::dropping_unpolled_startup_wait_rolls_back_partial_initialization ... ok
+
+thread 'wasm::wasm_admin_lifecycle_reaches_unified_execution_and_invalidates_old_grants' (9071082) panicked at packages/alia-server/tests/server_runtime/skills.rs:20:5:
+assertion `left == right` failed: HTTP 400 Bad Request: {"error":{"code":"VALIDATION_ERROR","message":"guest memory must declare a maximum within the host budget"}}
+  left: 400
+ right: 200
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test wasm::wasm_admin_lifecycle_reaches_unified_execution_and_invalidates_old_grants ... FAILED
+test websocket::diagnostics_requires_active_database_admin_and_shutdown_joins_upgraded_socket ... ok
+startup resources: owned_pool_closed=true, shared_pool_usable=true, http_released=true, grpc_released=true, workers_left=0, stops=1
+buffered native rollback: incomplete=true, unfinished=true, pending_module=true, pool_retained=true, wait_pending=true, typed_handle_finished=true
+test startup::buffered_startup_cancellation_retains_incomplete_native_rollback ... ok
+test websocket::open_diagnostics_streams_recheck_account_status_and_role ... ok
+
+failures:
+
+failures:
+    wasm::wasm_admin_lifecycle_reaches_unified_execution_and_invalidates_old_grants
+
+test result: FAILED. 111 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 103.93s
+
+error: test failed, to rerun pass `-p alia-server --test server_runtime`
+     Running tests/settings.rs (target/debug/deps/settings-d0e4d50e1267cc36)
+
+running 7 tests
+test core_services_are_not_exposed_as_replaceable_module_slots ... ok
+test expression_policy_settings_are_registered ... ok
+test memory_policy_settings_are_registered_without_backend_slot ... ok
+test invalid_persisted_file_does_not_partially_replace_values_or_the_save_target ... ok
+test persisted_values_exclude_sql_policy_and_null_and_preserve_registered_schema ... ok
+test voice_interruption_setting_is_exported_as_restart_required_and_persists ... ok
+test decision_routing_identity_restarts_and_legacy_restore_survives_persistence ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/settings_cancellation.rs (target/debug/deps/settings_cancellation-6692b3b7ce1711ba)
+
+running 2 tests
+test dropping_a_queued_update_does_not_block_the_next_waiter ... ok
+test aborting_an_update_holder_releases_admission_without_rolling_back_desired_values ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/skills.rs (target/debug/deps/skills-775213b63a61e2e1)
+
+running 11 tests
+test test_match_scoring ... ok
+test embedded_volume_skill_matches_simplified_and_traditional_mic_volume ... ok
+test home_assistant_light_skill_matches_list_and_control_intents ... ok
+test test_parse_skill_file_missing_closing ... ok
+test test_parse_skill_file_missing_delimiter ... ok
+test test_parse_skill_file_no_body ... ok
+test test_parse_skill_file_with_preferred_tools ... ok
+test test_parse_skill_file_basic ... ok
+test test_parse_skill_file_rejects_legacy_tools_field ... ok
+test test_seed_data_uses_skill_preferred_tools ... ok
+test test_seed_data ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/tools.rs (target/debug/deps/tools-a3b84fc49e5502a0)
+
+running 14 tests
+test ai_memory_tool_requires_a_persisted_source_message ... ok
+test memory_store_and_search_use_memory_system ... ok
+test memory_store_blocks_sensitive_chat_memory ... ok
+test memory_forget_deletes_matching_memory ... ok
+test memory_forget_batch_has_one_privacy_transition_and_rejects_old_request ... ok
+test old_memory_tool_cannot_recreate_or_update_memories_after_clear ... ok
+test test_calculate_rejects_division_by_zero ... ok
+test test_calculate_expression ... ok
+test test_get_current_time_rejects_invalid_timezone ... ok
+test test_get_current_time ... ok
+test test_to_openai_functions ... ok
+test test_get_current_time_uses_iana_timezone ... ok
+test memory_forget_schema_is_openai_compatible ... ok
+test test_fetch_definition ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/voice_stream_live.rs (target/debug/deps/voice_stream_live-e68ecc2161c93eaa)
+
+running 1 test
+test official_audio_over_grpc_preserves_original_response_across_backchannel_and_wait ... ignored, requires real Easy-Turn service, ALIA_EASY_TURN_PCM_DIR and disposable ALIA_TEST_DATABASE_URL
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests alia_server
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: 3 targets failed:
+    `-p alia-server --lib`
+    `-p alia-server --test migrations`
+    `-p alia-server --test server_runtime`
+
+EXIT_CODE: 101

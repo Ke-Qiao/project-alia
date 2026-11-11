@@ -1,0 +1,47 @@
+COMMAND: env CARGO_TARGET_DIR=/Users/ke-qiao/Developer/project-alia/examples/wasm-plugins/target cargo build --manifest-path examples/wasm-plugins/Cargo.toml --target wasm32-unknown-unknown --release --offline --locked
+START_UTC: 20261111T073727981604Z
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling anyhow v1.0.104
+   Compiling serde_core v1.0.229
+   Compiling autocfg v1.5.1
+   Compiling zmij v1.0.23
+   Compiling hashbrown v0.17.1
+   Compiling smallvec v1.16.3
+   Compiling equivalent v1.0.3
+   Compiling winnow v1.0.4
+   Compiling serde v1.0.229
+   Compiling toml_datetime v1.1.2+spec-1.1.0
+   Compiling either v1.19.0
+   Compiling serde_json v1.0.154
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling bytes v1.12.1
+   Compiling bytemuck v1.25.2
+   Compiling base64 v0.22.1
+   Compiling itertools v0.14.0
+   Compiling num-traits v0.2.19
+   Compiling indexmap v2.14.2
+   Compiling toml_parser v1.1.5+spec-1.1.0
+   Compiling toml_edit v0.25.17+spec-1.1.0
+   Compiling proc-macro-crate v3.5.0
+   Compiling rmp v0.8.15
+   Compiling syn v2.0.119
+   Compiling syn v3.0.9
+   Compiling proc-macro-utils v0.10.0
+   Compiling manyhow-macros v0.11.4
+   Compiling serde_derive v1.0.229
+   Compiling manyhow v0.11.4
+   Compiling prost-derive v0.14.4
+   Compiling extism-pdk-derive v1.4.1
+   Compiling extism-convert-macros v1.41.0
+   Compiling prost v0.14.4
+   Compiling rmp-serde v1.3.1
+   Compiling alia-plugin-api v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/alia-plugin-api)
+   Compiling extism-convert v1.41.0
+   Compiling extism-pdk v1.4.1
+   Compiling alia-wasm-demo v0.1.0 (/Users/ke-qiao/Developer/project-alia/examples/wasm-plugins)
+    Finished `release` profile [optimized] target(s) in 7.66s
+
+EXIT_CODE: 0

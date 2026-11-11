@@ -1,0 +1,115 @@
+COMMAND: brew install postgresql@18 pgvector
+START_UTC: 20261111T073647452381Z
+Warning: The following taps are not trusted:
+  jandedobbeleer/oh-my-posh
+
+Homebrew is currently ignoring formulae, casks and commands
+from these taps because tap trust is required.
+Prefer trusting only the specific formulae, casks or commands you need.
+Trust installed formulae from these taps with:
+  brew trust --formula jandedobbeleer/oh-my-posh/oh-my-posh
+Trust other specific casks and commands with:
+  brew trust --cask <user>/<tap>/<cask>
+  brew trust --command <user>/<tap>/<command>
+Whole-tap trust is broader and includes all current and future formulae,
+casks and commands from the listed taps. Trust whole taps with:
+  brew trust jandedobbeleer/oh-my-posh
+Untap them with:
+  brew untap jandedobbeleer/oh-my-posh
+For more information, see:
+  https://docs.brew.sh/Tap-Trust
+==> Downloading bottle manifests
+✔︎ Bottle Manifest pgvector (0.8.7)
+✔︎ Bottle Manifest postgresql@18 (18.6)
+==> Would install 2 formulae:
+postgresql@18  18.6
+pgvector       0.8.7
+==> Would upgrade 2 dependencies for postgresql@18:
+ca-certificates
+openssl@3
+==> Fetching downloads for: postgresql@18 and pgvector
+✔︎ Bottle Manifest ca-certificates (2026-09-25)
+✔︎ Bottle Manifest openssl@3 (3.6.5)
+✔︎ Bottle ca-certificates (2026-09-25)
+✔︎ Bottle pgvector (0.8.7)
+✔︎ Bottle openssl@3 (3.6.5)
+✔︎ Bottle postgresql@18 (18.6)
+==> Pouring postgresql@18--18.6.arm64_tahoe.bottle.1.tar.gz
+The files belonging to this database system will be owned by user "ke-qiao".
+This user must also own the server process.
+
+The database cluster will be initialized with locale "en_US.UTF-8".
+The default text search configuration will be set to "english".
+
+Data page checksums are enabled.
+
+fixing permissions on existing directory /opt/homebrew/var/postgresql@18 ... ok
+creating subdirectories ... ok
+selecting dynamic shared memory implementation ... posix
+selecting default "max_connections" ... 100
+selecting default "shared_buffers" ... 128MB
+selecting default time zone ... Asia/Shanghai
+creating configuration files ... ok
+running bootstrap script ... ok
+performing post-bootstrap initialization ... ok
+syncing data to disk ... ok
+
+
+Success. You can now start the database server using:
+
+    '/opt/homebrew/Cellar/postgresql@18/18.6/bin/pg_ctl' -D '/opt/homebrew/var/postgresql@18' -l logfile start
+
+initdb: warning: enabling "trust" authentication for local connections
+initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+🍺  /opt/homebrew/Cellar/postgresql@18/18.6: 3,872 files, 77.7MB
+==> Pouring pgvector--0.8.7.arm64_tahoe.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/pgvector/0.8.7: 100 files, 585.4KB
+==> `brew cleanup` has not been run in the last 30 days, running now...
+Disable this behaviour by setting `HOMEBREW_NO_INSTALL_CLEANUP=1`.
+Hide these hints with `HOMEBREW_NO_ENV_HINTS=1` (see `man brew`).
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/ca-certificates--2026-05-14... (112KB)
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/ca-certificates_bottle_manifest--2026-05-14... (1.7KB)
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/dotnet@8--8.0.128... (167.8MB)
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/dotnet@8_bottle_manifest--8.0.128... (13.2KB)
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/git-lfs--3.7.1... (5.1MB)
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/git-lfs_bottle_manifest--3.7.1... (7.4KB)
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/openssl@3--3.6.2... (10.9MB)
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/openssl@3_bottle_manifest--3.6.2... (12.0KB)
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/pnpm--11.9.0... (4MB)
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/pnpm_bottle_manifest--11.9.0... (7.5KB)
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/Cask/UnityHubSetup-arm64.dmg--3.18.3.dmg... (140.6MB)
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/api/cask/dotnet-sdk.json... (6.2KB)
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/api/cask/unity-hub.json... (2.2KB)
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/api/formula/dotnet@8.json... (4.3KB)
+Removing: /Users/ke-qiao/Library/Caches/Homebrew/api/formula/whisper-cpp.json... (4.2KB)
+Removing: /Users/ke-qiao/Library/Logs/Homebrew/python@3.14... (64B)
+Removing: /Users/ke-qiao/Library/Logs/Homebrew/gz-harmonic... (6 files, 3.0MB)
+Removing: /Users/ke-qiao/Library/Logs/Homebrew/glib... (64B)
+Removing: /Users/ke-qiao/Library/Logs/Homebrew/gcc... (64B)
+Removing: /Users/ke-qiao/Library/Logs/Homebrew/fontconfig... (64B)
+Removing: /Users/ke-qiao/Library/Logs/Homebrew/openssl@3... (64B)
+Removing: /Users/ke-qiao/Library/Logs/Homebrew/ca-certificates... (64B)
+Removing: /Users/ke-qiao/Library/Logs/Homebrew/llvm@22... (64B)
+Removing: /Users/ke-qiao/Library/Logs/Homebrew/gnupg... (64B)
+Removing: /Users/ke-qiao/Library/Logs/Homebrew/ruby... (64B)
+Removing: /Users/ke-qiao/Library/Logs/Homebrew/gnutls... (64B)
+Removing: /opt/homebrew/var/homebrew/tmp/.cellar/openssl@3... (7,641 files, 37.8MB)
+Removing: /opt/homebrew/var/homebrew/tmp/.cellar/ca-certificates... (4 files, 202.3KB)
+==> Caveats
+==> postgresql@18
+This formula has created a default database cluster with:
+  initdb --locale=en_US.UTF-8 -E UTF-8 /opt/homebrew/var/postgresql@18
+
+When uninstalling, some dead symlinks are left behind so you may want to run:
+  brew cleanup --prune-prefix
+
+If the service fails to start with a "postmaster.pid" lock file error after
+an unclean shutdown, and no postgres is running, remove the stale file:
+  rm /opt/homebrew/var/postgresql@18/postmaster.pid
+
+To start postgresql@18 now and restart at login:
+  brew services start postgresql@18
+Or, if you don't want/need a background service you can just run:
+  LC_ALL="en_US.UTF-8" /opt/homebrew/opt/postgresql@18/bin/postgres -D /opt/homebrew/var/postgresql@18
+
+EXIT_CODE: 0

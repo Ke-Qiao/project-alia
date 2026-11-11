@@ -1,0 +1,140 @@
+{
+  "status": "complete",
+  "source_head_at_start": "0bf23731bc407cb6259be8a5f0a857642159dcb5",
+  "source_worktree_at_start": "clean",
+  "initial_suite": {
+    "summary_file": "server-suite-initial-summary.json",
+    "target_count": 54,
+    "case_count": 997,
+    "passed": 985,
+    "failed": 3,
+    "ignored": 9,
+    "exit_code": 101
+  },
+  "final_suite": {
+    "summary_file": "server-suite-final-summary.json",
+    "target_count": 54,
+    "case_count": 997,
+    "passed": 988,
+    "failed": 0,
+    "ignored": 9,
+    "exit_code": 0,
+    "nested_child_summaries_excluded": 5,
+    "includes_new_http_cases": [
+      "api_contract_auth::http_json_extractors_and_patch_me_match_declared_wire_contract",
+      "api_contract_auth::http_registration_normalizes_email_and_serializes_duplicate_writes",
+      "api_contract_auth::http_auth_reasons_rotation_logout_and_inactive_accounts",
+      "api_contract_conversations::conversations_http_authority_rejections_and_owned_delete",
+      "api_contract_conversations::conversations_http_preserves_json_and_filters_trace_sources",
+      "api_contract_conversations::conversations_http_zero_default_and_clamped_limits",
+      "api_contract_auth::http_account_lookup_lock_timeout_is_503_and_recovers_after_unlock"
+    ]
+  },
+  "initial_failed_cases_now_passed": [
+    "expression::abi::wasm_tests::real_wasm_appraisal_requires_exact_persistent_pin_and_is_revocable",
+    "motion_rename_preserves_historical_json_and_unknown_without_replay",
+    "wasm::wasm_admin_lifecycle_reaches_unified_execution_and_invalidates_old_grants"
+  ],
+  "standalone_new_http_suite": {
+    "source_log": "logs/09-real-http-contract-20261111T074012759777Z.log",
+    "passed": 7,
+    "failed": 0,
+    "ignored": 0,
+    "elapsed_seconds": 3.87,
+    "account_lookup_timeout_elapsed_ms": 2003
+  },
+  "final_account_lookup_timeout_elapsed_ms": 2002,
+  "checks": [
+    {
+      "check": "server boundaries",
+      "exit_code": 0,
+      "source_log": "logs/11-server-boundaries-20261111T074055638152Z.log"
+    },
+    {
+      "check": "format",
+      "exit_code": 0,
+      "source_log": "logs/12-format-20261111T074056783432Z.log"
+    },
+    {
+      "check": "WASM fixture built from example directory",
+      "exit_code": 0,
+      "source_log": "logs/13-wasm-fixtures-correct-cwd-20261111T082734979428Z.log"
+    },
+    {
+      "check": "Clippy",
+      "exit_code": 0,
+      "source_log": "logs/14-clippy-20261111T082736110420Z.log"
+    },
+    {
+      "check": "no-default-features all-targets compile",
+      "exit_code": 0,
+      "source_log": "logs/23-no-default-features-20261111T083501992752Z.log"
+    },
+    {
+      "check": "final database state",
+      "exit_code": 0,
+      "source_log": "logs/24-pg17-final-database-state-20261111T084010394091Z.log"
+    },
+    {
+      "check": "PostgreSQL 17 stop",
+      "exit_code": 0,
+      "source_log": "logs/25-stop-pg17-20261111T084020223826Z.log"
+    },
+    {
+      "check": "both database servers stopped",
+      "exit_code": 0,
+      "source_log": "logs/26-verify-stopped-20261111T084056776290Z.log"
+    }
+  ],
+  "final_pg17_database_state": {
+    "application_schemas": [
+      "public"
+    ],
+    "other_database_clients": 0,
+    "source_log": "logs/24-pg17-final-database-state-20261111T084010394091Z.log"
+  },
+  "temporary_clusters": [
+    {
+      "version": "18.6",
+      "pgvector": "0.8.7",
+      "data_directory": "/private/tmp/alia-api-contract-20261111-ks58v_1w/data",
+      "address": "127.0.0.1:52558",
+      "stopped": true,
+      "pg_ctl_status_exit": 3,
+      "postmaster_pid_file_exists": false,
+      "port_connect_errno": 61,
+      "port_connect_error": "ECONNREFUSED",
+      "data_retained": true
+    },
+    {
+      "version": "17.11",
+      "pgvector": "0.8.7",
+      "data_directory": "/private/tmp/alia-api-contract-pg17-20261111-u5orc0u9/data",
+      "address": "127.0.0.1:50196",
+      "stopped": true,
+      "pg_ctl_status_exit": 3,
+      "postmaster_pid_file_exists": false,
+      "port_connect_errno": 61,
+      "port_connect_error": "ECONNREFUSED",
+      "data_retained": true
+    }
+  ],
+  "log_manifest": {
+    "file": "log-manifest.json",
+    "file_count": 31,
+    "total_bytes": 728606,
+    "sha256": "15e0651bea02513e7a68ffed1a0c5daeb9f00a49c94fd3aa48ca648bfff5fcd0"
+  },
+  "deferred_design_topics": [
+    "validation script trusts externally supplied test database URL",
+    "plugin storage test uses default schema",
+    "PostgreSQL 18 NOT NULL constraint names after motion-domain rename"
+  ],
+  "not_checked": [
+    "browser connected to real backend/database",
+    "real devices",
+    "real models",
+    "production database",
+    "load or long-running validation"
+  ]
+}

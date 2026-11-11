@@ -1,0 +1,9 @@
+COMMAND: python3 /private/tmp/alia-verify-stopped.py
+START_UTC: 20261111T084056776290Z
+PostgreSQL 18: pg_ctl: no server running  status_exit=3
+127.0.0.1:52558 connect_errno=61; expected=61; data_retained=True
+PostgreSQL 17: pg_ctl: no server running  status_exit=3
+127.0.0.1:50196 connect_errno=61; expected=61; data_retained=True
+Both task-owned database servers are stopped; both ports refuse connections; data directories retained.
+
+EXIT_CODE: 0

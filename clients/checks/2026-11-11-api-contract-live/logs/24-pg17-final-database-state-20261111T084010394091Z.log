@@ -1,0 +1,19 @@
+COMMAND: /opt/homebrew/opt/postgresql@17/bin/psql postgresql://alia_test@127.0.0.1:50196/alia_api_contract -X -v ON_ERROR_STOP=1 -c 'SELECT current_database(),current_user,inet_server_addr(),inet_server_port(),current_setting('"'"'data_directory'"'"'); SELECT nspname FROM pg_namespace WHERE nspname NOT LIKE '"'"'pg_%'"'"' AND nspname <> '"'"'information_schema'"'"' ORDER BY nspname; SELECT count(*) AS other_database_clients FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid();'
+START_UTC: 20261111T084010394091Z
+ current_database  | current_user | inet_server_addr | inet_server_port |                      current_setting                       
+-------------------+--------------+------------------+------------------+------------------------------------------------------------
+ alia_api_contract | alia_test    | 127.0.0.1        |            50196 | /private/tmp/alia-api-contract-pg17-20261111-u5orc0u9/data
+(1 row)
+
+ nspname 
+---------
+ public
+(1 row)
+
+ other_database_clients 
+------------------------
+                      0
+(1 row)
+
+
+EXIT_CODE: 0
